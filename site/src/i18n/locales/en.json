@@ -112,7 +112,6 @@
   "cjk.point.render": "CJK doesn't drop or shift under GPU rendering.",
   "cjk.point.notify": "Native notifications when a background agent does something.",
   "cjk.conclusion": "Data is current as of publication. Spot something off? PRs welcome.",
-  "cjk.showdownLink": "Read the full CJK comparison",
   "section.themes.kicker": "Themes",
   "section.themes.title": "Switch the theme, the whole site follows.",
   "section.themes.subtitle": "The product's 10 built-in terminal themes are right here on this site. Click one and everything follows, from the nav to the terminal window.",

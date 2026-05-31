@@ -112,7 +112,6 @@
   "cjk.point.render": "GPU 渲染下中日韩不丢字、不错位",
   "cjk.point.notify": "后台 agent 有动静会通知,原生支持",
   "cjk.conclusion": "数据截至发布时,有出入欢迎提 PR 纠正。",
-  "cjk.showdownLink": "看完整的 CJK 对比",
   "section.themes.kicker": "主题",
   "section.themes.title": "换个主题,整个站跟着变。",
   "section.themes.subtitle": "产品里那 10 套终端主题,这个站上就有——点一下,从导航到终端窗口全跟着换。",

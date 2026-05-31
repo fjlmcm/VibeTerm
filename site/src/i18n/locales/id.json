@@ -112,7 +112,6 @@
   "cjk.point.render": "CJK tak hilang atau bergeser saat render GPU.",
   "cjk.point.notify": "Aktivitas agent di latar memunculkan notifikasi, secara native.",
   "cjk.conclusion": "Data akurat per tanggal rilis. Ada yang salah? PR dipersilakan.",
-  "cjk.showdownLink": "Baca perbandingan CJK lengkap",
   "section.themes.kicker": "Tema",
   "section.themes.title": "Ganti tema, seluruh situs ikut.",
   "section.themes.subtitle": "10 tema terminal bawaan produk ada di situs ini. Klik satu, semua ikut, dari navigasi sampai jendela terminal.",

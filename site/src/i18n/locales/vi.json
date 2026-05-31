@@ -112,7 +112,6 @@
   "cjk.point.render": "CJK không rớt hay lệch khi dựng hình bằng GPU.",
   "cjk.point.notify": "Agent chạy nền có động tĩnh là báo ngay, qua thông báo gốc của hệ điều hành.",
   "cjk.conclusion": "Dữ liệu cập nhật tới thời điểm phát hành. Thấy chỗ nào sai? Cứ gửi PR.",
-  "cjk.showdownLink": "Đọc bản so sánh CJK đầy đủ",
   "section.themes.kicker": "Giao diện",
   "section.themes.title": "Đổi giao diện, cả trang đổi theo.",
   "section.themes.subtitle": "10 giao diện terminal tích hợp của sản phẩm có ngay trên trang này. Nhấp một cái, mọi thứ đổi theo, từ thanh điều hướng đến cửa sổ terminal.",

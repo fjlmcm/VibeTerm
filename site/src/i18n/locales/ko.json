@@ -112,7 +112,6 @@
   "cjk.point.render": "GPU 렌더링에서도 CJK를 빠뜨리거나 밀리지 않음.",
   "cjk.point.notify": "백그라운드 에이전트 활동을 네이티브로 알림.",
   "cjk.conclusion": "데이터는 공개 시점 기준. 틀린 게 있으면 PR 환영.",
-  "cjk.showdownLink": "전체 CJK 비교 보기",
   "section.themes.kicker": "테마",
   "section.themes.title": "테마를 바꾸면 사이트 전체가 따라옵니다.",
   "section.themes.subtitle": "제품 내장 10개 터미널 테마가 이 사이트에 그대로. 하나 클릭하면 내비게이션부터 터미널 창까지 전부 따라옵니다.",

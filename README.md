@@ -10,7 +10,7 @@
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey.svg)](https://github.com/fjlmcm/VibeTerm/releases)
 [![Stack](https://img.shields.io/badge/Tauri%202-Rust%20%C2%B7%20SolidJS-ffc131.svg)](#技术栈)
 
-[**官网**](https://www.vibeterm.org) · [**下载**](https://github.com/fjlmcm/VibeTerm/releases) · [**CJK Showdown**](docs/CJK_SHOWDOWN.md)
+[**官网**](https://www.vibeterm.org) · [**下载**](https://github.com/fjlmcm/VibeTerm/releases)
 
 </div>
 
@@ -60,8 +60,6 @@ agent 状态全靠**纯嗅探 + 只读监听**得来,三层判定:
 - 东亚宽字符与 ambiguous width 量得准,表格不错位
 - 中文换行不截断,流式 UTF-8 边界不破字
 - `Intl.Segmenter` 守门复制,不撕裂代理对与 ZWJ
-
-→ 带 GitHub issue 实锤的竞品对比:[docs/CJK_SHOWDOWN.md](docs/CJK_SHOWDOWN.md)
 
 ## 安装
 
