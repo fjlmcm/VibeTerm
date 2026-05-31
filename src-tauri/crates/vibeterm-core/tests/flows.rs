@@ -263,6 +263,42 @@ fn mark_agent_completed_flips_aggregate_to_done() {
 }
 
 #[test]
+fn unseen_done_count_tracks_done_and_clears_on_view() {
+    // Dock 角标的数据源:聚合 Done(完成但未看)的任务数;用户切到该任务(set_active_main)即减。
+    let _cfg = isolated_config();
+    let tasks = TaskRegistry::new();
+    let _t1 = tasks.create("a".into(), None, None).unwrap(); // 默认 active_main、无终端 → Idle
+    let t2 = tasks.create("b".into(), None, None).unwrap();
+    let t3 = tasks.create("c".into(), None, None).unwrap();
+    let (term2, term3) = (12, 13);
+    tasks.attach_terminal(t2, term2).unwrap();
+    tasks.attach_terminal(t3, term3).unwrap();
+    assert_eq!(tasks.unseen_done_count(), 0);
+
+    // t2(非 active)Running → Idle(by_osc 真完成)→ Done
+    tasks
+        .update_terminal_status(term2, TaskStatus::Running, false)
+        .unwrap();
+    tasks
+        .update_terminal_status(term2, TaskStatus::Idle, true)
+        .unwrap();
+    assert_eq!(tasks.unseen_done_count(), 1, "t2 真完成且非 active → 计未看");
+
+    // t3 同样完成 → 2
+    tasks
+        .update_terminal_status(term3, TaskStatus::Running, false)
+        .unwrap();
+    tasks
+        .update_terminal_status(term3, TaskStatus::Idle, true)
+        .unwrap();
+    assert_eq!(tasks.unseen_done_count(), 2);
+
+    // 用户切到 t2 → set_active_main 翻 seen=true → t2 不再 Done
+    tasks.set_active_main(t2).unwrap();
+    assert_eq!(tasks.unseen_done_count(), 1, "看过 t2 → 只剩 t3 未看");
+}
+
+#[test]
 fn task_status_updates_propagate_to_dto() {
     let _cfg = isolated_config();
     let tasks = TaskRegistry::new();

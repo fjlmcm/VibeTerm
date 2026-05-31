@@ -494,5 +494,12 @@
   "update.price.reset": "Eingebauten Standard wiederherstellen",
   "update.price.note": "Manuell ausgelöst, ruft in diesem Moment nur die Preistabelle ab; die Daten werden in der lokalen Config gespeichert und können jederzeit auf den eingebauten Standard zurückgesetzt werden.",
   "settings.tab.language": "Sprache",
-  "settings.language.hint": "Wechselt die Oberflächensprache. Änderungen gelten sofort."
+  "settings.language.hint": "Wechselt die Oberflächensprache. Änderungen gelten sofort.",
+  "notify.multiagent.title": "Multi-Agent-Hinweise",
+  "notify.focused_other.title": "Auch bei Abschluss anderer Aufgaben hinweisen",
+  "notify.focused_other.hint": "Während du in VibeTerm eine Aufgabe ansiehst, ertönt ein leiser Ton und die Zeile wird hervorgehoben, wenn eine andere Aufgabe fertig wird.",
+  "notify.dock_badge.title": "Dock-Badge für ungesehene Abschlüsse",
+  "notify.dock_badge.hint": "Zeigt am Dock-Symbol die Anzahl fertiger, aber noch ungesehener Aufgaben; verschwindet, sobald du die Aufgabe öffnest.",
+  "notify.persistent.title": "Dauerton bis gesehen",
+  "notify.persistent.hint": "Solange VibeTerm im Hintergrund ist, ertönt einmal pro Minute ein Ton, solange eine fertige Aufgabe ungesehen ist – bis du zurückkommst. Einzelner Ton, nie überlagert."
 }

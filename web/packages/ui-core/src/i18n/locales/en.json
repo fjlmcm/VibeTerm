@@ -494,5 +494,12 @@
   "update.price.reset": "Restore built-in default",
   "update.price.note": "Manual trigger, fetches the price table only at this moment; data is stored in local config and can be reset to the built-in default anytime.",
   "settings.tab.language": "Language",
-  "settings.language.hint": "Switch the interface language. Changes apply instantly."
+  "settings.language.hint": "Switch the interface language. Changes apply instantly.",
+  "notify.multiagent.title": "Multi-agent alerts",
+  "notify.focused_other.title": "Alert when another task finishes",
+  "notify.focused_other.hint": "While you're in VibeTerm looking at one task, play a soft chime and highlight the row when a different task finishes.",
+  "notify.dock_badge.title": "Dock badge for unseen completions",
+  "notify.dock_badge.hint": "Show the number of finished-but-unseen tasks on the Dock icon; clears when you open the task.",
+  "notify.persistent.title": "Persistent sound until seen",
+  "notify.persistent.hint": "While VibeTerm is in the background, chime once a minute as long as a finished task is unseen, until you come back. One sound, never stacks."
 }

@@ -266,6 +266,11 @@ export function onNotificationPlaySound(
   );
 }
 
+/** 前台完成"非当前任务"→ 任务列表对应行闪一下高亮(配合轻提示音)。payload = task_id */
+export function onTaskFlash(handler: (taskId: TaskId) => void): Promise<UnlistenFn> {
+  return tauriListen<TaskId>("task_flash", (e) => handler(e.payload));
+}
+
 // ===== Agent watch (v1) =====
 export async function getClaudeUsageCache(): Promise<ClaudeUsageCache | null> {
   return invoke<ClaudeUsageCache | null>("get_claude_usage_cache");

@@ -494,5 +494,12 @@
   "update.price.reset": "내장 기본값 복원",
   "update.price.note": "수동 트리거이며, 이 순간에만 가격표를 가져옵니다. 데이터는 로컬 config에만 저장되고 언제든 내장 기본값으로 되돌릴 수 있습니다.",
   "settings.tab.language": "언어",
-  "settings.language.hint": "인터페이스 언어를 전환합니다. 변경 사항은 즉시 적용됩니다."
+  "settings.language.hint": "인터페이스 언어를 전환합니다. 변경 사항은 즉시 적용됩니다.",
+  "notify.multiagent.title": "멀티 에이전트 알림",
+  "notify.focused_other.title": "다른 작업 완료도 알림",
+  "notify.focused_other.hint": "VibeTerm에서 한 작업을 보고 있을 때 다른 작업이 완료되면 부드러운 소리를 내고 해당 행을 강조합니다.",
+  "notify.dock_badge.title": "미확인 완료를 Dock 배지로 표시",
+  "notify.dock_badge.hint": "완료했지만 아직 보지 않은 작업 수를 Dock 아이콘에 표시하고, 해당 작업을 열면 사라집니다.",
+  "notify.persistent.title": "확인할 때까지 지속 알림음",
+  "notify.persistent.hint": "VibeTerm이 백그라운드일 때 완료된 작업이 미확인 상태이면 돌아와 확인할 때까지 1분마다 한 번 울립니다. 단일 소리로 중첩되지 않습니다."
 }

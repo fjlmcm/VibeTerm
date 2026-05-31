@@ -290,6 +290,12 @@ export interface NotifyFile {
   enabled: boolean;
   events: EventsPrefs;
   quiet_hours: QuietHours;
+  /** 主窗口在前台、完成的不是当前选中任务时也轻提示(前端音 + 列表行高亮)。默认 true */
+  notify_focused_other_task: boolean;
+  /** Dock 图标角标显示"未看完成数",看过即清。默认 true */
+  dock_badge_unseen: boolean;
+  /** 离开 app 期间有未看完成 → 间歇单路声音提醒,直到回来查看。默认 false */
+  persistent_unseen_sound: boolean;
 }
 
 /** 系统通知权限状态 — Tauri NotificationPermissionState 序列化为小写 string */

@@ -14,6 +14,7 @@ import {
   closeFloating,
   focusWindow,
   openFloating,
+  onTaskFlash,
   renameTask,
   setActiveTask,
   setTaskNotifyMuted,
@@ -36,6 +37,8 @@ export interface TaskListProps {
 export const TaskList: Component<TaskListProps> = (props) => {
   const [editingId, setEditingId] = createSignal<number | null>(null);
   const [editingName, setEditingName] = createSignal("");
+  // 前台"非当前任务完成"→ 后端 emit task_flash,这一行闪一下高亮(配合轻提示音)。
+  const [flashingId, setFlashingId] = createSignal<number | null>(null);
   // Esc 取消 flag — onBlur 在 unmount 时也会触发,有可能在 setEditingId(null)
   // 之后才跑(SolidJS 渲染 + DOM 移除时序),会把 ghost 名字提交。这里加显式标志拒绝。
   let cancelOnce = false;
@@ -148,15 +151,26 @@ export const TaskList: Component<TaskListProps> = (props) => {
     return null;
   };
 
+  let unlistenFlash: (() => void) | undefined;
   onMount(() => {
     window.addEventListener("pointermove", onWinPointerMove);
     window.addEventListener("pointerup", onWinPointerUp);
     window.addEventListener("pointercancel", onWinPointerUp);
+    onTaskFlash((id) => {
+      setFlashingId(id);
+      // 动画时长 0.7s,略留余量后清掉,避免再次渲染时残留 animation
+      setTimeout(() => setFlashingId((cur) => (cur === id ? null : cur)), 800);
+    })
+      .then((un) => {
+        unlistenFlash = un;
+      })
+      .catch(console.error);
   });
   onCleanup(() => {
     window.removeEventListener("pointermove", onWinPointerMove);
     window.removeEventListener("pointerup", onWinPointerUp);
     window.removeEventListener("pointercancel", onWinPointerUp);
+    unlistenFlash?.();
   });
 
 
@@ -212,6 +226,10 @@ export const TaskList: Component<TaskListProps> = (props) => {
       <style>{`
         .task-row:hover .task-wt-branch {
           max-width: 120px;
+        }
+        @keyframes task-flash {
+          0% { background: var(--color-accent-subtle); }
+          100% { background: transparent; }
         }
       `}</style>
       <div
@@ -308,6 +326,10 @@ export const TaskList: Component<TaskListProps> = (props) => {
                         display: "flex",
                         "align-items": "center",
                         gap: "8px",
+                        animation:
+                          flashingId() === task().id
+                            ? "task-flash 0.7s ease-out"
+                            : undefined,
                         "border-left": isActive()
                           ? "2px solid var(--color-accent)"
                           : isFloating()
