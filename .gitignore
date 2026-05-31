@@ -1,0 +1,60 @@
+# Tauri build
+src-tauri/target/
+src-tauri/gen/
+
+# Rust workspace
+**/target/
+**/*.rs.bk
+
+# Node
+node_modules/
+web/dist/
+web/packages/*/dist/
+.pnpm-store/
+
+# Playwright
+e2e/test-results/
+e2e/playwright-report/
+e2e/playwright/.cache/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Secrets (signing keys must never be committed)
+.env
+.env.*
+!.env.example
+*.p12
+*.cer
+*.mobileprovision
+src-tauri/private/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Reference projects (read-only, cloned for inspiration — never tracked)
+references/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Coverage
+coverage/
+*.lcov
+
+# Smoke artifacts
+.smoke/
+
+# Local scratch (audio test files, throwaway experiments)
+tmp/
+
+# Claude Code (local agent state — scheduled tasks lock, etc.)
+.claude/

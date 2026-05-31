@@ -1,0 +1,18 @@
+# VibeTerm shell integration — .zshenv wrapper
+#
+# 由 VibeTerm spawn 时设的临时 ZDOTDIR 加载(纯注入,不写用户 dotfiles)。
+# 作用:把用户原始 ZDOTDIR 的 .zshenv 串接进来,并把"用户真实 ZDOTDIR"
+# (用户 .zshenv 里可能改它)回填到 VIBETERM_USER_ZDOTDIR,供后续 .zshrc 用。
+# ZDOTDIR 链接骨架移植自 VS Code shell integration (MIT)。
+if [[ -f $VIBETERM_USER_ZDOTDIR/.zshenv ]]; then
+	VIBETERM_ZDOTDIR=$ZDOTDIR
+	ZDOTDIR=$VIBETERM_USER_ZDOTDIR
+
+	# 防递归:用户真实 ZDOTDIR 与注入目录相同则不重复 source
+	if [[ $VIBETERM_USER_ZDOTDIR != $VIBETERM_ZDOTDIR ]]; then
+		. $VIBETERM_USER_ZDOTDIR/.zshenv
+	fi
+
+	VIBETERM_USER_ZDOTDIR=$ZDOTDIR
+	ZDOTDIR=$VIBETERM_ZDOTDIR
+fi

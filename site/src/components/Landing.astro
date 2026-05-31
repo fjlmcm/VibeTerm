@@ -1,0 +1,25 @@
+---
+import type { Locale } from '../i18n';
+import Hero from './hero/Hero.astro';
+import Principles from './sections/Principles.astro';
+import Features from './sections/Features.astro';
+import Mechanism from './sections/Mechanism.astro';
+import Cjk from './sections/Cjk.astro';
+import Themes from './sections/Themes.astro';
+import Credits from './sections/Credits.astro';
+import Download from './sections/Download.astro';
+
+interface Props {
+  lang: Locale;
+}
+const { lang } = Astro.props;
+---
+
+<Hero lang={lang} />
+<Principles lang={lang} />
+<Features lang={lang} />
+<Mechanism lang={lang} />
+<Cjk lang={lang} />
+<Themes lang={lang} />
+<Credits lang={lang} />
+<Download lang={lang} />

@@ -1,0 +1,119 @@
+---
+import type { Locale } from '../i18n';
+import { useTranslations } from '../i18n';
+import { REPO_URL, LICENSE_URL, VERSION } from '../lib/site';
+
+interface Props {
+  lang: Locale;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+
+const links = [
+  { href: '#features', key: 'nav.features' },
+  { href: '#mechanism', key: 'nav.mechanism' },
+  { href: '#cjk', key: 'nav.cjk' },
+  { href: '#themes', key: 'nav.themes' },
+  { href: '#credits', key: 'nav.credits' },
+];
+---
+
+<footer class="ft">
+  <div class="container ft-inner">
+    <div class="ft-brand">
+      <svg class="mark" viewBox="0 0 256 256" aria-hidden="true">
+        <g stroke="var(--accent)" stroke-width="9" stroke-linecap="round" fill="none">
+          <line x1="120" y1="106" x2="74" y2="168"></line>
+          <line x1="120" y1="106" x2="132" y2="180"></line>
+          <line x1="120" y1="106" x2="180" y2="138"></line>
+        </g>
+        <g fill="var(--text)">
+          <circle cx="120" cy="106" r="17"></circle>
+          <circle cx="74" cy="168" r="12"></circle>
+          <circle cx="132" cy="180" r="12"></circle>
+          <circle cx="180" cy="138" r="12"></circle>
+        </g>
+      </svg>
+      <p class="ft-tagline mono">{t('footer.tagline')}</p>
+      <p class="ft-made">{t('footer.madeWith')}</p>
+    </div>
+
+    <nav class="ft-links" aria-label={t('nav.features')}>
+      {links.map((l) => <a href={l.href}>{t(l.key)}</a>)}
+      <a href={REPO_URL} target="_blank" rel="noopener noreferrer">{t('footer.repo')}</a>
+    </nav>
+  </div>
+
+  <div class="container ft-bottom">
+    <span class="mono">VibeTerm v{VERSION}</span>
+    <span class="ft-sep">·</span>
+    <a class="mono" href={LICENSE_URL} target="_blank" rel="noopener noreferrer">{t('footer.license')}</a>
+    <span class="ft-sep">·</span>
+    <span class="mono">{t('footer.copyright')}</span>
+  </div>
+</footer>
+
+<style>
+  .ft {
+    border-top: 1px solid var(--border);
+    background: color-mix(in oklab, var(--surface) 60%, var(--bg));
+    padding-block: clamp(3rem, 2rem + 4vw, 5rem) 2rem;
+    margin-top: var(--space-section);
+  }
+  .ft-inner {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2.5rem 4rem;
+    justify-content: space-between;
+    align-items: flex-start;
+  }
+  .ft-brand {
+    max-width: 36ch;
+  }
+  .mark {
+    width: 40px;
+    height: 40px;
+  }
+  .ft-tagline {
+    font-size: var(--text-lg);
+    font-weight: 700;
+    margin-top: 0.7rem;
+    letter-spacing: -0.01em;
+  }
+  .ft-made {
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+    margin-top: 0.4rem;
+  }
+  .ft-links {
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    gap: 0.7rem 3rem;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+  .ft-links a {
+    color: var(--text-dim);
+    transition: color var(--dur-fast) var(--ease-out-quart);
+  }
+  .ft-links a:hover {
+    color: var(--accent);
+  }
+  .ft-bottom {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    margin-top: 3rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    color: var(--text-dim);
+    font-size: var(--text-xs);
+  }
+  .ft-bottom a:hover {
+    color: var(--accent);
+  }
+  .ft-sep {
+    opacity: 0.4;
+  }
+</style>

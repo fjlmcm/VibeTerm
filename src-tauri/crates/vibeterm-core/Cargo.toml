@@ -1,0 +1,19 @@
+# 应用核心
+# 依赖叶子 crate + IPC schema(用于错误类型),但不依赖 Tauri
+[package]
+name = "vibeterm-core"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+vibeterm-pty    = { workspace = true }
+vibeterm-config = { workspace = true }
+vibeterm-status = { workspace = true }
+vibeterm-tasks  = { workspace = true }
+vibeterm-ipc    = { workspace = true }
+tracing         = { workspace = true }
+thiserror       = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

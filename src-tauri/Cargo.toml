@@ -1,0 +1,153 @@
+# VibeTerm Cargo workspace
+#
+# 结构:
+#   src-tauri          —— Tauri app 入口(本 Cargo.toml + src/main.rs)
+#   crates/vibeterm-*  —— 6 个业务 crate,单向依赖图
+
+[workspace]
+resolver = "2"
+members = [
+    ".",
+    "crates/vibeterm-core",
+    "crates/vibeterm-pty",
+    "crates/vibeterm-config",
+    "crates/vibeterm-status",
+    "crates/vibeterm-tasks",
+    "crates/vibeterm-ipc",
+    "crates/vibeterm-git",
+    "crates/vibeterm-agent-watch",
+]
+
+[workspace.package]
+version = "0.3.0"
+edition = "2021"
+publish = false
+license = "MIT"
+
+[workspace.dependencies]
+# Workspace 内部 crate(其它 crate 通过 workspace dep 引用)
+vibeterm-core   = { path = "crates/vibeterm-core" }
+vibeterm-pty    = { path = "crates/vibeterm-pty" }
+vibeterm-config = { path = "crates/vibeterm-config" }
+vibeterm-status = { path = "crates/vibeterm-status" }
+vibeterm-tasks  = { path = "crates/vibeterm-tasks" }
+vibeterm-ipc    = { path = "crates/vibeterm-ipc" }
+vibeterm-git    = { path = "crates/vibeterm-git" }
+vibeterm-agent-watch = { path = "crates/vibeterm-agent-watch" }
+
+# 第三方(版本统一在 workspace 锁定,避免漂移)
+tauri        = { version = "2", features = ["macos-private-api"] }
+tauri-build  = { version = "2", features = [] }
+serde        = { version = "1", features = ["derive"] }
+serde_json   = "1"
+tokio        = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+portable-pty = "0.9"
+tracing      = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+thiserror    = "1"
+
+# 应用 crate(本 Cargo.toml 同时是 workspace root + tauri app 包)
+[package]
+name = "vibeterm"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+vibeterm-core   = { workspace = true }
+vibeterm-pty    = { workspace = true }
+vibeterm-config = { workspace = true }
+vibeterm-status = { workspace = true }
+vibeterm-tasks  = { workspace = true }
+vibeterm-ipc    = { workspace = true }
+vibeterm-git    = { workspace = true }
+vibeterm-agent-watch = { workspace = true }
+tauri              = { workspace = true }
+tokio              = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde              = { workspace = true }
+serde_json         = { workspace = true }
+
+[dependencies.which]
+version = "6"
+
+# 粘贴图片:官方 clipboard plugin(跨平台读 image bitmap)+ image crate 编 PNG
+[dependencies.tauri-plugin-clipboard-manager]
+version = "2"
+
+# 系统通知(macOS / Linux notify-rust / Windows toast)
+[dependencies.tauri-plugin-notification]
+version = "2"
+
+# native 文件夹选择器 (新建任务 / worktree 路径浏览)
+[dependencies.tauri-plugin-dialog]
+version = "2"
+
+# 单实例守卫: 第二次启动只聚焦已有窗口, 不起平行实例 —— 否则两个实例
+# last-writer-wins 抢 tasks.json, 会把已删任务覆盖回来.
+[dependencies.tauri-plugin-single-instance]
+version = "2"
+
+[dependencies.image]
+version = "0.25"
+default-features = false
+features = ["png"]
+
+# macOS NSVisualEffectView 毛玻璃,resize 时 WebView 渲染滞后的 gap 显示为模糊层
+# 而不是死黑,视觉上像故意的设计而非 lag
+[target.'cfg(target_os = "macos")'.dependencies.window-vibrancy]
+version = "0.6"
+
+# 内容 hash:相同剪贴板图片命中同一文件,二次粘贴零编码零写盘
+[dependencies.blake3]
+version = "1"
+
+# 通知 quiet_hours:本地时间 HH:MM.
+# 不用 time crate 的 local-offset (多线程不 sound),用 chrono::Local (内部 localtime_r 线程安全).
+[dependencies.chrono]
+version = "0.4"
+default-features = false
+features = ["clock", "std"]
+
+# 通知声音预览:返回 base64 字节给前端播放. tauri 间接拉了 0.22, 复用版本.
+[dependencies.base64]
+version = "0.22"
+
+# agent hook 本地 HTTP server (claude/codex Stop hook 转发):
+# 选 tiny_http 而非 hyper/axum — 我们只接 2 个 POST 端点 + bearer 校验,
+# 几 KB body, 频率 < 1 Hz, 大型 async runtime 全是过度工程.
+# tiny_http 同步 API + 单线程 + ~3K LOC, 极小依赖树.
+[dependencies.tiny_http]
+version = "0.12"
+
+# 32 字节 token 随机生成. rand 间接被 tauri 拉了, 显式声明.
+[dependencies.rand]
+version = "0.8"
+
+# 手动更新检查(软件版本 / 模型价格)—— 仅用户点按钮时 GET 两个固定 HTTPS 端点,
+# 纯读取、无上传、绝不后台轮询(零侵入红线). 选 ureq(同步 + rustls, 依赖树极小)
+# 而非 reqwest(async + 重). 默认 features 已含 rustls tls.
+[dependencies.ureq]
+version = "2"
+
+# hook 安装:atomic write 到 ~/.claude/settings.json. tempfile 已被
+# vibeterm-config 拉入, 主 crate 显式声明便于 hook_install.rs 直接用.
+[dependencies.tempfile]
+version = "3"
+
+# macOS:读 NSPasteboard 里的文件 URL(剪贴板含文件时 → 路径直插,跳过 bitmap icon 陷阱)
+# 模式 1:1 借鉴 references/wezterm/window/src/os/macos/clipboard.rs:21-31
+# cocoa 0.26 全面 deprecate 但 API 仍工作;模块内用 #[allow(deprecated)] 局部豁免
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = "thin"
+opt-level = "s"
+strip = true

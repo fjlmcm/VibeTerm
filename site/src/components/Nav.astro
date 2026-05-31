@@ -1,0 +1,400 @@
+---
+import type { Locale } from '../i18n';
+import { useTranslations, LOCALES, LOCALE_NAMES } from '../i18n';
+import { getRelativeLocaleUrl } from 'astro:i18n';
+import { THEMES } from '../data/themes';
+import { REPO_URL, RELEASES_URL } from '../lib/site';
+
+interface Props {
+  lang: Locale;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+
+const navLinks = [
+  { href: '#features', key: 'nav.features' },
+  { href: '#mechanism', key: 'nav.mechanism' },
+  { href: '#cjk', key: 'nav.cjk' },
+  { href: '#themes', key: 'nav.themes' },
+  { href: '#credits', key: 'nav.credits' },
+];
+---
+
+<header class="nav" data-nav>
+  <div class="nav-inner container">
+    <a class="brand" href="#top" aria-label="VibeTerm — top">
+      <svg class="mark" viewBox="0 0 256 256" aria-hidden="true">
+        <g stroke="var(--accent)" stroke-width="9" stroke-linecap="round" fill="none">
+          <line x1="120" y1="106" x2="74" y2="168"></line>
+          <line x1="120" y1="106" x2="132" y2="180"></line>
+          <line x1="120" y1="106" x2="180" y2="138"></line>
+        </g>
+        <g fill="var(--text)">
+          <circle cx="120" cy="106" r="17"></circle>
+          <circle cx="74" cy="168" r="12"></circle>
+          <circle cx="132" cy="180" r="12"></circle>
+          <circle cx="180" cy="138" r="12"></circle>
+        </g>
+      </svg>
+      <span class="wordmark mono">vibeterm</span>
+    </a>
+
+    <nav class="links" aria-label="Primary">
+      {navLinks.map((l) => <a href={l.href}>{t(l.key)}</a>)}
+    </nav>
+
+    <div class="actions">
+      <!-- 主题切换 -->
+      <div class="menu" data-menu="theme">
+        <button
+          class="icon-btn"
+          aria-label={t('nav.theme.label')}
+          aria-haspopup="true"
+          aria-expanded="false"
+          data-menu-toggle
+        >
+          <span class="swatch"></span>
+        </button>
+        <div class="popover pop-theme" role="menu" data-menu-pop>
+          {
+            THEMES.map((th) => (
+              <button
+                class="theme-opt"
+                role="menuitemradio"
+                aria-checked="false"
+                data-theme-set={th.id}
+              >
+                <span
+                  class="dots"
+                  style={`--a:${th.shell.accent};--b:${th.shell.statusRunning};--c:${th.shell.statusWaiting}`}
+                  aria-hidden="true"
+                />
+                <span class="theme-name">{th.name}</span>
+              </button>
+            ))
+          }
+        </div>
+      </div>
+
+      <!-- 语言切换 -->
+      <div class="menu" data-menu="lang">
+        <button
+          class="icon-btn lang-btn mono"
+          aria-label={t('nav.lang.label')}
+          aria-haspopup="true"
+          aria-expanded="false"
+          data-menu-toggle
+        >
+          {lang.toUpperCase()}
+        </button>
+        <div class="popover pop-lang" role="menu" data-menu-pop>
+          {
+            LOCALES.map((loc) => (
+              <a
+                role="menuitem"
+                href={getRelativeLocaleUrl(loc, '')}
+                class:list={['lang-opt mono', { active: loc === lang }]}
+              >
+                {LOCALE_NAMES[loc]}
+              </a>
+            ))
+          }
+        </div>
+      </div>
+
+      <a class="icon-btn" href={REPO_URL} target="_blank" rel="noopener noreferrer" aria-label="GitHub">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+          <path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z" />
+        </svg>
+      </a>
+
+      <a class="btn-download mono" href={RELEASES_URL} target="_blank" rel="noopener noreferrer">
+        {t('nav.download')}
+      </a>
+    </div>
+  </div>
+</header>
+
+<style>
+  .nav {
+    position: fixed;
+    inset: 0 0 auto 0;
+    z-index: 100;
+    height: var(--nav-h);
+    border-bottom: 1px solid transparent;
+    transition:
+      background var(--dur-normal) var(--ease-out-quart),
+      border-color var(--dur-normal) var(--ease-out-quart);
+  }
+  .nav[data-scrolled] {
+    background: color-mix(in oklab, var(--bg) 78%, transparent);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+    backdrop-filter: blur(14px) saturate(1.3);
+    border-bottom-color: var(--border);
+  }
+  .nav-inner {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    height: 100%;
+  }
+  .brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    flex: none;
+  }
+  .mark {
+    width: 26px;
+    height: 26px;
+  }
+  .wordmark {
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: -0.03em;
+  }
+  .links {
+    display: flex;
+    gap: 1.6rem;
+    margin-inline: auto;
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+  }
+  .links a {
+    color: var(--text-dim);
+    position: relative;
+    padding-block: 0.4rem;
+    transition: color var(--dur-fast) var(--ease-out-quart);
+  }
+  .links a::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 100%;
+    height: 1px;
+    background: var(--accent);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform var(--dur-normal) var(--ease-out-expo);
+  }
+  .links a:hover {
+    color: var(--text);
+  }
+  .links a:hover::after {
+    transform: scaleX(1);
+  }
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: none;
+  }
+  .icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-dim);
+    transition:
+      color var(--dur-fast) var(--ease-out-quart),
+      border-color var(--dur-fast) var(--ease-out-quart),
+      background var(--dur-fast) var(--ease-out-quart);
+  }
+  .icon-btn:hover {
+    color: var(--text);
+    border-color: var(--accent);
+  }
+  .lang-btn {
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .swatch {
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 25%, transparent);
+  }
+  .btn-download {
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    padding-inline: 0.95rem;
+    border-radius: var(--radius-sm);
+    background: var(--accent);
+    color: var(--bg);
+    font-weight: 600;
+    font-size: var(--text-sm);
+    transition: transform var(--dur-fast) var(--ease-out-quart), filter var(--dur-fast);
+  }
+  .btn-download:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+  }
+
+  /* popover */
+  .menu {
+    position: relative;
+  }
+  .popover {
+    position: absolute;
+    top: calc(100% + 0.55rem);
+    right: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 0.4rem;
+    box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-6px) scale(0.98);
+    transform-origin: top right;
+    transition:
+      opacity var(--dur-fast) var(--ease-out-quart),
+      transform var(--dur-fast) var(--ease-out-expo),
+      visibility var(--dur-fast);
+  }
+  .menu[data-open] .popover {
+    opacity: 1;
+    visibility: visible;
+    transform: none;
+  }
+  .pop-theme {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 0.15rem;
+    width: 24rem;
+    max-width: calc(100vw - 1.5rem);
+  }
+  .theme-opt {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.5rem 0.6rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    color: var(--text-dim);
+    text-align: left;
+    transition: background var(--dur-fast), color var(--dur-fast);
+  }
+  .theme-opt:hover {
+    background: color-mix(in oklab, var(--accent) 14%, transparent);
+    color: var(--text);
+  }
+  .theme-opt[aria-checked='true'] {
+    color: var(--text);
+    background: color-mix(in oklab, var(--accent) 20%, transparent);
+  }
+  .dots {
+    flex: none;
+    width: 26px;
+    height: 12px;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--a) 0 33%, var(--b) 33% 66%, var(--c) 66% 100%);
+  }
+  .theme-name {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pop-lang {
+    display: flex;
+    flex-direction: column;
+    min-width: 9rem;
+  }
+  .lang-opt {
+    padding: 0.55rem 0.7rem;
+    border-radius: var(--radius-sm);
+    font-size: var(--text-sm);
+    color: var(--text-dim);
+    transition: background var(--dur-fast), color var(--dur-fast);
+  }
+  .lang-opt:hover {
+    background: color-mix(in oklab, var(--accent) 14%, transparent);
+    color: var(--text);
+  }
+  .lang-opt.active {
+    color: var(--accent);
+  }
+
+  @media (max-width: 860px) {
+    .links {
+      display: none;
+    }
+  }
+  @media (max-width: 520px) {
+    .wordmark {
+      display: none;
+    }
+    .btn-download {
+      padding-inline: 0.7rem;
+    }
+  }
+</style>
+
+<script>
+  import { applyTheme, currentThemeId } from '../lib/theme';
+
+  // 滚动时给导航加毛玻璃
+  const nav = document.querySelector<HTMLElement>('[data-nav]');
+  const onScroll = () => {
+    if (!nav) return;
+    if (window.scrollY > 12) nav.setAttribute('data-scrolled', '');
+    else nav.removeAttribute('data-scrolled');
+  };
+  onScroll();
+  window.addEventListener('scroll', onScroll, { passive: true });
+
+  // 下拉菜单开合(主题 / 语言通用)
+  const menus = Array.from(document.querySelectorAll<HTMLElement>('[data-menu]'));
+  function closeAll(except?: HTMLElement) {
+    for (const m of menus) {
+      if (m === except) continue;
+      m.removeAttribute('data-open');
+      m.querySelector('[data-menu-toggle]')?.setAttribute('aria-expanded', 'false');
+    }
+  }
+  for (const menu of menus) {
+    const toggle = menu.querySelector<HTMLButtonElement>('[data-menu-toggle]');
+    toggle?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = menu.hasAttribute('data-open');
+      closeAll(menu);
+      if (open) {
+        menu.removeAttribute('data-open');
+        toggle.setAttribute('aria-expanded', 'false');
+      } else {
+        menu.setAttribute('data-open', '');
+        toggle.setAttribute('aria-expanded', 'true');
+      }
+    });
+  }
+  document.addEventListener('click', () => closeAll());
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAll();
+  });
+
+  // 主题选择 + 当前项高亮
+  const opts = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-theme-set]'));
+  function syncChecked() {
+    const cur = currentThemeId();
+    for (const o of opts) o.setAttribute('aria-checked', String(o.dataset.themeSet === cur));
+  }
+  for (const o of opts) {
+    o.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (o.dataset.themeSet) applyTheme(o.dataset.themeSet);
+      syncChecked();
+      closeAll();
+    });
+  }
+  syncChecked();
+  window.addEventListener('vt:themechange', syncChecked);
+</script>

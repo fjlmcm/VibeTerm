@@ -1,0 +1,113 @@
+---
+import type { Locale } from '../../i18n';
+import { useTranslations } from '../../i18n';
+import { RELEASES_URL, REPO_URL } from '../../lib/site';
+
+interface Props {
+  lang: Locale;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+---
+
+<section id="download" class="download">
+  <div class="bg-grid" aria-hidden="true"></div>
+  <div class="container-narrow inner" data-reveal>
+    <h2 class="dl-title">{t('section.download.title')}</h2>
+    <p class="dl-sub">{t('section.download.subtitle')}</p>
+
+    <div class="cta">
+      <a class="btn primary mono" href={RELEASES_URL} target="_blank" rel="noopener noreferrer">
+        {t('download.macos')}
+      </a>
+      <a class="btn ghost mono" href={REPO_URL} target="_blank" rel="noopener noreferrer">
+        {t('download.github')}
+      </a>
+    </div>
+
+    <p class="note mono">{t('download.note')}</p>
+    <a class="build mono" href={REPO_URL} target="_blank" rel="noopener noreferrer">
+      {t('download.build')} →
+    </a>
+  </div>
+</section>
+
+<style>
+  .download {
+    position: relative;
+    padding-block: calc(var(--space-section) * 1.1);
+    overflow: hidden;
+    text-align: center;
+  }
+  .bg-grid {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+  }
+  .inner {
+    position: relative;
+    z-index: 1;
+  }
+  .dl-title {
+    font-size: var(--text-2xl);
+    margin-bottom: 0.8rem;
+  }
+  .dl-sub {
+    color: var(--text-dim);
+    font-size: var(--text-lg);
+    max-width: 50ch;
+    margin: 0 auto 2.2rem;
+  }
+  .cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    justify-content: center;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 50px;
+    padding-inline: 1.6rem;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    font-size: var(--text-base);
+    transition:
+      transform var(--dur-fast) var(--ease-out-quart),
+      filter var(--dur-fast),
+      border-color var(--dur-fast);
+  }
+  .btn.primary {
+    background: var(--accent);
+    color: var(--bg);
+    box-shadow: 0 10px 36px -12px color-mix(in oklab, var(--accent) 65%, transparent);
+  }
+  .btn.primary:hover {
+    filter: brightness(1.08);
+    transform: translateY(-2px);
+  }
+  .btn.ghost {
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .btn.ghost:hover {
+    border-color: var(--accent);
+    transform: translateY(-2px);
+  }
+  .note {
+    margin-top: 1.5rem;
+    font-size: var(--text-xs);
+    color: var(--text-dim);
+  }
+  .build {
+    display: inline-block;
+    margin-top: 0.5rem;
+    font-size: var(--text-sm);
+    color: var(--accent);
+    transition: opacity var(--dur-fast);
+  }
+  .build:hover {
+    opacity: 0.75;
+  }
+</style>

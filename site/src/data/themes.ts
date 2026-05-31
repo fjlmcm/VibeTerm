@@ -1,0 +1,461 @@
+// VibeTerm 官网主题调色板 —— 1:1 移植自产品内置主题
+// 源:src-tauri/crates/vibeterm-config/src/theme.rs(builtins())
+// shell.* 驱动官网整体 UI;terminal.* 驱动「活终端窗口」与主题画廊里的 ANSI 演示。
+
+export type Appearance = 'dark' | 'light';
+
+export interface ThemeShell {
+  background: string;
+  surface: string;
+  border: string;
+  textPrimary: string;
+  textSecondary: string;
+  accent: string;
+  accentSubtle: string;
+  statusRunning: string;
+  statusWaiting: string;
+  statusIdle: string;
+}
+
+export interface ThemeTerminal {
+  background: string;
+  foreground: string;
+  cursor: string;
+  selectionBg: string;
+  black: string;
+  red: string;
+  green: string;
+  yellow: string;
+  blue: string;
+  magenta: string;
+  cyan: string;
+  white: string;
+  brightBlack: string;
+  brightRed: string;
+  brightGreen: string;
+  brightYellow: string;
+  brightBlue: string;
+  brightMagenta: string;
+  brightCyan: string;
+  brightWhite: string;
+}
+
+export interface ThemePalette {
+  id: string;
+  name: string;
+  appearance: Appearance;
+  author: string;
+  shell: ThemeShell;
+  terminal: ThemeTerminal;
+}
+
+export const THEMES: ThemePalette[] = [
+  {
+    id: 'vibe',
+    name: 'Vibe',
+    appearance: 'dark',
+    author: 'Built-in',
+    shell: {
+      background: '#0d0e14',
+      surface: '#161821',
+      border: '#252836',
+      textPrimary: '#e6e8ed',
+      textSecondary: '#8b91a3',
+      accent: '#7c9cff',
+      accentSubtle: '#3e4a7a',
+      statusRunning: '#7cb3ff',
+      statusWaiting: '#ffb86c',
+      statusIdle: '#525569',
+    },
+    terminal: {
+      background: '#0d0e14',
+      foreground: '#e6e8ed',
+      cursor: '#7c9cff',
+      selectionBg: '#2a3050',
+      black: '#1a1c25',
+      red: '#ff6b81',
+      green: '#9eea6a',
+      yellow: '#ffd866',
+      blue: '#7c9cff',
+      magenta: '#c792ea',
+      cyan: '#62d6e8',
+      white: '#cfd2da',
+      brightBlack: '#3a3d4a',
+      brightRed: '#ff7b91',
+      brightGreen: '#aeea7a',
+      brightYellow: '#ffe276',
+      brightBlue: '#8cacff',
+      brightMagenta: '#d7a2fa',
+      brightCyan: '#72e6f8',
+      brightWhite: '#e6e8ed',
+    },
+  },
+  {
+    id: 'nord',
+    name: 'Nord',
+    appearance: 'dark',
+    author: 'Built-in (based on nordtheme.com)',
+    shell: {
+      background: '#2e3440',
+      surface: '#3b4252',
+      border: '#434c5e',
+      textPrimary: '#eceff4',
+      textSecondary: '#d8dee9',
+      accent: '#88c0d0',
+      accentSubtle: '#5e81ac',
+      statusRunning: '#81a1c1',
+      statusWaiting: '#ebcb8b',
+      statusIdle: '#4c566a',
+    },
+    terminal: {
+      background: '#2e3440',
+      foreground: '#d8dee9',
+      cursor: '#d8dee9',
+      selectionBg: '#434c5e',
+      black: '#3b4252',
+      red: '#bf616a',
+      green: '#a3be8c',
+      yellow: '#ebcb8b',
+      blue: '#81a1c1',
+      magenta: '#b48ead',
+      cyan: '#88c0d0',
+      white: '#e5e9f0',
+      brightBlack: '#4c566a',
+      brightRed: '#bf616a',
+      brightGreen: '#a3be8c',
+      brightYellow: '#ebcb8b',
+      brightBlue: '#81a1c1',
+      brightMagenta: '#b48ead',
+      brightCyan: '#8fbcbb',
+      brightWhite: '#eceff4',
+    },
+  },
+  {
+    id: 'tokyo-night',
+    name: 'Tokyo Night',
+    appearance: 'dark',
+    author: 'Built-in (based on enkia/tokyo-night)',
+    shell: {
+      background: '#1a1b26',
+      surface: '#16161e',
+      border: '#292e42',
+      textPrimary: '#c0caf5',
+      textSecondary: '#9aa5ce',
+      accent: '#7aa2f7',
+      accentSubtle: '#3d59a1',
+      statusRunning: '#7aa2f7',
+      statusWaiting: '#e0af68',
+      statusIdle: '#414868',
+    },
+    terminal: {
+      background: '#1a1b26',
+      foreground: '#c0caf5',
+      cursor: '#c0caf5',
+      selectionBg: '#33467c',
+      black: '#15161e',
+      red: '#f7768e',
+      green: '#9ece6a',
+      yellow: '#e0af68',
+      blue: '#7aa2f7',
+      magenta: '#bb9af7',
+      cyan: '#7dcfff',
+      white: '#a9b1d6',
+      brightBlack: '#414868',
+      brightRed: '#f7768e',
+      brightGreen: '#9ece6a',
+      brightYellow: '#e0af68',
+      brightBlue: '#7aa2f7',
+      brightMagenta: '#bb9af7',
+      brightCyan: '#7dcfff',
+      brightWhite: '#c0caf5',
+    },
+  },
+  {
+    id: 'catppuccin-mocha',
+    name: 'Catppuccin Mocha',
+    appearance: 'dark',
+    author: 'Built-in',
+    shell: {
+      background: '#1e1e2e',
+      surface: '#181825',
+      border: '#313244',
+      textPrimary: '#cdd6f4',
+      textSecondary: '#a6adc8',
+      accent: '#cba6f7',
+      accentSubtle: '#585b70',
+      statusRunning: '#89b4fa',
+      statusWaiting: '#f9e2af',
+      statusIdle: '#45475a',
+    },
+    terminal: {
+      background: '#1e1e2e',
+      foreground: '#cdd6f4',
+      cursor: '#f5e0dc',
+      selectionBg: '#45475a',
+      black: '#45475a',
+      red: '#f38ba8',
+      green: '#a6e3a1',
+      yellow: '#f9e2af',
+      blue: '#89b4fa',
+      magenta: '#f5c2e7',
+      cyan: '#94e2d5',
+      white: '#bac2de',
+      brightBlack: '#585b70',
+      brightRed: '#f38ba8',
+      brightGreen: '#a6e3a1',
+      brightYellow: '#f9e2af',
+      brightBlue: '#89b4fa',
+      brightMagenta: '#f5c2e7',
+      brightCyan: '#94e2d5',
+      brightWhite: '#a6adc8',
+    },
+  },
+  {
+    id: 'catppuccin-latte',
+    name: 'Catppuccin Latte',
+    appearance: 'light',
+    author: 'Built-in',
+    shell: {
+      background: '#eff1f5',
+      surface: '#e6e9ef',
+      border: '#bcc0cc',
+      textPrimary: '#4c4f69',
+      textSecondary: '#6c6f85',
+      accent: '#8839ef',
+      accentSubtle: '#ccd0da',
+      statusRunning: '#1e66f5',
+      statusWaiting: '#df8e1d',
+      statusIdle: '#9ca0b0',
+    },
+    terminal: {
+      background: '#eff1f5',
+      foreground: '#4c4f69',
+      cursor: '#dc8a78',
+      selectionBg: '#ccd0da',
+      black: '#5c5f77',
+      red: '#d20f39',
+      green: '#40a02b',
+      yellow: '#df8e1d',
+      blue: '#1e66f5',
+      magenta: '#ea76cb',
+      cyan: '#179299',
+      white: '#acb0be',
+      brightBlack: '#6c6f85',
+      brightRed: '#d20f39',
+      brightGreen: '#40a02b',
+      brightYellow: '#df8e1d',
+      brightBlue: '#1e66f5',
+      brightMagenta: '#ea76cb',
+      brightCyan: '#179299',
+      brightWhite: '#bcc0cc',
+    },
+  },
+  {
+    id: 'solarized-dark',
+    name: 'Solarized Dark',
+    appearance: 'dark',
+    author: 'Built-in (Ethan Schoonover)',
+    shell: {
+      background: '#002b36',
+      surface: '#073642',
+      border: '#586e75',
+      textPrimary: '#fdf6e3',
+      textSecondary: '#93a1a1',
+      accent: '#268bd2',
+      accentSubtle: '#073642',
+      statusRunning: '#268bd2',
+      statusWaiting: '#b58900',
+      statusIdle: '#586e75',
+    },
+    terminal: {
+      background: '#002b36',
+      foreground: '#839496',
+      cursor: '#93a1a1',
+      selectionBg: '#073642',
+      black: '#073642',
+      red: '#dc322f',
+      green: '#859900',
+      yellow: '#b58900',
+      blue: '#268bd2',
+      magenta: '#d33682',
+      cyan: '#2aa198',
+      white: '#eee8d5',
+      brightBlack: '#002b36',
+      brightRed: '#cb4b16',
+      brightGreen: '#586e75',
+      brightYellow: '#657b83',
+      brightBlue: '#839496',
+      brightMagenta: '#6c71c4',
+      brightCyan: '#93a1a1',
+      brightWhite: '#fdf6e3',
+    },
+  },
+  {
+    id: 'solarized-light',
+    name: 'Solarized Light',
+    appearance: 'light',
+    author: 'Built-in (Ethan Schoonover)',
+    shell: {
+      background: '#fdf6e3',
+      surface: '#eee8d5',
+      border: '#93a1a1',
+      textPrimary: '#002b36',
+      textSecondary: '#586e75',
+      accent: '#268bd2',
+      accentSubtle: '#eee8d5',
+      statusRunning: '#268bd2',
+      statusWaiting: '#b58900',
+      statusIdle: '#93a1a1',
+    },
+    terminal: {
+      background: '#fdf6e3',
+      foreground: '#657b83',
+      cursor: '#586e75',
+      selectionBg: '#eee8d5',
+      black: '#073642',
+      red: '#dc322f',
+      green: '#859900',
+      yellow: '#b58900',
+      blue: '#268bd2',
+      magenta: '#d33682',
+      cyan: '#2aa198',
+      white: '#eee8d5',
+      brightBlack: '#002b36',
+      brightRed: '#cb4b16',
+      brightGreen: '#586e75',
+      brightYellow: '#657b83',
+      brightBlue: '#839496',
+      brightMagenta: '#6c71c4',
+      brightCyan: '#93a1a1',
+      brightWhite: '#fdf6e3',
+    },
+  },
+  {
+    id: 'github-light',
+    name: 'GitHub Light',
+    appearance: 'light',
+    author: 'Built-in (GitHub Primer)',
+    shell: {
+      background: '#ffffff',
+      surface: '#f6f8fa',
+      border: '#d0d7de',
+      textPrimary: '#1f2328',
+      textSecondary: '#656d76',
+      accent: '#0969da',
+      accentSubtle: '#ddf4ff',
+      statusRunning: '#0969da',
+      statusWaiting: '#bf8700',
+      statusIdle: '#8c959f',
+    },
+    terminal: {
+      background: '#ffffff',
+      foreground: '#24292f',
+      cursor: '#1f2328',
+      selectionBg: '#ddf4ff',
+      black: '#24292f',
+      red: '#cf222e',
+      green: '#116329',
+      yellow: '#4d2d00',
+      blue: '#0969da',
+      magenta: '#8250df',
+      cyan: '#1b7c83',
+      white: '#6e7781',
+      brightBlack: '#57606a',
+      brightRed: '#a40e26',
+      brightGreen: '#1a7f37',
+      brightYellow: '#633c01',
+      brightBlue: '#218bff',
+      brightMagenta: '#a475f9',
+      brightCyan: '#3192aa',
+      brightWhite: '#8c959f',
+    },
+  },
+  {
+    id: 'one-dark-pro',
+    name: 'One Dark Pro',
+    appearance: 'dark',
+    author: 'Built-in (Atom One Dark)',
+    shell: {
+      background: '#282c34',
+      surface: '#21252b',
+      border: '#3e4451',
+      textPrimary: '#abb2bf',
+      textSecondary: '#5c6370',
+      accent: '#61afef',
+      accentSubtle: '#3e4451',
+      statusRunning: '#61afef',
+      statusWaiting: '#e5c07b',
+      statusIdle: '#5c6370',
+    },
+    terminal: {
+      background: '#282c34',
+      foreground: '#abb2bf',
+      cursor: '#528bff',
+      selectionBg: '#3e4451',
+      black: '#282c34',
+      red: '#e06c75',
+      green: '#98c379',
+      yellow: '#e5c07b',
+      blue: '#61afef',
+      magenta: '#c678dd',
+      cyan: '#56b6c2',
+      white: '#abb2bf',
+      brightBlack: '#5c6370',
+      brightRed: '#e06c75',
+      brightGreen: '#98c379',
+      brightYellow: '#e5c07b',
+      brightBlue: '#61afef',
+      brightMagenta: '#c678dd',
+      brightCyan: '#56b6c2',
+      brightWhite: '#ffffff',
+    },
+  },
+  {
+    id: 'gruvbox',
+    name: 'Gruvbox',
+    appearance: 'dark',
+    author: 'Built-in (morhetz)',
+    shell: {
+      background: '#282828',
+      surface: '#1d2021',
+      border: '#3c3836',
+      textPrimary: '#ebdbb2',
+      textSecondary: '#a89984',
+      accent: '#fabd2f',
+      accentSubtle: '#504945',
+      statusRunning: '#83a598',
+      statusWaiting: '#fabd2f',
+      statusIdle: '#665c54',
+    },
+    terminal: {
+      background: '#282828',
+      foreground: '#ebdbb2',
+      cursor: '#ebdbb2',
+      selectionBg: '#504945',
+      black: '#282828',
+      red: '#cc241d',
+      green: '#98971a',
+      yellow: '#d79921',
+      blue: '#458588',
+      magenta: '#b16286',
+      cyan: '#689d6a',
+      white: '#a89984',
+      brightBlack: '#928374',
+      brightRed: '#fb4934',
+      brightGreen: '#b8bb26',
+      brightYellow: '#fabd2f',
+      brightBlue: '#83a598',
+      brightMagenta: '#d3869b',
+      brightCyan: '#8ec07c',
+      brightWhite: '#ebdbb2',
+    },
+  },
+];
+
+export const DEFAULT_THEME_ID = 'gruvbox';
+
+export const THEME_IDS = THEMES.map((t) => t.id);
+
+export function themeById(id: string): ThemePalette {
+  return THEMES.find((t) => t.id === id) ?? THEMES[0];
+}

@@ -1,0 +1,83 @@
+/* 全局设计 token —— 不随主题变化的部分。
+   主题色变量(--bg / --accent / --term-* 等)由 ThemeStyles 组件按 html[data-theme] 注入。
+   :root 默认值 = Vibe 主题,作为无 JS / 首屏兜底。 */
+
+:root {
+  /* ── 字体(Geist:无衬线 display/正文;Geist Mono:代码/终端;CJK 走系统) ── */
+  --font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans', 'Apple SD Gothic Neo', 'Noto Sans CJK SC', 'Noto Sans KR', 'Malgun Gothic',
+    'Microsoft YaHei', sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, 'PingFang SC',
+    'Hiragino Sans', 'Apple SD Gothic Neo', 'Noto Sans CJK SC', 'Noto Sans KR', 'Malgun Gothic',
+    'Microsoft YaHei', monospace;
+
+  /* ── 流体字号 ── */
+  --text-xs: clamp(0.72rem, 0.69rem + 0.12vw, 0.78rem);
+  --text-sm: clamp(0.82rem, 0.78rem + 0.16vw, 0.92rem);
+  --text-base: clamp(0.95rem, 0.9rem + 0.24vw, 1.06rem);
+  --text-lg: clamp(1.1rem, 1rem + 0.5vw, 1.4rem);
+  --text-xl: clamp(1.35rem, 1.15rem + 1vw, 2.1rem);
+  --text-2xl: clamp(2rem, 1.5rem + 2.2vw, 3.4rem);
+  --text-3xl: clamp(2.6rem, 1.8rem + 3.6vw, 4.8rem);
+  --text-hero: clamp(2.9rem, 1.5rem + 5.4vw, 6rem);
+
+  /* ── 间距 / 布局 ── */
+  --space-section: clamp(5.5rem, 4rem + 7vw, 12rem);
+  --maxw: 1180px;
+  --maxw-narrow: 760px;
+  --gutter: clamp(1.25rem, 0.8rem + 2.2vw, 3rem);
+  --nav-h: 64px;
+
+  /* ── 圆角 ── */
+  --radius-sm: 8px;
+  --radius: 14px;
+  --radius-lg: 22px;
+
+  /* ── 动效 ── */
+  --dur-fast: 150ms;
+  --dur-normal: 320ms;
+  --dur-slow: 680ms;
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+
+  /* ── 玻璃 + 光效(随主题色) ── */
+  --glass-bg: color-mix(in oklab, var(--surface) 50%, transparent);
+  --glass-bg-strong: color-mix(in oklab, var(--surface) 72%, transparent);
+  --glass-brd: color-mix(in oklab, var(--text) 14%, transparent);
+  --glass-brd-hi: color-mix(in oklab, var(--accent) 55%, transparent);
+  --glass-blur: 18px;
+  --glow: color-mix(in oklab, var(--accent) 50%, transparent);
+  --shadow-lg: 0 32px 64px -28px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 48px -10px var(--glow);
+
+  /* ── 默认主题色(Gruvbox),被 html[data-theme] 覆盖 ── */
+  --bg: #282828;
+  --surface: #1d2021;
+  --border: #3c3836;
+  --text: #ebdbb2;
+  --text-dim: #a89984;
+  --accent: #fabd2f;
+  --accent-subtle: #504945;
+  --st-running: #83a598;
+  --st-waiting: #fabd2f;
+  --st-idle: #665c54;
+  --st-stalled: #fb4934;
+  --st-done: #98971a;
+  --term-bg: #282828;
+  --term-fg: #ebdbb2;
+  --term-cursor: #ebdbb2;
+  --term-sel: #504945;
+  --term-red: #cc241d;
+  --term-green: #98971a;
+  --term-yellow: #d79921;
+  --term-blue: #458588;
+  --term-magenta: #b16286;
+  --term-cyan: #689d6a;
+
+  color-scheme: dark;
+}
+
+[data-appearance='light'] {
+  color-scheme: light;
+}

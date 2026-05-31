@@ -1,0 +1,148 @@
+{
+  "sounds": [
+    {
+      "id": "ding1",
+      "name": "Ding 1",
+      "category": "notification",
+      "file": "ding1.mp3"
+    },
+    {
+      "id": "ding3",
+      "name": "Ding 3",
+      "category": "notification",
+      "file": "ding3.mp3"
+    },
+    {
+      "id": "bell",
+      "name": "Bell",
+      "category": "notification",
+      "file": "bell.mp3"
+    },
+    {
+      "id": "ping",
+      "name": "Ping",
+      "category": "notification",
+      "file": "ping.mp3"
+    },
+    {
+      "id": "effect",
+      "name": "Effect",
+      "category": "notification",
+      "file": "effect.mp3"
+    },
+    {
+      "id": "tone09",
+      "name": "Tone 9",
+      "category": "notification",
+      "file": "tone09.mp3"
+    },
+    {
+      "id": "tone17",
+      "name": "Tone 17",
+      "category": "notification",
+      "file": "tone17.mp3"
+    },
+    {
+      "id": "tone20",
+      "name": "Tone 20",
+      "category": "notification",
+      "file": "tone20.mp3"
+    },
+    {
+      "id": "tone21",
+      "name": "Tone 21",
+      "category": "notification",
+      "file": "tone21.mp3"
+    },
+    {
+      "id": "tone22",
+      "name": "Tone 22",
+      "category": "notification",
+      "file": "tone22.mp3"
+    },
+    {
+      "id": "tone24",
+      "name": "Tone 24",
+      "category": "notification",
+      "file": "tone24.mp3"
+    },
+    {
+      "id": "tone26",
+      "name": "Tone 26",
+      "category": "notification",
+      "file": "tone26.mp3"
+    },
+    {
+      "id": "passage",
+      "name": "Passage",
+      "category": "tone",
+      "file": "passage.mp3"
+    },
+    {
+      "id": "piano",
+      "name": "Piano",
+      "category": "tone",
+      "file": "piano.mp3"
+    },
+    {
+      "id": "puretone",
+      "name": "Pure Tone",
+      "category": "tone",
+      "file": "puretone.mp3"
+    },
+    {
+      "id": "type11",
+      "name": "Type 11",
+      "category": "tone",
+      "file": "type11.mp3"
+    },
+    {
+      "id": "type12",
+      "name": "Type 12",
+      "category": "tone",
+      "file": "type12.mp3"
+    },
+    {
+      "id": "voice-yes",
+      "name": "Voice: Yes",
+      "category": "voice",
+      "file": "voice-yes.mp3"
+    },
+    {
+      "id": "voice-woo",
+      "name": "Voice: Woo",
+      "category": "voice",
+      "file": "voice-woo.mp3"
+    },
+    {
+      "id": "voice-ya",
+      "name": "Voice: Ya",
+      "category": "voice",
+      "file": "voice-ya.mp3"
+    },
+    {
+      "id": "success",
+      "name": "Success Chime",
+      "category": "ui",
+      "file": "success.mp3"
+    },
+    {
+      "id": "mountain-king",
+      "name": "Mountain King",
+      "category": "other",
+      "file": "mountain-king.mp3"
+    },
+    {
+      "id": "ringtone1",
+      "name": "Ringtone 1",
+      "category": "ringtone",
+      "file": "ringtone1.mp3"
+    },
+    {
+      "id": "ringtone2",
+      "name": "Ringtone 2",
+      "category": "ringtone",
+      "file": "ringtone2.mp3"
+    }
+  ]
+}

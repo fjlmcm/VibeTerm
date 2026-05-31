@@ -1,0 +1,27 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability for M0 — PTY end-to-end",
+  "windows": ["main", "floating*"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-create",
+    "core:window:allow-close",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-is-maximized",
+    "core:webview:default",
+    "core:webview:allow-create-webview-window",
+    "clipboard-manager:allow-read-text",
+    "notification:default",
+    "notification:allow-notify",
+    "dialog:default",
+    "dialog:allow-open"
+  ]
+}

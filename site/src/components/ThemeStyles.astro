@@ -1,0 +1,26 @@
+---
+// 单一数据源:把 10 套主题编译为静态 [data-theme] CSS 变量块。
+// build 期生成进 HTML —— 零运行时、无 FOUC,主题切换只改 data-theme 属性。
+import { THEMES } from '../data/themes';
+
+const css = THEMES.map((t) => {
+  const s = t.shell;
+  const m = t.terminal;
+  return (
+    `html[data-theme="${t.id}"]{` +
+    `--bg:${s.background};--surface:${s.surface};--border:${s.border};` +
+    `--text:${s.textPrimary};--text-dim:${s.textSecondary};` +
+    `--accent:${s.accent};--accent-subtle:${s.accentSubtle};` +
+    `--st-running:${s.statusRunning};--st-waiting:${s.statusWaiting};--st-idle:${s.statusIdle};` +
+    `--st-stalled:${m.brightRed};--st-done:${m.green};` +
+    `--term-bg:${m.background};--term-fg:${m.foreground};--term-cursor:${m.cursor};--term-sel:${m.selectionBg};` +
+    `--term-black:${m.black};--term-red:${m.red};--term-green:${m.green};--term-yellow:${m.yellow};` +
+    `--term-blue:${m.blue};--term-magenta:${m.magenta};--term-cyan:${m.cyan};--term-white:${m.white};` +
+    `--term-br-black:${m.brightBlack};--term-br-red:${m.brightRed};--term-br-green:${m.brightGreen};--term-br-yellow:${m.brightYellow};` +
+    `--term-br-blue:${m.brightBlue};--term-br-magenta:${m.brightMagenta};--term-br-cyan:${m.brightCyan};--term-br-white:${m.brightWhite};` +
+    `}`
+  );
+}).join('');
+---
+
+<style is:global set:html={css}></style>

@@ -1,0 +1,27 @@
+{
+  "name": "vibeterm-site",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "description": "VibeTerm marketing site — static, multi-theme, multi-language",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check",
+    "check:i18n": "node scripts/check-i18n.mjs"
+  },
+  "dependencies": {
+    "@fontsource-variable/geist": "^5.2.9",
+    "@fontsource-variable/geist-mono": "^5.2.8",
+    "@fontsource/jetbrains-mono": "^5",
+    "astro": "^5",
+    "gsap": "^3",
+    "lenis": "^1",
+    "motion": "^11"
+  },
+  "devDependencies": {
+    "@astrojs/check": "^0.9",
+    "typescript": "^5.6"
+  }
+}
