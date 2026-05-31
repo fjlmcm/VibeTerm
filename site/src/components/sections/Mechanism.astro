@@ -1,0 +1,244 @@
+---
+import type { Locale } from '../../i18n';
+import { useTranslations } from '../../i18n';
+
+interface Props {
+  lang: Locale;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+
+const layers = [1, 2, 3];
+const states = ['running', 'waiting', 'stalled', 'idle', 'done'];
+---
+
+<section id="mechanism" class="mechanism">
+  <div class="container">
+    <header class="head">
+      <p class="kicker" data-reveal>{t('section.mechanism.kicker')}</p>
+      <h2 class="section-title" data-reveal>{t('section.mechanism.title')}</h2>
+      <p class="lede" data-reveal>{t('section.mechanism.subtitle')}</p>
+    </header>
+
+    <div class="layers">
+      {
+        layers.map((n, i) => (
+          <article class="layer" data-reveal data-reveal-delay={`${i * 70}ms`}>
+            <span class="lnum mono">0{n}</span>
+            <h3>{t(`mechanism.layer${n}.title`)}</h3>
+            <p>{t(`mechanism.layer${n}.desc`)}</p>
+          </article>
+        ))
+      }
+    </div>
+
+    <div class="redline" data-reveal>
+      <div class="rl-glyph mono" aria-hidden="true">
+        <span class="rl-strike">write(~/.claude)</span>
+        <span class="rl-no">⊘</span>
+      </div>
+      <div class="rl-copy">
+        <h3>{t('mechanism.redline.title')}</h3>
+        <p>{t('mechanism.redline.desc')}</p>
+      </div>
+    </div>
+
+    <div class="states" data-reveal>
+      <h3 class="states-title mono">{t('mechanism.states.title')}</h3>
+      <div class="state-grid">
+        {
+          states.map((s) => (
+            <div class="state">
+              <span class:list={['sdot', s]} aria-hidden="true" />
+              <div class="state-copy">
+                <strong>{t(`states.${s}.label`)}</strong>
+                <span>{t(`states.${s}.desc`)}</span>
+              </div>
+            </div>
+          ))
+        }
+      </div>
+    </div>
+  </div>
+</section>
+
+<style>
+  .mechanism {
+    padding-block: var(--space-section);
+  }
+  .head {
+    max-width: 62ch;
+    margin-bottom: 3rem;
+  }
+
+  /* 三层 */
+  .layers {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+    counter-reset: layer;
+  }
+  .layer {
+    position: relative;
+    padding: 1.8rem 1.5rem;
+    border: 1px solid var(--glass-brd);
+    border-radius: var(--radius);
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
+    transition:
+      border-color var(--dur-normal),
+      transform var(--dur-normal) var(--ease-out-quart);
+  }
+  .layer:hover {
+    border-color: var(--glass-brd-hi);
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-glow);
+  }
+  .lnum {
+    font-size: 2.4rem;
+    font-weight: 700;
+    line-height: 1;
+    color: color-mix(in oklab, var(--accent) 60%, transparent);
+  }
+  .layer h3 {
+    font-size: var(--text-lg);
+    margin: 0.8rem 0 0.5rem;
+  }
+  .layer p {
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+  }
+
+  /* 红线 banner */
+  .redline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1.5rem 2.5rem;
+    margin-top: 1rem;
+    padding: 1.8rem 2rem;
+    border: 1px solid color-mix(in oklab, var(--st-stalled) 40%, var(--border));
+    border-radius: var(--radius);
+    background:
+      radial-gradient(
+        120% 120% at 0% 50%,
+        color-mix(in oklab, var(--st-stalled) 14%, transparent),
+        transparent 60%
+      ),
+      color-mix(in oklab, var(--surface) 60%, transparent);
+  }
+  .rl-glyph {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.8rem;
+    font-size: var(--text-lg);
+    flex: none;
+  }
+  .rl-strike {
+    color: var(--text-dim);
+    text-decoration: line-through;
+    text-decoration-color: var(--st-stalled);
+    text-decoration-thickness: 2px;
+  }
+  .rl-no {
+    color: var(--st-stalled);
+    font-size: 1.5em;
+  }
+  .rl-copy h3 {
+    font-size: var(--text-lg);
+    margin-bottom: 0.4rem;
+  }
+  .rl-copy p {
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+    max-width: 64ch;
+  }
+
+  /* 5 态 */
+  .states {
+    margin-top: 3rem;
+  }
+  .states-title {
+    font-size: var(--text-lg);
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+  }
+  .state-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.2rem 1.5rem;
+  }
+  .state {
+    display: flex;
+    gap: 0.8rem;
+    align-items: flex-start;
+  }
+  .sdot {
+    flex: none;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-top: 0.4rem;
+    background: var(--st-idle);
+  }
+  .sdot.running {
+    background: var(--st-running);
+    box-shadow: 0 0 10px color-mix(in oklab, var(--st-running) 80%, transparent);
+  }
+  .sdot.waiting {
+    background: var(--st-waiting);
+    box-shadow: 0 0 12px color-mix(in oklab, var(--st-waiting) 85%, transparent);
+    animation: vt-breathe 2s var(--ease-in-out) infinite;
+  }
+  .sdot.stalled {
+    width: 12px;
+    height: 12px;
+    background: transparent;
+    border: 2px solid var(--st-stalled);
+    margin-top: 0.32rem;
+    animation: vt-breathe 3s var(--ease-in-out) infinite;
+  }
+  .sdot.done {
+    width: 12px;
+    height: 12px;
+    background: transparent;
+    border: 2px solid var(--st-done);
+    margin-top: 0.32rem;
+  }
+  .state-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .state-copy strong {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 700;
+  }
+  .state-copy span {
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+  }
+
+  @keyframes vt-breathe {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.45;
+      transform: scale(0.82);
+    }
+  }
+
+  @media (max-width: 820px) {
+    .layers {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>

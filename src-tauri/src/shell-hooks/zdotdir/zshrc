@@ -1,0 +1,56 @@
+# VibeTerm shell integration — .zshrc wrapper
+#
+# 由 VibeTerm spawn 时设的临时 ZDOTDIR 加载(纯注入,不写用户 dotfiles)。
+# 先串接用户原始 .zshrc,再注册 OSC 133 prompt/command 标记,让 VibeTerm 的
+# 状态嗅探拿到 shell 权威的命令边界 + 退出码(而非靠时序启发式猜)。
+#
+# ZDOTDIR 链接骨架移植自 VS Code shell integration (MIT);
+# OSC 133 发射逻辑沿用 VibeTerm shell-hooks/zsh.sh,与手动粘贴版完全一致
+# (函数同名 → add-zsh-hook 自动去重,两者并存也不会双发)。
+builtin autoload -Uz add-zsh-hook
+
+# 防递归:集成重入 setup 时直接还原 ZDOTDIR 返回
+if [ -n "$VIBETERM_SHELL_INTEGRATION" ]; then
+	ZDOTDIR=$VIBETERM_USER_ZDOTDIR
+	builtin return
+fi
+VIBETERM_SHELL_INTEGRATION=1
+
+# ZDOTDIR 覆盖会把 $HISTFILE 挪到注入目录;source 用户 .zshrc 前先还原默认,
+# 否则本终端历史与其它终端不互通。
+if [[ "$VIBETERM_INJECTION" == "1" ]]; then
+	HISTFILE=$VIBETERM_USER_ZDOTDIR/.zsh_history
+fi
+
+# 串接用户真实 .zshrc(从其原始 ZDOTDIR)
+if [[ "$VIBETERM_INJECTION" == "1" ]]; then
+	if [[ $options[norcs] = off && -f $VIBETERM_USER_ZDOTDIR/.zshrc ]]; then
+		VIBETERM_ZDOTDIR=$ZDOTDIR
+		ZDOTDIR=$VIBETERM_USER_ZDOTDIR
+		. $VIBETERM_USER_ZDOTDIR/.zshrc
+	fi
+fi
+
+# ---- OSC 133 集成(由 vibeterm-status 嗅探) ----
+# 133;D 上一条命令结束 + 退出码; 133;A prompt 开始(等待输入); 133;C 命令开始执行
+__vibeterm_precmd() {
+	local exit_code=$?
+	builtin printf '\e]133;D;%d\e\\' "$exit_code"
+	builtin printf '\e]133;A\e\\'
+}
+__vibeterm_preexec() {
+	builtin printf '\e]133;C\e\\'
+}
+# OSC 7 — 上报当前工作目录
+__vibeterm_chpwd() {
+	builtin printf '\e]7;file://%s%s\e\\' "$HOST" "$PWD"
+}
+add-zsh-hook precmd __vibeterm_precmd
+add-zsh-hook preexec __vibeterm_preexec
+add-zsh-hook chpwd __vibeterm_chpwd
+__vibeterm_chpwd  # 首次 cwd 上报
+
+# 非 login shell:还原 ZDOTDIR 为用户目录(mirrors VS Code)
+if [[ $options[login] = off && $VIBETERM_USER_ZDOTDIR != $VIBETERM_ZDOTDIR ]]; then
+	ZDOTDIR=$VIBETERM_USER_ZDOTDIR
+fi

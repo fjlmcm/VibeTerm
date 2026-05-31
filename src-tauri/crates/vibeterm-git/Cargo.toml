@@ -1,0 +1,15 @@
+[package]
+name = "vibeterm-git"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+serde      = { workspace = true }
+thiserror  = { workspace = true }
+tokio      = { workspace = true, features = ["process", "io-util"] }
+tracing    = { workspace = true }
+
+[dev-dependencies]
+tokio      = { workspace = true, features = ["macros", "rt-multi-thread", "process"] }
+tempfile   = "3"

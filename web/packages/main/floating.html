@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>VibeTerm — Floating</title>
+    <link rel="stylesheet" href="/node_modules/@xterm/xterm/css/xterm.css" />
+    <style>
+      :root { color-scheme: dark; --color-bg: #111; }
+      html, body { margin: 0; padding: 0; height: 100%; background: var(--color-bg); }
+      #root { display: block; width: 100%; height: 100vh; }
+      *::-webkit-scrollbar { width: 10px; height: 10px; }
+      *::-webkit-scrollbar-track { background: transparent; }
+      *::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 5px; }
+      *::-webkit-scrollbar-thumb:hover { background: var(--color-text-2); }
+      *::-webkit-scrollbar-corner { background: transparent; }
+    </style>
+    <script>
+      try {
+        var cached = localStorage.getItem("vibeterm.theme.bg");
+        if (cached) document.documentElement.style.setProperty("--color-bg", cached);
+        var cs = localStorage.getItem("vibeterm.theme.appearance");
+        if (cs === "light") document.documentElement.style.colorScheme = "light";
+      } catch (_) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/floating.tsx"></script>
+  </body>
+</html>

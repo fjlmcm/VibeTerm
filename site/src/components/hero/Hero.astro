@@ -1,0 +1,523 @@
+---
+import type { Locale } from '../../i18n';
+import { useTranslations } from '../../i18n';
+import { RELEASES_URL, REPO_URL } from '../../lib/site';
+
+interface Props {
+  lang: Locale;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+
+// 高度还原真实任务列表(源:ui-core/tasklist):agent 竖条 + 5 态点 + 名 + last_output + worktree + #序号
+const tasks = [
+  { agent: 'claude', status: 'running', name: 'auth-refactor', out: 'Editing src/auth/token.rs', branch: 'feat/auth', num: 1, active: true },
+  { agent: 'codex', status: 'waiting', name: 'api-types', out: 'Apply this change? (y/n)', branch: '', num: 2, active: false },
+  { agent: 'claude', status: 'stalled', name: 'migrate-db', out: 'waiting on network…', branch: 'db/migrate', num: 3, active: false },
+  { agent: 'aider', status: 'idle', name: 'docs-pass', out: '', branch: '', num: 4, active: false },
+  { agent: 'codex', status: 'done', name: 'unit-tests', out: '42 passed', branch: '', num: 5, active: false },
+];
+---
+
+<section id="top" class="hero">
+  <div class="hero-glow" aria-hidden="true"></div>
+
+  <div class="container hero-inner">
+    <div class="hero-copy">
+      <div class="badges" data-reveal>
+        <span class="badge mono">{t('hero.badge1')}</span>
+        <span class="badge mono">{t('hero.badge2')}</span>
+        <span class="badge mono">{t('hero.badge3')}</span>
+      </div>
+
+      <h1 class="hero-title" data-reveal data-reveal-delay="60ms">{t('hero.title')}</h1>
+      <p class="hero-sub" data-reveal data-reveal-delay="120ms">{t('hero.subtitle')}</p>
+
+      <div class="hero-cta" data-reveal data-reveal-delay="180ms">
+        <a class="btn primary" href={RELEASES_URL} target="_blank" rel="noopener noreferrer">
+          {t('hero.cta.download')}
+        </a>
+        <a class="btn ghost" href={REPO_URL} target="_blank" rel="noopener noreferrer">
+          {t('hero.cta.github')}
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true">
+            <path d="M12 .5C5.7.5.5 5.7.5 12c0 5.1 3.3 9.4 7.9 10.9.6.1.8-.3.8-.6v-2c-3.2.7-3.9-1.5-3.9-1.5-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.7 1.3 3.4 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.8 0-1.3.5-2.3 1.2-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 4.7 18.3 5 18.3 5c.6 1.6.2 2.8.1 3.1.8.8 1.2 1.8 1.2 3.1 0 4.5-2.7 5.5-5.3 5.8.4.4.8 1.1.8 2.2v3.3c0 .3.2.7.8.6 4.6-1.5 7.9-5.8 7.9-10.9C23.5 5.7 18.3.5 12 .5z" />
+          </svg>
+        </a>
+      </div>
+      <p class="hero-note mono" data-reveal data-reveal-delay="240ms">{t('hero.cta.note')}</p>
+    </div>
+
+    <div class="hero-visual" data-reveal data-reveal-delay="120ms">
+      <div class="win scanlines" data-term-window>
+        <!-- 标题栏 -->
+        <div class="win-bar">
+          <span class="dots3" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span class="win-tab">
+            <span class="spin" data-title-spinner aria-hidden="true">⠋</span>
+            {t('hero.win.title')}
+          </span>
+          <span class="win-path mono" aria-hidden="true">~/vibeterm · main</span>
+        </div>
+
+        <!-- 主体:侧栏任务列表 + 终端 + StatusBar -->
+        <div class="win-body">
+          <aside class="vt-side" aria-hidden="true">
+            <div class="vt-side-head mono">TASKS · 5</div>
+            {
+              tasks.map((task) => (
+                <div class:list={['vt-task', { active: task.active }]}>
+                  <span class:list={['vt-agent', task.agent]} />
+                  <span class:list={['vt-dot', task.status]} />
+                  <span class="vt-main">
+                    <span class:list={['vt-name', { done: task.status === 'done' }]}>{task.name}</span>
+                    {task.out && <span class="vt-out mono">{task.out}</span>}
+                  </span>
+                  {task.branch ? (
+                    <span class="vt-wt mono">
+                      <svg viewBox="0 0 24 24" width="9" height="9" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="6" cy="6" r="2.5" /><circle cx="6" cy="18" r="2.5" /><circle cx="18" cy="8" r="2.5" />
+                        <path d="M6 8.5v7M18 10.5c0 4-6 2-6 5.5" />
+                      </svg>
+                    </span>
+                  ) : (
+                    <span class="vt-num mono">#{task.num}</span>
+                  )}
+                </div>
+              ))
+            }
+          </aside>
+
+          <div class="vt-main-col">
+            <!-- main 顶部 32px 工具条:StatusBar widgets + 分屏按钮(还原真实布局) -->
+            <div class="vt-toolbar mono" aria-hidden="true">
+              <span class="vt-tb-info">ⓘ</span>
+              <span class="vt-tb-item">~/vibeterm</span>
+              <span class="vt-tb-item">main</span>
+              <span class="vt-tb-sep">|</span>
+              <span class="vt-tb-item c-cl">opus-4</span>
+              <span class="vt-tb-item">ctx&nbsp;<b>62%</b></span>
+              <span class="vt-tb-item">5h&nbsp;<b class="bar">███░</b></span>
+              <span class="vt-tb-spacer"></span>
+              <span class="vt-tb-btn">⊟</span>
+              <span class="vt-tb-btn">⊞</span>
+              <span class="vt-tb-btn">✕</span>
+            </div>
+            <pre class="vt-term mono" aria-hidden="true"><span class="c-dim">$</span> claude
+<span class="c-cl">●</span> Read<span class="c-dim">(src/auth/token.rs)</span>
+<span class="c-dim">  ⎿  read 214 lines</span>
+<span class="c-cl">●</span> Edit<span class="c-dim">(src/auth/token.rs)</span>
+<span class="c-dim">  ⎿  </span><span class="c-grn">+18</span> <span class="c-red">-6</span>
+<span class="c-cl">●</span> Bash<span class="c-dim">(cargo test)</span>
+<span class="c-dim">  ⎿  </span><span class="spin" data-term-spinner>⠹</span><span class="c-dim"> running…</span></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <a class="scroll-hint mono" href="#features" aria-hidden="true">
+    <span>{t('hero.scroll')}</span>
+    <span class="arrow">↓</span>
+  </a>
+</section>
+
+<style>
+  .hero {
+    position: relative;
+    min-height: 100svh;
+    display: flex;
+    align-items: center;
+    padding-top: calc(var(--nav-h) + 2rem);
+    padding-bottom: 3rem;
+    overflow: hidden;
+  }
+  /* 静态柔光晕(无动画),配合全站光晕 + grain */
+  .hero-glow {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    background:
+      radial-gradient(
+        55% 50% at 24% 26%,
+        color-mix(in oklab, var(--accent) 18%, transparent),
+        transparent 68%
+      ),
+      radial-gradient(
+        48% 44% at 82% 64%,
+        color-mix(in oklab, var(--st-running) 11%, transparent),
+        transparent 70%
+      );
+  }
+  .hero-inner {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: 1.05fr 1.05fr;
+    gap: clamp(2rem, 1rem + 4vw, 5rem);
+    align-items: center;
+    width: 100%;
+  }
+
+  /* ── copy ── */
+  .badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1.6rem;
+  }
+  .badge {
+    font-size: var(--text-xs);
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    padding: 0.38rem 0.75rem;
+    border: 1px solid var(--glass-brd);
+    border-radius: 99px;
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+  .badge::before {
+    content: '●';
+    color: var(--st-done);
+    margin-right: 0.45em;
+    font-size: 0.7em;
+    vertical-align: 0.12em;
+  }
+  .hero-title {
+    font-size: var(--text-hero);
+    white-space: pre-line;
+    margin-bottom: 1.3rem;
+  }
+  .hero-sub {
+    max-width: 46ch;
+    color: var(--text-dim);
+    font-size: var(--text-lg);
+    line-height: 1.6;
+  }
+  .hero-cta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.8rem;
+    margin-top: 2rem;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 48px;
+    padding-inline: 1.4rem;
+    border-radius: var(--radius-sm);
+    font-weight: 600;
+    font-size: var(--text-base);
+    transition:
+      transform var(--dur-fast) var(--ease-out-quart),
+      filter var(--dur-fast),
+      border-color var(--dur-fast);
+  }
+  .btn.primary {
+    background: var(--accent);
+    color: var(--bg);
+    box-shadow: 0 8px 30px -10px color-mix(in oklab, var(--accent) 60%, transparent);
+  }
+  .btn.primary:hover {
+    filter: brightness(1.08);
+    transform: translateY(-2px);
+  }
+  .btn.ghost {
+    border: 1px solid var(--glass-brd);
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    color: var(--text);
+  }
+  .btn.ghost:hover {
+    border-color: var(--glass-brd-hi);
+    transform: translateY(-2px);
+  }
+  .hero-note {
+    margin-top: 1.3rem;
+    font-size: var(--text-xs);
+    color: var(--text-dim);
+  }
+
+  /* ── 还原的产品窗口 ── */
+  .hero-visual {
+    perspective: 1000px;
+  }
+  .win {
+    border: 1px solid var(--glass-brd);
+    border-radius: var(--radius);
+    background: var(--term-bg);
+    box-shadow:
+      var(--shadow-lg),
+      0 0 0 1px color-mix(in oklab, var(--accent) 14%, transparent),
+      0 0 70px -18px var(--glow);
+    overflow: hidden;
+    transform: rotateY(-7deg) rotateX(3deg);
+    transition: transform var(--dur-slow) var(--ease-out-expo);
+  }
+  /* 窗口 3D tilt 由 hero.client.ts 鼠标跟随接管(强烈翻转) */
+  .win-bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.55rem 0.8rem;
+    background: color-mix(in oklab, var(--surface) 75%, var(--term-bg));
+    border-bottom: 1px solid var(--border);
+  }
+  .dots3 {
+    display: inline-flex;
+    gap: 0.4rem;
+    flex: none;
+  }
+  .dots3 i {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+  }
+  .dots3 i:nth-child(1) { background: #ff5f57; }
+  .dots3 i:nth-child(2) { background: #febc2e; }
+  .dots3 i:nth-child(3) { background: #28c840; }
+  .win-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45em;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text);
+  }
+  .spin { color: var(--term-cyan); }
+  .win-path {
+    margin-left: auto;
+    font-size: 0.72rem;
+    color: var(--text-dim);
+  }
+  .win-body {
+    display: grid;
+    grid-template-columns: 190px 1fr;
+    min-height: 322px;
+  }
+
+  /* 侧栏任务列表 */
+  .vt-side {
+    border-right: 1px solid var(--border);
+    background: color-mix(in oklab, var(--surface) 40%, var(--term-bg));
+    overflow: hidden;
+  }
+  .vt-side-head {
+    padding: 0.55rem 0.75rem 0.4rem;
+    font-size: 0.6rem;
+    letter-spacing: 0.16em;
+    color: var(--text-dim);
+    opacity: 0.7;
+  }
+  .vt-task {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.6rem 0.45rem 0.7rem;
+    border-left: 2px solid transparent;
+    font-size: 0.74rem;
+  }
+  .vt-task.active {
+    border-left-color: var(--accent);
+    background: color-mix(in oklab, var(--accent) 16%, transparent);
+  }
+  .vt-agent {
+    position: absolute;
+    left: 0;
+    top: 5px;
+    bottom: 5px;
+    width: 3px;
+    border-radius: 0 2px 2px 0;
+  }
+  .vt-agent.claude { background: #cc785c; }
+  .vt-agent.codex { background: #10a37f; }
+  .vt-agent.aider { background: #ec4899; }
+  .vt-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex: none;
+    box-sizing: border-box;
+    background: var(--st-idle);
+  }
+  .vt-dot.running {
+    background: var(--st-running);
+    box-shadow: 0 0 6px var(--st-running);
+  }
+  .vt-dot.waiting {
+    background: var(--st-waiting);
+    box-shadow: 0 0 8px var(--st-waiting);
+    animation: vt-breath 2s var(--ease-in-out) infinite;
+  }
+  .vt-dot.stalled {
+    background: transparent;
+    border: 2px solid var(--st-stalled);
+    box-shadow: 0 0 6px color-mix(in oklab, var(--st-stalled) 70%, transparent);
+    animation: vt-breath 3s var(--ease-in-out) infinite;
+  }
+  .vt-dot.done {
+    background: transparent;
+    border: 2px solid var(--st-done);
+  }
+  .vt-main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .vt-name {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--term-fg);
+  }
+  .vt-name.done {
+    text-decoration: line-through;
+    opacity: 0.5;
+  }
+  .vt-out {
+    font-size: 0.62rem;
+    color: var(--text-dim);
+    opacity: 0.75;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .vt-wt,
+  .vt-num {
+    font-size: 0.58rem;
+    color: var(--text-dim);
+    opacity: 0.7;
+    flex: none;
+  }
+  .vt-wt { display: inline-flex; }
+
+  /* 终端 + statusbar */
+  .vt-main-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .vt-term {
+    flex: 1;
+    margin: 0;
+    padding: 0.7rem 0.9rem;
+    font-size: 0.72rem;
+    line-height: 1.7;
+    color: var(--term-fg);
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow: hidden;
+  }
+  .c-dim { color: var(--text-dim); }
+  .c-cl { color: #cc785c; }
+  .c-grn { color: var(--term-green); }
+  .c-red { color: var(--term-red); }
+  .vt-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 30px;
+    flex: none;
+    padding: 0 0.55rem;
+    border-bottom: 1px solid var(--border);
+    background: color-mix(in oklab, var(--surface) 80%, var(--term-bg));
+    font-size: 0.6rem;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  .vt-tb-info {
+    flex: none;
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0 0.2rem;
+    line-height: 1.4;
+  }
+  .vt-tb-item {
+    flex: none;
+  }
+  .vt-tb-item.c-cl {
+    color: #cc785c;
+  }
+  .vt-tb-sep {
+    flex: none;
+    opacity: 0.35;
+  }
+  .vt-toolbar b {
+    color: var(--term-fg);
+    font-weight: 600;
+  }
+  .vt-tb-item .bar {
+    color: var(--accent);
+    letter-spacing: -1.5px;
+  }
+  .vt-tb-spacer {
+    flex: 1;
+  }
+  .vt-tb-btn {
+    flex: none;
+    opacity: 0.45;
+    padding: 0 0.05rem;
+  }
+
+  /* scroll hint */
+  .scroll-hint {
+    position: absolute;
+    z-index: 2;
+    left: 50%;
+    bottom: 1.4rem;
+    transform: translateX(-50%);
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: var(--text-xs);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  .scroll-hint .arrow {
+    animation: vt-bob 1.8s var(--ease-in-out) infinite;
+  }
+
+  @keyframes vt-breath {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.82); }
+  }
+  @keyframes vt-bob {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(5px); }
+  }
+
+  @media (max-width: 980px) {
+    .hero-inner {
+      grid-template-columns: 1fr;
+      gap: 2.5rem;
+    }
+    .hero-visual {
+      perspective: none;
+    }
+    .win,
+    .hero-visual:hover .win {
+      transform: none;
+    }
+    .scroll-hint {
+      display: none;
+    }
+  }
+  @media (max-width: 460px) {
+    .win-body {
+      grid-template-columns: 150px 1fr;
+    }
+  }
+</style>
+
+<script>
+  import './hero.client.ts';
+</script>

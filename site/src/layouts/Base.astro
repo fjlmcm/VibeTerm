@@ -1,0 +1,94 @@
+---
+import type { Locale } from '../i18n';
+import { HTML_LANG, useTranslations } from '../i18n';
+import '@fontsource-variable/geist';
+import '@fontsource-variable/geist-mono';
+import '../styles/tokens.css';
+import '../styles/global.css';
+import ThemeStyles from '../components/ThemeStyles.astro';
+import Nav from '../components/Nav.astro';
+import Footer from '../components/Footer.astro';
+
+interface Props {
+  lang: Locale;
+  title?: string;
+  description?: string;
+}
+const { lang, title, description } = Astro.props;
+const t = useTranslations(lang);
+const base = import.meta.env.BASE_URL;
+const fav = `${base}favicon.svg`;
+const htmlLang = HTML_LANG[lang];
+const pageTitle = title ?? t('meta.title');
+const pageDesc = description ?? t('meta.description');
+const canonical = Astro.site ? new URL(Astro.url.pathname, Astro.site).href : Astro.url.pathname;
+---
+
+<!doctype html>
+<html lang={htmlLang} class="no-js" data-theme="gruvbox" data-appearance="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/svg+xml" href={fav} />
+    <title>{pageTitle}</title>
+    <meta name="description" content={pageDesc} />
+    <link rel="canonical" href={canonical} />
+    <meta name="generator" content={Astro.generator} />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="VibeTerm" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={pageDesc} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content={htmlLang} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={pageDesc} />
+    <meta name="theme-color" content="#282828" />
+
+    <ThemeStyles />
+
+    <script is:inline>
+      (function () {
+        try {
+          var id = localStorage.getItem('vibeterm-theme') || 'gruvbox';
+          var light = { 'catppuccin-latte': 1, 'solarized-light': 1, 'github-light': 1 };
+          var r = document.documentElement;
+          r.setAttribute('data-theme', id);
+          r.setAttribute('data-appearance', light[id] ? 'light' : 'dark');
+        } catch (e) {}
+        document.documentElement.classList.remove('no-js');
+      })();
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#main">{t('nav.skip')}</a>
+    <Nav lang={lang} />
+    <main id="main"><slot /></main>
+    <Footer lang={lang} />
+
+    <style>
+      .skip {
+        position: fixed;
+        top: 0.5rem;
+        left: 0.5rem;
+        z-index: 200;
+        padding: 0.6rem 1rem;
+        background: var(--accent);
+        color: var(--bg);
+        border-radius: var(--radius-sm);
+        font-family: var(--font-mono);
+        font-size: var(--text-sm);
+        transform: translateY(-160%);
+        transition: transform var(--dur-fast) var(--ease-out-quart);
+      }
+      .skip:focus {
+        transform: none;
+      }
+    </style>
+
+    <script>
+      import '../lib/motion';
+    </script>
+  </body>
+</html>

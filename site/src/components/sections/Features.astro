@@ -1,0 +1,118 @@
+---
+import type { Locale } from '../../i18n';
+import { useTranslations } from '../../i18n';
+import { FEATURE_GROUPS, featuresByGroup } from '../../data/features';
+
+interface Props {
+  lang: Locale;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+---
+
+<section id="features" class="features">
+  <div class="container">
+    <header class="head">
+      <p class="kicker" data-reveal>{t('section.features.kicker')}</p>
+      <h2 class="section-title" data-reveal>{t('section.features.title')}</h2>
+      <p class="lede" data-reveal>{t('section.features.subtitle')}</p>
+    </header>
+
+    {
+      FEATURE_GROUPS.map((group) => (
+        <div class="group">
+          <h3 class="group-title mono" data-reveal>
+            <span class="g-line" aria-hidden="true" />
+            {t(`features.group.${group}`)}
+          </h3>
+          <div class="cards">
+            {featuresByGroup(group).map((f, i) => (
+              <article class="fcard" data-reveal data-reveal-delay={`${Math.min(i, 4) * 50}ms`}>
+                <span class="fdot" aria-hidden="true" />
+                <h4>{t(`features.${f.id}.label`)}</h4>
+                <p>{t(`features.${f.id}.desc`)}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      ))
+    }
+  </div>
+</section>
+
+<style>
+  .features {
+    padding-block: var(--space-section);
+  }
+  .head {
+    max-width: 60ch;
+    margin-bottom: 3.5rem;
+  }
+  .group {
+    margin-top: 3rem;
+  }
+  .group-title {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 1.2rem;
+  }
+  .g-line {
+    height: 1px;
+    flex: 1;
+    background: var(--border);
+  }
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1rem;
+  }
+  .fcard {
+    position: relative;
+    padding: 1.5rem 1.4rem 1.6rem;
+    border: 1px solid var(--glass-brd);
+    border-radius: var(--radius);
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
+    transition:
+      border-color var(--dur-normal) var(--ease-out-quart),
+      transform var(--dur-normal) var(--ease-out-quart),
+      box-shadow var(--dur-normal);
+  }
+  .fcard:hover {
+    border-color: var(--glass-brd-hi);
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-glow);
+  }
+  .fdot {
+    display: block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 16%, transparent);
+    margin-bottom: 1.1rem;
+    transition: transform var(--dur-normal) var(--ease-out-expo);
+  }
+  .fcard:hover .fdot {
+    transform: scale(1.35);
+  }
+  .fcard h4 {
+    font-family: var(--font-mono);
+    font-size: var(--text-base);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin-bottom: 0.5rem;
+  }
+  .fcard p {
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+    line-height: 1.6;
+  }
+</style>

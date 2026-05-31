@@ -1,0 +1,180 @@
+---
+import type { Locale } from '../../i18n';
+import { useTranslations } from '../../i18n';
+import { THEMES } from '../../data/themes';
+
+interface Props {
+  lang: Locale;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+---
+
+<section id="themes" class="themes">
+  <div class="container">
+    <header class="head">
+      <p class="kicker" data-reveal>{t('section.themes.kicker')}</p>
+      <h2 class="section-title" data-reveal>{t('section.themes.title')}</h2>
+      <p class="lede" data-reveal>{t('section.themes.subtitle')}</p>
+    </header>
+
+    <div class="theme-grid" data-reveal>
+      {
+        THEMES.map((th) => (
+          <button
+            class="tcard"
+            data-theme-pick={th.id}
+            aria-pressed="false"
+            style={`--c-bg:${th.terminal.background};--c-fg:${th.terminal.foreground};--c-accent:${th.shell.accent};--c-run:${th.shell.statusRunning};--c-wait:${th.shell.statusWaiting};--c-green:${th.terminal.green};--c-mag:${th.terminal.magenta};--c-border:${th.shell.border}`}
+          >
+            <div class="tprev">
+              <div class="tprev-bar">
+                <span class="tdot" style="background:var(--c-run)" />
+                <span class="tdot" style="background:var(--c-wait)" />
+                <span class="tdot ring" />
+              </div>
+              <div class="tprev-body mono">
+                <span><b style="color:var(--c-green)">$</b> <span style="color:var(--c-fg)">vibeterm</span></span>
+                <span style="color:var(--c-accent)">› watching 5 agents</span>
+                <span style="color:var(--c-mag)">▰▰▰▱▱</span>
+              </div>
+            </div>
+            <div class="tmeta">
+              <span class="tname mono">{th.name}</span>
+              <span class="tapp">{th.appearance}</span>
+            </div>
+            <span class="tcheck" aria-hidden="true">✓</span>
+          </button>
+        ))
+      }
+    </div>
+    <p class="hint mono" data-reveal>{t('themes.hint')}</p>
+  </div>
+</section>
+
+<style>
+  .themes {
+    padding-block: var(--space-section);
+  }
+  .head {
+    max-width: 60ch;
+    margin-bottom: 3rem;
+  }
+  .theme-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 1rem;
+  }
+  .tcard {
+    position: relative;
+    text-align: left;
+    border: 1px solid var(--glass-brd);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
+    backdrop-filter: blur(var(--glass-blur)) saturate(1.3);
+    transition:
+      border-color var(--dur-normal) var(--ease-out-quart),
+      transform var(--dur-normal) var(--ease-out-quart),
+      box-shadow var(--dur-normal);
+  }
+  .tcard:hover {
+    transform: translateY(-5px);
+    border-color: var(--glass-brd-hi);
+    box-shadow: var(--shadow-glow);
+  }
+  .tcard[aria-pressed='true'] {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .tprev {
+    background: var(--c-bg);
+    border-bottom: 1px solid var(--c-border);
+    padding: 0.6rem 0.7rem 0.8rem;
+  }
+  .tprev-bar {
+    display: flex;
+    gap: 0.3rem;
+    margin-bottom: 0.6rem;
+  }
+  .tdot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+  .tdot.ring {
+    background: transparent;
+    border: 1.5px solid var(--c-accent);
+  }
+  .tprev-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.72rem;
+    line-height: 1.5;
+  }
+  .tmeta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.7rem 0.85rem;
+  }
+  .tname {
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+  .tapp {
+    font-size: var(--text-xs);
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .tcheck {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.6rem;
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--bg);
+    font-size: 0.7rem;
+    font-weight: 700;
+    opacity: 0;
+    transform: scale(0.6);
+    transition:
+      opacity var(--dur-fast),
+      transform var(--dur-fast) var(--ease-out-expo);
+  }
+  .tcard[aria-pressed='true'] .tcheck {
+    opacity: 1;
+    transform: scale(1);
+  }
+  .hint {
+    margin-top: 1.5rem;
+    font-size: var(--text-sm);
+    color: var(--text-dim);
+    text-align: center;
+  }
+</style>
+
+<script>
+  import { applyTheme, currentThemeId } from '../../lib/theme';
+
+  const cards = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-theme-pick]'));
+  function sync() {
+    const cur = currentThemeId();
+    for (const c of cards) c.setAttribute('aria-pressed', String(c.dataset.themePick === cur));
+  }
+  for (const c of cards) {
+    c.addEventListener('click', () => {
+      if (c.dataset.themePick) applyTheme(c.dataset.themePick);
+      sync();
+    });
+  }
+  sync();
+  window.addEventListener('vt:themechange', sync);
+</script>

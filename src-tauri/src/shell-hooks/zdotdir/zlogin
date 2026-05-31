@@ -1,0 +1,12 @@
+# VibeTerm shell integration — .zlogin wrapper (login shells)
+#
+# 仅 login shell 串接用户原始 .zlogin。移植自 VS Code shell integration (MIT)。
+if [[ -n "$VIBETERM_LOGIN_INITIALIZED" ]]; then
+	return
+fi
+export VIBETERM_LOGIN_INITIALIZED=1
+
+ZDOTDIR=$VIBETERM_USER_ZDOTDIR
+if [[ $options[norcs] = off && -o "login" && -f $ZDOTDIR/.zlogin ]]; then
+	. $ZDOTDIR/.zlogin
+fi

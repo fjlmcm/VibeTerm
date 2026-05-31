@@ -1,0 +1,16 @@
+{
+  "name": "vibeterm",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "typecheck": "pnpm -C web -r typecheck"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1",
+    "typescript": "^5.6.0"
+  }
+}

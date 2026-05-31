@@ -1,0 +1,120 @@
+# CI — PR + main 推送时跑
+#
+# - lint           :typecheck + cargo fmt --check + clippy -D warnings
+# - test           :cargo test 含集成测试(子 crate,不链 tauri runtime)
+# - bench-smoke    :criterion --quick,防 perf 回归
+# - playwright-web :macOS,启 dev server,跑 6 用例
+# - app-smoke      :macOS build .app + scripts/smoke-app.sh(launch + tracing 断言)
+# - build-smoke    :macOS + Windows,cross-compile + bundle web
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+
+jobs:
+  lint:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: pnpm }
+      - uses: dtolnay/rust-toolchain@stable
+        with: { components: "rustfmt, clippy" }
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      - run: pnpm install --frozen-lockfile
+      - name: TypeScript check
+        run: pnpm typecheck
+      - name: cargo fmt
+        working-directory: src-tauri
+        run: cargo fmt --all -- --check
+      - name: cargo clippy
+        working-directory: src-tauri
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      - name: Install Linux deps(webkit2gtk for Tauri)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: cargo test 子 crate(单元 + 集成,32 tests)
+        working-directory: src-tauri
+        # 排除主 vibeterm crate(它链 tauri runtime,Linux GUI 环境跑不动)
+        # 业务逻辑全在 vibeterm-* 子 crate 里
+        run: |
+          cargo test -p vibeterm-config -p vibeterm-core -p vibeterm-ipc \
+                     -p vibeterm-pty -p vibeterm-status -p vibeterm-tasks
+
+  bench-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      - name: bench smoke(防性能回归)
+        working-directory: src-tauri
+        run: cargo bench -p vibeterm-status --bench status_detector -- --quick
+
+  app-smoke:
+    # 真 .app build + launch + tracing 断言
+    # 不走签名(CI 无证书),只验 unsigned bundle 能正常起
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: pnpm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      - run: pnpm install --frozen-lockfile
+      - name: Build unsigned bundle
+        run: pnpm tauri build --bundles app
+      - name: Run smoke loop
+        run: scripts/smoke-app.sh --duration 8
+      - name: Upload smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-artifacts
+          path: .smoke/
+
+  build-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: pnpm }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      - run: pnpm install --frozen-lockfile
+      - name: cargo check
+        working-directory: src-tauri
+        run: cargo check --workspace
+      - name: vite build(检查 Web bundle 能编译)
+        run: pnpm --filter @vibeterm/main build

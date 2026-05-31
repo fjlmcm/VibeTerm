@@ -1,0 +1,16 @@
+# VibeTerm shell integration — .zprofile wrapper (login shells)
+#
+# 仅 login shell 串接用户原始 .zprofile。移植自 VS Code shell integration (MIT)。
+if [[ -n "$VIBETERM_PROFILE_INITIALIZED" ]]; then
+	return
+fi
+export VIBETERM_PROFILE_INITIALIZED=1
+
+if [[ $options[norcs] = off && -o "login" ]]; then
+	if [[ -f $VIBETERM_USER_ZDOTDIR/.zprofile ]]; then
+		VIBETERM_ZDOTDIR=$ZDOTDIR
+		ZDOTDIR=$VIBETERM_USER_ZDOTDIR
+		. $VIBETERM_USER_ZDOTDIR/.zprofile
+		ZDOTDIR=$VIBETERM_ZDOTDIR
+	fi
+fi

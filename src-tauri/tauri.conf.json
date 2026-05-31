@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VibeTerm",
+  "version": "0.3.0",
+  "identifier": "com.vibeterm.desktop",
+  "build": {
+    "frontendDist": "../web/dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "pnpm -C .. --filter @vibeterm/main dev",
+    "beforeBuildCommand": "pnpm -C .. --filter @vibeterm/main build"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "CJK 一等公民的本地优先终端管理器",
+    "longDescription": "现代化、CJK 一等公民的本地优先终端管理器(Tauri 2 + Rust + SolidJS + xterm.js)。为多 AI agent 工作流提供 agent ranking / 状态嗅探(OSC 133/633 优先)/ Stalled 检测等针对性增强。MIT 开源、零账号、零遥测、不主动联网(仅用户手动点检查更新时联网)。",
+    "copyright": "Copyright © 2026 VibeTerm contributors. MIT licensed.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "resources/sounds/*.mp3",
+      "resources/sounds/sounds.json"
+    ],
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "entitlements": "entitlements.plist"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "languages": ["English", "SimpChinese"],
+        "installMode": "currentUser"
+      }
+    }
+  }
+}

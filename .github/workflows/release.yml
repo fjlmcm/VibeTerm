@@ -1,0 +1,86 @@
+# Release — tag push 触发 macOS universal + Windows x64 build
+# 产物上传到 GitHub Release 草稿(人工 review 后 publish)
+#
+# macOS 签名+notarize 由 4 个 GitHub secret 驱动(见下方 env)
+# Windows 首发不签名(用户首次运行会遇到 SmartScreen 警告,属预期)
+
+name: Release
+
+on:
+  # tag push(v*)自动触发 macOS 签名+公证 + Windows build → Release 草稿。
+  # 6 个 APPLE_* secrets 已配置(Settings → Secrets and variables → Actions)。
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+# tauri-action 创建 GitHub Release + 上传产物需要写权限
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: universal-apple-darwin
+            args: --target universal-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            args: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: pnpm }
+      - uses: dtolnay/rust-toolchain@stable
+
+      # macOS universal 需要两个 target
+      - name: Add macOS targets
+        if: matrix.os == 'macos-latest'
+        run: |
+          rustup target add aarch64-apple-darwin
+          rustup target add x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Tauri build
+        uses: tauri-apps/tauri-action@v0
+        env:
+          # tauri-action 创建 Release + 传产物用(GitHub 自动注入, 无需手配 secret)
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS sign + notarize
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows 首发不签名(README SmartScreen 区块)
+        with:
+          projectPath: src-tauri
+          args: ${{ matrix.args }}
+          tagName: ${{ github.ref_name }}
+          releaseName: "VibeTerm ${{ github.ref_name }}"
+          releaseDraft: true
+          prerelease: false
+          releaseBody: |
+            ## VibeTerm ${{ github.ref_name }}
+
+            ### Installation
+            - **macOS**: `brew install --cask vibeterm` 或下载 `.dmg`
+            - **Windows**: `scoop install vibeterm` 或下载 NSIS `.exe`(⚠️ 首次安装 SmartScreen 警告,见 README)
+
+            ### 隐私 / 网络变更
+            (本版本是否引入新网络请求 — 默认无;若有,在此声明)
+
+            详细 changelog 见 commits 比较。

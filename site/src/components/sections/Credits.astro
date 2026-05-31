@@ -1,0 +1,124 @@
+---
+import type { Locale } from '../../i18n';
+import { useTranslations } from '../../i18n';
+import { CREDIT_GROUPS } from '../../data/credits';
+
+interface Props {
+  lang: Locale;
+}
+const { lang } = Astro.props;
+const t = useTranslations(lang);
+---
+
+<section id="credits" class="credits">
+  <div class="container">
+    <header class="head">
+      <p class="kicker" data-reveal>{t('section.credits.kicker')}</p>
+      <h2 class="section-title" data-reveal>{t('section.credits.title')}</h2>
+      <p class="lede" data-reveal>{t('section.credits.subtitle')}</p>
+    </header>
+
+    <div class="groups">
+      {
+        CREDIT_GROUPS.map((g, gi) => (
+          <div class="cgroup" data-reveal data-reveal-delay={`${gi * 50}ms`}>
+            <h3 class="cgroup-title mono">{t(`credits.group.${g.id}`)}</h3>
+            <ul class="chips">
+              {g.items.map((it) =>
+                it.url ? (
+                  <li>
+                    <a class="chip" href={it.url} target="_blank" rel="noopener noreferrer">
+                      <span class="cname">{it.name}</span>
+                      {it.note && <span class="cnote">{it.note}</span>}
+                    </a>
+                  </li>
+                ) : (
+                  <li>
+                    <span class="chip static">
+                      <span class="cname">{it.name}</span>
+                      {it.note && <span class="cnote">{it.note}</span>}
+                    </span>
+                  </li>
+                ),
+              )}
+            </ul>
+          </div>
+        ))
+      }
+    </div>
+
+    <p class="thanks" data-reveal>{t('credits.thanks')}</p>
+  </div>
+</section>
+
+<style>
+  .credits {
+    padding-block: var(--space-section);
+  }
+  .head {
+    max-width: 60ch;
+    margin-bottom: 3rem;
+  }
+  .groups {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 2.5rem 2rem;
+  }
+  .cgroup-title {
+    font-size: var(--text-xs);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 1rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .chips {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  .chip {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid var(--glass-brd);
+    border-radius: var(--radius-sm);
+    background: var(--glass-bg);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    transition:
+      border-color var(--dur-fast),
+      background var(--dur-fast),
+      transform var(--dur-fast) var(--ease-out-quart);
+  }
+  a.chip:hover {
+    border-color: color-mix(in oklab, var(--accent) 50%, var(--border));
+    background: color-mix(in oklab, var(--accent) 10%, transparent);
+    transform: translateX(3px);
+  }
+  .cname {
+    font-family: var(--font-mono);
+    font-size: var(--text-sm);
+    font-weight: 600;
+  }
+  a.chip:hover .cname {
+    color: var(--accent);
+  }
+  .cnote {
+    font-size: var(--text-xs);
+    color: var(--text-dim);
+  }
+  .thanks {
+    margin-top: 3rem;
+    padding: 1.5rem 1.8rem;
+    border-left: 2px solid var(--accent);
+    background: color-mix(in oklab, var(--surface) 40%, transparent);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    color: var(--text-dim);
+    font-size: var(--text-sm);
+    line-height: 1.7;
+    max-width: 80ch;
+  }
+</style>

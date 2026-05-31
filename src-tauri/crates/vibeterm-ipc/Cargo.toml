@@ -1,0 +1,12 @@
+# IPC schema 定义
+# 设计原则:本 crate 只定义跨 Rust/Web 数据结构,不依赖任何业务 crate
+[package]
+name = "vibeterm-ipc"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+serde      = { workspace = true }
+serde_json = { workspace = true }
+thiserror  = { workspace = true }

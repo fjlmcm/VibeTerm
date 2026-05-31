@@ -1,0 +1,17 @@
+# 任务持久化
+[package]
+name = "vibeterm-tasks"
+version.workspace = true
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+vibeterm-config = { workspace = true }  # 依赖基础设施叶子(config 可被其它叶子依赖)
+vibeterm-ipc    = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+tracing    = { workspace = true }
+thiserror  = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

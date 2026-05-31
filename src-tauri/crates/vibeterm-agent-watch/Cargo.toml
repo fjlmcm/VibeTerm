@@ -1,0 +1,25 @@
+# Agent 状态嗅探: 被动监听 Claude/Codex 本地文件, 不联网不修改用户配置.
+[package]
+name = "vibeterm-agent-watch"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+tokio       = { workspace = true }
+tracing     = { workspace = true }
+notify      = "6"
+dirs        = "5"
+
+# 历史统计聚合按本地时区分天 — 用 chrono::Local (内部 localtime_r 线程安全),
+# 不用 time crate 的 local-offset (多线程不 sound). 与主 crate 同特性集.
+[dependencies.chrono]
+version = "0.4"
+default-features = false
+features = ["clock", "std"]
+
+[dev-dependencies]
+# stats 聚合单测:tempdir 造 fixture, 隔离真实 ~/.claude / ~/.codex (零侵入红线).
+tempfile = "3"
