@@ -112,7 +112,6 @@
   "cjk.point.render": "GPU 渲染下中日韓不掉字、不錯位",
   "cjk.point.notify": "背景 agent 有動靜會通知,原生支援",
   "cjk.conclusion": "資料截至發布時,有出入歡迎提 PR 糾正。",
-  "cjk.showdownLink": "看完整的 CJK 對比",
   "section.themes.kicker": "主題",
   "section.themes.title": "換個主題,整個站跟著變。",
   "section.themes.subtitle": "產品裡那 10 套終端機主題,這個站上就有 —— 點一下,從導覽到終端機視窗全跟著換。",

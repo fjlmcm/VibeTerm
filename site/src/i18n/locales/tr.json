@@ -112,7 +112,6 @@
   "cjk.point.render": "GPU çiziminde CJK düşmez ve kaymaz.",
   "cjk.point.notify": "Arka plandaki ajan etkinliği için yerleşik bildirim var.",
   "cjk.conclusion": "Veriler yayın tarihi itibarıyla geçerli. Bir hata mı gördün? PR'ları bekleriz.",
-  "cjk.showdownLink": "Tam CJK karşılaştırmasını oku",
   "section.themes.kicker": "Temalar",
   "section.themes.title": "Temayı değiştir, tüm site peşinden gelsin.",
   "section.themes.subtitle": "Ürünün 10 yerleşik terminal teması tam burada, bu sitede. Birine tıkla; menüden terminal penceresine kadar her şey ona uysun.",

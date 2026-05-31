@@ -112,7 +112,6 @@
   "cjk.point.render": "CJK fällt beim GPU-Rendering nicht aus und verrutscht nicht.",
   "cjk.point.notify": "Tut sich bei einem Agent im Hintergrund etwas, kommt eine native Benachrichtigung.",
   "cjk.conclusion": "Die Daten sind zum Veröffentlichungszeitpunkt aktuell. Stimmt was nicht? PRs willkommen.",
-  "cjk.showdownLink": "Den vollständigen CJK-Vergleich lesen",
   "section.themes.kicker": "Themes",
   "section.themes.title": "Theme wechseln, die ganze Seite zieht mit.",
   "section.themes.subtitle": "Die 10 eingebauten Terminal-Themes des Produkts gibt es direkt auf dieser Seite. Klick eins an, und alles zieht mit, von der Navigation bis zum Terminal-Fenster.",

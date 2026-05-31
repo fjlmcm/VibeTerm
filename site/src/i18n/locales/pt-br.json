@@ -112,7 +112,6 @@
   "cjk.point.render": "O CJK não some nem desloca sob renderização GPU.",
   "cjk.point.notify": "Atividade de agente em segundo plano é notificada, nativamente.",
   "cjk.conclusion": "Dados atuais na publicação. Viu algo errado? PRs são bem-vindos.",
-  "cjk.showdownLink": "Ler a comparação CJK completa",
   "section.themes.kicker": "Temas",
   "section.themes.title": "Troque o tema e o site inteiro acompanha.",
   "section.themes.subtitle": "Os 10 temas de terminal embutidos do produto estão aqui mesmo neste site. Clique num e tudo acompanha, da navegação à janela do terminal.",

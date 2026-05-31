@@ -2,7 +2,6 @@
 import type { Locale } from '../../i18n';
 import { useTranslations } from '../../i18n';
 import { CJK_ISSUES, CJK_POINTS } from '../../data/cjk-showdown';
-import { SHOWDOWN_URL } from '../../lib/site';
 
 interface Props {
   lang: Locale;
@@ -67,9 +66,6 @@ const t = useTranslations(lang);
 
     <p class="foot" data-reveal>
       <span class="conclusion">{t('cjk.conclusion')}</span>
-      <a class="showdown-link mono" href={SHOWDOWN_URL} target="_blank" rel="noopener noreferrer">
-        {t('cjk.showdownLink')} →
-      </a>
     </p>
   </div>
 </section>

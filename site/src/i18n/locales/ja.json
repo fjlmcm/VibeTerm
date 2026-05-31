@@ -112,7 +112,6 @@
   "cjk.point.render": "GPU レンダリングでも CJK を落とさず、ずれない。",
   "cjk.point.notify": "バックグラウンド agent の動きをネイティブに通知する。",
   "cjk.conclusion": "データは公開時点のもの。間違いがあれば PR で直してください。",
-  "cjk.showdownLink": "CJK 比較の全文を読む",
   "section.themes.kicker": "テーマ",
   "section.themes.title": "テーマを変えると、サイト全体が変わる。",
   "section.themes.subtitle": "製品内蔵の 10 テーマが、このサイトにもそのまま。クリックすれば、ナビからターミナル窓まで全部ついてきます。",
