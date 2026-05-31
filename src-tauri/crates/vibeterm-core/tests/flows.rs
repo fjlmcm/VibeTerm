@@ -282,7 +282,11 @@ fn unseen_done_count_tracks_done_and_clears_on_view() {
     tasks
         .update_terminal_status(term2, TaskStatus::Idle, true)
         .unwrap();
-    assert_eq!(tasks.unseen_done_count(), 1, "t2 真完成且非 active → 计未看");
+    assert_eq!(
+        tasks.unseen_done_count(),
+        1,
+        "t2 真完成且非 active → 计未看"
+    );
 
     // t3 同样完成 → 2
     tasks
