@@ -943,7 +943,10 @@ fn maybe_persistent_remind(app: &AppHandle, state: &AppState) {
     }
     let configured = prefs.events.done.sound.as_deref().unwrap_or("");
     let fe = frontend_sound_for(app, configured, "ringtone2");
-    let _ = app.emit("notification_play_sound", serde_json::json!({ "sound": fe }));
+    let _ = app.emit(
+        "notification_play_sound",
+        serde_json::json!({ "sound": fe }),
+    );
 }
 
 /// 解析 sound 字段, 返回 (use_frontend_audio, native_sound, raw_sound).
@@ -1171,7 +1174,10 @@ pub fn fire_agent_completed_notification(
             } else {
                 "ringtone2"
             };
-            let _ = app.emit("notification_play_sound", serde_json::json!({ "sound": fe }));
+            let _ = app.emit(
+                "notification_play_sound",
+                serde_json::json!({ "sound": fe }),
+            );
             let _ = app.emit("task_flash", task_id);
         }
     }
