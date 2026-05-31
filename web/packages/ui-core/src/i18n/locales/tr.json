@@ -494,5 +494,12 @@
   "update.price.reset": "Yerleşik varsayılanı geri yükle",
   "update.price.note": "Elle tetiklenir, fiyat tablosunu yalnızca şu an çeker; veri yerel config'te saklanır ve istediğin zaman yerleşik varsayılana döndürülebilir.",
   "settings.tab.language": "Dil",
-  "settings.language.hint": "Arayüz dilini değiştir. Değişiklikler anında uygulanır."
+  "settings.language.hint": "Arayüz dilini değiştir. Değişiklikler anında uygulanır.",
+  "notify.multiagent.title": "Çoklu ajan uyarıları",
+  "notify.focused_other.title": "Başka görev bitince de uyar",
+  "notify.focused_other.hint": "VibeTerm'de bir göreve bakarken başka bir görev bittiğinde hafif bir ses çalar ve o satır vurgulanır.",
+  "notify.dock_badge.title": "Görülmeyen tamamlamalar için Dock rozeti",
+  "notify.dock_badge.hint": "Tamamlanmış ama henüz görülmemiş görev sayısını Dock simgesinde gösterir; görevi açınca silinir.",
+  "notify.persistent.title": "Görülene kadar sürekli ses",
+  "notify.persistent.hint": "VibeTerm arka plandayken, görülmemiş tamamlanmış bir görev oldukça siz dönene dek dakikada bir çalar. Tek ses, asla üst üste binmez."
 }

@@ -494,5 +494,12 @@
   "update.price.reset": "Khôi phục mặc định tích hợp",
   "update.price.note": "Kích hoạt thủ công, chỉ kéo bảng giá tại thời điểm này; dữ liệu lưu trong config cục bộ, có thể khôi phục mặc định tích hợp bất cứ lúc nào.",
   "settings.tab.language": "Ngôn ngữ",
-  "settings.language.hint": "Đổi ngôn ngữ giao diện. Thay đổi áp dụng ngay."
+  "settings.language.hint": "Đổi ngôn ngữ giao diện. Thay đổi áp dụng ngay.",
+  "notify.multiagent.title": "Thông báo đa tác nhân",
+  "notify.focused_other.title": "Báo khi tác vụ khác hoàn tất",
+  "notify.focused_other.hint": "Khi bạn đang xem một tác vụ trong VibeTerm, một âm thanh nhẹ sẽ vang lên và dòng đó được làm nổi bật khi một tác vụ khác hoàn tất.",
+  "notify.dock_badge.title": "Huy hiệu Dock cho các hoàn tất chưa xem",
+  "notify.dock_badge.hint": "Hiển thị số tác vụ đã hoàn tất nhưng chưa xem trên biểu tượng Dock; biến mất khi bạn mở tác vụ đó.",
+  "notify.persistent.title": "Âm thanh liên tục cho đến khi xem",
+  "notify.persistent.hint": "Khi VibeTerm ở chế độ nền, cứ mỗi phút phát một lần chừng nào còn tác vụ hoàn tất chưa xem, cho đến khi bạn quay lại. Một âm thanh duy nhất, không chồng lên nhau."
 }

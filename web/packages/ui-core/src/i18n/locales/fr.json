@@ -494,5 +494,12 @@
   "update.price.reset": "Restaurer la valeur intégrée par défaut",
   "update.price.note": "Déclenchement manuel, ne récupère la table de prix qu'à cet instant ; les données sont stockées dans la config locale et peuvent être réinitialisées à la valeur intégrée par défaut à tout moment.",
   "settings.tab.language": "Langue",
-  "settings.language.hint": "Changez la langue de l'interface. Les modifications s'appliquent immédiatement."
+  "settings.language.hint": "Changez la langue de l'interface. Les modifications s'appliquent immédiatement.",
+  "notify.multiagent.title": "Alertes multi-agents",
+  "notify.focused_other.title": "Alerter quand une autre tâche se termine",
+  "notify.focused_other.hint": "Pendant que vous consultez une tâche dans VibeTerm, un son discret retentit et la ligne est mise en évidence lorsqu'une autre tâche se termine.",
+  "notify.dock_badge.title": "Pastille du Dock pour les fins non vues",
+  "notify.dock_badge.hint": "Affiche sur l'icône du Dock le nombre de tâches terminées mais non vues ; s'efface quand vous ouvrez la tâche.",
+  "notify.persistent.title": "Son persistant jusqu'à consultation",
+  "notify.persistent.hint": "Tant que VibeTerm est en arrière-plan, un son retentit une fois par minute tant qu'une tâche terminée n'est pas vue, jusqu'à votre retour. Son unique, jamais cumulé."
 }

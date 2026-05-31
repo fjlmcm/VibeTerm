@@ -494,5 +494,12 @@
   "update.price.reset": "Pulihkan default bawaan",
   "update.price.note": "Pemicu manual, hanya mengambil tabel harga saat ini; data disimpan di config lokal dan bisa disetel ke default bawaan kapan saja.",
   "settings.tab.language": "Bahasa",
-  "settings.language.hint": "Ganti bahasa antarmuka. Perubahan berlaku seketika."
+  "settings.language.hint": "Ganti bahasa antarmuka. Perubahan berlaku seketika.",
+  "notify.multiagent.title": "Notifikasi multi-agent",
+  "notify.focused_other.title": "Beri tahu saat tugas lain selesai",
+  "notify.focused_other.hint": "Saat kamu melihat satu tugas di VibeTerm, bunyi lembut akan terdengar dan barisnya disorot ketika tugas lain selesai.",
+  "notify.dock_badge.title": "Lencana Dock untuk penyelesaian yang belum dilihat",
+  "notify.dock_badge.hint": "Menampilkan jumlah tugas yang selesai tetapi belum dilihat pada ikon Dock; hilang saat kamu membuka tugas itu.",
+  "notify.persistent.title": "Suara terus-menerus sampai dilihat",
+  "notify.persistent.hint": "Selama VibeTerm di latar belakang, bunyi terdengar sekali per menit selama ada tugas selesai yang belum dilihat, sampai kamu kembali. Satu suara, tidak menumpuk."
 }

@@ -508,6 +508,20 @@ impl TaskRegistry {
         Ok(inner.tasks.get(&id).map(|t| t.aggregated_status()))
     }
 
+    /// 未看完成数 —— 聚合状态为 Done(完成但用户未看)的任务个数。
+    /// Dock 角标用它显示"待看"数;用户切到某 Done 任务 → set_active_main 翻 seen=true →
+    /// 该任务转回 Idle → 计数自然减一。锁失败按 0 处理(失败开放,不误报角标)。
+    pub fn unseen_done_count(&self) -> usize {
+        match self.lock() {
+            Ok(inner) => inner
+                .tasks
+                .values()
+                .filter(|t| matches!(t.aggregated_status(), TaskStatus::Done))
+                .count(),
+            Err(_) => 0,
+        }
+    }
+
     /// hook 收到"agent 完成 turn"信号时调用. 把 seen 翻为 false —
     /// 当所有 terminal 自然回落到 Idle 时, aggregated_status 会变成 Done.
     /// 返回 Ok(true) = seen 状态真切换了 (调用方可 emit tasks_changed).

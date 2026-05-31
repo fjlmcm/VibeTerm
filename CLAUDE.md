@@ -165,10 +165,3 @@ CI(`.github/workflows/ci.yml`):lint + cargo test(6 子 crate)+ Playwright + app-
 
 弱成功标准（例如“让它能工作”）则会导致频繁反复确认。
 
----
-
-## 这些原则生效时，你会看到
-
-- diff 中无关修改更少
-- 因过度设计导致的返工更少
-- 提问发生在实现之前，而不是犯错之后

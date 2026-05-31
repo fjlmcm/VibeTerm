@@ -494,5 +494,12 @@
   "update.price.reset": "还原内置默认",
   "update.price.note": "手动触发,仅此刻联网拉取价格表;数据只存本地 config,可随时还原内置默认。",
   "settings.tab.language": "语言",
-  "settings.language.hint": "切换界面语言,立即生效。"
+  "settings.language.hint": "切换界面语言,立即生效。",
+  "notify.multiagent.title": "多 agent 提醒",
+  "notify.focused_other.title": "其他任务完成也提示",
+  "notify.focused_other.hint": "你在 VibeTerm 里看着某个任务时,别的任务完成会轻响一声并高亮那一行。",
+  "notify.dock_badge.title": "Dock 角标显示未看完成",
+  "notify.dock_badge.hint": "把“已完成但你还没看”的任务数显示在 Dock 图标上,打开该任务即清零。",
+  "notify.persistent.title": "未看完成持续提醒声",
+  "notify.persistent.hint": "VibeTerm 在后台时,只要有完成的任务还没看,就每分钟轻响一声催你回来,直到你查看。全局单路,不叠加。"
 }

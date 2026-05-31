@@ -66,6 +66,9 @@ struct AppState {
     /// agent 完成通知 throttle (per-task, 30s). 防来回对话每个 turn 都响.
     /// 现由嗅探(标题 spinner→静态 / OSC D)触发完成通知, key 用 "task-<id>".
     last_agent_completed: std::sync::Mutex<std::collections::HashMap<String, std::time::Instant>>,
+    /// 间歇持续提醒(persistent_unseen_sound)节流时刻。None = 当前无"未看完成"或主窗口在
+    /// 前台(已 reset);Some(t) = 上次响铃时刻,下次需隔 PERSISTENT_REMIND_INTERVAL。全局单路。
+    last_persistent_remind: std::sync::Mutex<Option<std::time::Instant>>,
 }
 
 /// 窗口聚焦事件 → 视为"点击通知"的最大允许 gap. 超过则当作用户从 dock/Cmd-Tab
@@ -75,6 +78,10 @@ const NOTIFY_FOCUS_GRACE: std::time::Duration = std::time::Duration::from_secs(1
 /// agent_completed 通知冷却时间. claude/codex 来回对话每次都会发 Stop hook,
 /// 30s 内合并避免对话场景连发. 长任务跑完往往 >> 30s, 不影响.
 const AGENT_COMPLETED_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// 间歇持续提醒(persistent_unseen_sound)的最小响铃间隔。全局单路(不 per-task),
+/// 60s 一次:不致烦扰,又不漏。仅在"有未看完成 + 主窗口失焦"时计时。
+const PERSISTENT_REMIND_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
 #[derive(Clone, Copy, Debug)]
 enum MenuLang {
@@ -804,27 +811,40 @@ pub(crate) fn emit_tasks_changed(app: &AppHandle, tasks: &TaskRegistry) {
     let _ = app.emit("tasks_changed", &list);
 }
 
+/// 主窗口当前是否聚焦(用户正盯着 VibeTerm)。
+fn main_window_focused(app: &AppHandle) -> bool {
+    app.get_webview_window("main")
+        .and_then(|w| w.is_focused().ok())
+        .unwrap_or(false)
+}
+
+/// 通知投递方式 —— preflight 放行后告诉调用方走哪条路。
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum NotifyRoute {
+    /// 主窗口在后台:发系统通知 + 声音(完整通知)。
+    Background,
+    /// 主窗口在前台、但完成的不是当前选中任务:只前端轻提示音 + 任务列表行高亮,
+    /// 不发系统横幅(macOS 前台横幅常被吞,且用户已在 app 里,无需强打扰)。
+    ForegroundLight,
+}
+
 /// 通知预检 — 所有 task-level 守门集中一处, WaitingInput / agent_completed 共用.
-/// 返回 Some(NotifyFile) 表示放行 (后续填 title/body/sound), None 表示静默.
+/// 返回 Some((NotifyFile, route)) 表示放行, None 表示静默.
 ///
 /// 守门顺序(命中任意一条即返回 None):
-///   1. 主窗口在焦点 (用户已经在看)
-///   2. 非 AI agent task (项目定位面向 multi-agent, 普通 shell 不打扰)
-///   3. per-task notify_muted
-///   4. NotifyFile.enabled == false (全局总开关)
-///   5. NotifyFile.quiet_hours.contains(now) (免打扰时段)
+///   1. 非 agent task / per-task muted / 全局总开关 off / 免打扰时段 → 静默
+///   2. 主窗口聚焦时:
+///        - allow_foreground=false(如 waiting_input)→ 静默(维持前台不打扰)
+///        - 完成的就是当前选中任务 → 静默(用户正看着,删除线/黄灯就在眼前)
+///        - notify_focused_other_task 关 → 静默
+///        - 否则 → ForegroundLight(前台轻提示音 + 列表高亮)
+///   3. 主窗口失焦 → Background(完整系统通知 + 声音)
 fn notify_preflight(
     app: &AppHandle,
     tasks: &TaskRegistry,
     task_id: vibeterm_ipc::TaskId,
-) -> Option<NotifyFile> {
-    let main_focused = app
-        .get_webview_window("main")
-        .and_then(|w| w.is_focused().ok())
-        .unwrap_or(false);
-    if main_focused {
-        return None;
-    }
+    allow_foreground: bool,
+) -> Option<(NotifyFile, NotifyRoute)> {
     let is_agent = tasks.agent_kind_of(task_id).ok().flatten().is_some();
     if !is_agent {
         return None;
@@ -840,7 +860,90 @@ fn notify_preflight(
     if prefs.quiet_hours.contains(&now_hhmm) {
         return None;
     }
-    Some(prefs)
+    if main_window_focused(app) {
+        if !allow_foreground {
+            return None;
+        }
+        if tasks.active_main() == Some(task_id) {
+            return None;
+        }
+        if !prefs.notify_focused_other_task {
+            return None;
+        }
+        return Some((prefs, NotifyRoute::ForegroundLight));
+    }
+    Some((prefs, NotifyRoute::Background))
+}
+
+/// 未看完成数 → Dock 角标(macOS dock 图标红色数字)。开关关或数为 0 时清除角标。
+/// 复用 TaskRegistry::unseen_done_count(聚合状态 = Done 的任务数)。状态跃迁 /
+/// 切换 active / 关闭任务后调用,保持角标与"未看完成"实时一致。
+fn refresh_dock_badge(app: &AppHandle, tasks: &TaskRegistry) {
+    let n = if NotifyFile::load().dock_badge_unseen {
+        tasks.unseen_done_count()
+    } else {
+        0
+    };
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.set_badge_count(if n > 0 { Some(n as i64) } else { None });
+    }
+}
+
+/// 前台轻提示 / 持续提醒用的"前端可播声音名"。系统声音名(Glass 等)前端 `<audio>` 放不了,
+/// 退到 bundled fallback,保证前台/持续场景一定有声(系统横幅那条路才用得了系统声音)。
+fn frontend_sound_for(app: &AppHandle, configured: &str, fallback: &str) -> String {
+    let (use_fe, _native, raw) = resolve_notify_sound(app, configured, fallback);
+    if use_fe {
+        raw
+    } else {
+        fallback.to_string()
+    }
+}
+
+/// 间歇持续提醒(单路全局)。在 200ms tick 里调:有"未看完成"且主窗口失焦时,每隔
+/// PERSISTENT_REMIND_INTERVAL 响 1 路声音催用户回来;未看数归零 / 主窗口聚焦 / 开关关
+/// → reset(下次重新计时)。首次发现未看只记基准不响 —— "完成"通知本身已响过那一声,避免双响。
+fn maybe_persistent_remind(app: &AppHandle, state: &AppState) {
+    let reset = || {
+        if let Ok(mut g) = state.last_persistent_remind.lock() {
+            *g = None;
+        }
+    };
+    let prefs = NotifyFile::load();
+    if !prefs.enabled || !prefs.persistent_unseen_sound {
+        reset();
+        return;
+    }
+    if state.tasks.unseen_done_count() == 0 || main_window_focused(app) {
+        // 看完了 / 人回到 app → 停止催促并重置计时
+        reset();
+        return;
+    }
+    let now_hhmm = chrono::Local::now().format("%H:%M").to_string();
+    if prefs.quiet_hours.contains(&now_hhmm) {
+        return; // 免打扰时段:不响,也不重置基准(出时段后接着按节奏来)
+    }
+    let now = std::time::Instant::now();
+    {
+        let mut g = match state.last_persistent_remind.lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        match *g {
+            // 首次发现"未看 + 失焦":只记基准不响(完成通知已响过那一声)
+            None => {
+                *g = Some(now);
+                return;
+            }
+            Some(t) if now.duration_since(t) >= PERSISTENT_REMIND_INTERVAL => {
+                *g = Some(now);
+            }
+            _ => return,
+        }
+    }
+    let configured = prefs.events.done.sound.as_deref().unwrap_or("");
+    let fe = frontend_sound_for(app, configured, "ringtone2");
+    let _ = app.emit("notification_play_sound", serde_json::json!({ "sound": fe }));
 }
 
 /// 解析 sound 字段, 返回 (use_frontend_audio, native_sound, raw_sound).
@@ -928,7 +1031,9 @@ fn notify_status_transition(
     if !matches!(new, TaskStatus::WaitingInput) {
         return;
     }
-    let Some(prefs) = notify_preflight(app, tasks, task_id) else {
+    // waiting_input 不放前台轻提示(allow_foreground=false → route 恒 Background,
+    // 维持"前台一律静默";前台轻提示只用于"完成"通知,符合用户预期)。
+    let Some((prefs, _route)) = notify_preflight(app, tasks, task_id, false) else {
         return;
     };
     let event_prefs = &prefs.events.waiting_input;
@@ -1013,7 +1118,7 @@ pub fn fire_agent_completed_notification(
     session_id: &str,
     last_message: &str,
 ) {
-    let Some(prefs) = notify_preflight(app, tasks, task_id) else {
+    let Some((prefs, route)) = notify_preflight(app, tasks, task_id, true) else {
         return;
     };
     let event_prefs = &prefs.events.done;
@@ -1049,15 +1154,27 @@ pub fn fire_agent_completed_notification(
     let configured = event_prefs.sound.as_deref().unwrap_or("");
     let (use_frontend_audio, native_sound, raw_sound) =
         resolve_notify_sound(app, configured, "ringtone2");
-    send_notification(
-        app,
-        task_id,
-        title,
-        body,
-        &native_sound,
-        use_frontend_audio,
-        &raw_sound,
-    );
+    match route {
+        NotifyRoute::Background => send_notification(
+            app,
+            task_id,
+            title,
+            body,
+            &native_sound,
+            use_frontend_audio,
+            &raw_sound,
+        ),
+        NotifyRoute::ForegroundLight => {
+            // 前台轻提示:不发系统横幅(macOS 前台横幅常被吞),只前端音一声 + 列表行高亮。
+            let fe = if use_frontend_audio {
+                raw_sound.as_str()
+            } else {
+                "ringtone2"
+            };
+            let _ = app.emit("notification_play_sound", serde_json::json!({ "sound": fe }));
+            let _ = app.emit("task_flash", task_id);
+        }
+    }
 }
 
 fn task_label(tasks: &TaskRegistry, id: vibeterm_ipc::TaskId) -> String {
@@ -1501,6 +1618,7 @@ impl ChunkSink for LazyChannelSink {
                     new_agg,
                     idle_by_osc,
                 );
+                refresh_dock_badge(&self.app, &self.tasks);
             }
         }
         // effort: 嗅探到 "thinking with X effort" → 写 task.effort(widget 回退读它).
@@ -1929,6 +2047,8 @@ async fn close_task(
         }
     }
     emit_tasks_changed(&app, &state.tasks);
+    // 关掉的任务可能是 Done(未看)→ 刷新 Dock 角标
+    refresh_dock_badge(&app, &state.tasks);
     Ok(())
 }
 
@@ -2232,6 +2352,8 @@ async fn set_active_task(
 ) -> IpcResult<()> {
     state.tasks.set_active_main(id).map_err(map_task_err)?;
     let _ = app.emit("active_task_changed", id);
+    // 切到任务 → set_active_main 已翻 seen=true,未看完成数可能减 → 刷新 Dock 角标
+    refresh_dock_badge(&app, &state.tasks);
     Ok(())
 }
 
@@ -3959,6 +4081,7 @@ fn main() {
         status_detectors: std::sync::Mutex::new(std::collections::HashMap::new()),
         last_notify: std::sync::Mutex::new(None),
         last_agent_completed: std::sync::Mutex::new(std::collections::HashMap::new()),
+        last_persistent_remind: std::sync::Mutex::new(None),
     };
 
     // 首启动:若无任务则创建一个 Default
@@ -4367,8 +4490,11 @@ fn main() {
                                 new_agg,
                                 idle_by_osc,
                             );
+                            refresh_dock_badge(&app_for_status_tick, &state.tasks);
                         }
                     }
+                    // 每轮 tick 末尾:间歇持续提醒(单路全局声音)检查
+                    maybe_persistent_remind(&app_for_status_tick, &state);
                 }
             });
 

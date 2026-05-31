@@ -494,5 +494,12 @@
   "update.price.reset": "内蔵デフォルトに戻す",
   "update.price.note": "手動トリガーで、この瞬間だけ価格表を取得します。データはローカル config にのみ保存され、いつでも内蔵デフォルトに戻せます。",
   "settings.tab.language": "言語",
-  "settings.language.hint": "表示言語を切り替えます。すぐに反映されます。"
+  "settings.language.hint": "表示言語を切り替えます。すぐに反映されます。",
+  "notify.multiagent.title": "マルチエージェント通知",
+  "notify.focused_other.title": "別タスクの完了も通知",
+  "notify.focused_other.hint": "VibeTerm で別のタスクを見ているときに、ほかのタスクが完了したら軽い音を鳴らし、その行をハイライトします。",
+  "notify.dock_badge.title": "未確認の完了を Dock バッジ表示",
+  "notify.dock_badge.hint": "完了したが未確認のタスク数を Dock アイコンに表示し、そのタスクを開くと消えます。",
+  "notify.persistent.title": "確認するまで継続して通知音",
+  "notify.persistent.hint": "VibeTerm がバックグラウンドのあいだ、完了タスクが未確認なら戻って確認するまで毎分1回鳴らします。単一の音で、重なりません。"
 }

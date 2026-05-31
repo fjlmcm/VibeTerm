@@ -162,6 +162,19 @@ pub struct NotifyFile {
     pub events: EventsPrefs,
     #[serde(default)]
     pub quiet_hours: QuietHours,
+    /// 主窗口在前台、但完成的不是当前选中任务时,仍轻提示(前端音效 + 任务列表行高亮,
+    /// 不弹系统横幅 —— macOS 前台横幅本就常被吞)。关 → 维持"前台一律静默"。默认开。
+    #[serde(default = "default_true")]
+    pub notify_focused_other_task: bool,
+    /// Dock 图标角标显示"未看完成数"(聚合状态 = Done 的任务数),用户切到该任务后自动减一。
+    /// 安静的持续提醒,不响铃、不弹横幅,复用现有 seen/Done 模型。默认开。
+    #[serde(default = "default_true")]
+    pub dock_badge_unseen: bool,
+    /// 间歇持续声音提醒:只要有"未看完成"任务且主窗口未聚焦,就每隔 PERSISTENT_REMIND 秒响
+    /// **1 路**声音催用户回来看,直到未看完成数归零(全局单路,多任务不叠加)。打扰性最强,
+    /// 仅特定场景(离机跑长任务)需要,默认关。一旦主窗口聚焦即停 —— 人回到 app 就不再催。
+    #[serde(default)]
+    pub persistent_unseen_sound: bool,
 }
 
 impl Default for EventNotifyPrefs {
@@ -177,6 +190,9 @@ impl Default for NotifyFile {
             enabled: true,
             events: EventsPrefs::default(),
             quiet_hours: QuietHours::default(),
+            notify_focused_other_task: true,
+            dock_badge_unseen: true,
+            persistent_unseen_sound: false,
         }
     }
 }
@@ -274,6 +290,10 @@ mod tests {
         assert!(parsed.enabled);
         assert_eq!(parsed.events.done.sound.as_deref(), Some("ringtone2"));
         assert_eq!(parsed.events.waiting_input.sound.as_deref(), Some("tone20"));
+        // 多 agent 提醒新字段默认值
+        assert!(parsed.notify_focused_other_task, "前台非当前任务提示默认开");
+        assert!(parsed.dock_badge_unseen, "Dock 角标默认开");
+        assert!(!parsed.persistent_unseen_sound, "持续声音提醒默认关");
     }
 
     // 向前兼容: 旧 notify.toml 含 [events.stalled] 段不应报错, 字段被静默忽略.
@@ -303,5 +323,9 @@ mod tests {
         let parsed: NotifyFile = toml::from_str(toml_with_stalled).expect("legacy parse");
         assert!(parsed.enabled);
         assert_eq!(parsed.events.waiting_input.sound.as_deref(), Some("Tink"));
+        // 旧 notify.toml 缺新字段 → 走 #[serde(default)],不破坏现有配置
+        assert!(parsed.notify_focused_other_task, "旧 toml 缺字段 → 默认开");
+        assert!(parsed.dock_badge_unseen, "旧 toml 缺字段 → 默认开");
+        assert!(!parsed.persistent_unseen_sound, "旧 toml 缺字段 → 默认关");
     }
 }

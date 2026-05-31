@@ -494,5 +494,12 @@
   "update.price.reset": "Ripristina il default integrato",
   "update.price.note": "Attivazione manuale, in questo momento scarica solo la tabella dei prezzi; i dati restano nella config locale e puoi ripristinare il default integrato in qualsiasi momento.",
   "settings.tab.language": "Lingua",
-  "settings.language.hint": "Cambia la lingua dell'interfaccia. Le modifiche si applicano subito."
+  "settings.language.hint": "Cambia la lingua dell'interfaccia. Le modifiche si applicano subito.",
+  "notify.multiagent.title": "Avvisi multi-agente",
+  "notify.focused_other.title": "Avvisa al termine di un'altra attività",
+  "notify.focused_other.hint": "Mentre guardi un'attività in VibeTerm, viene riprodotto un suono lieve e la riga viene evidenziata quando un'altra attività termina.",
+  "notify.dock_badge.title": "Badge del Dock per i completamenti non visti",
+  "notify.dock_badge.hint": "Mostra sull'icona del Dock il numero di attività completate ma non viste; si azzera quando apri l'attività.",
+  "notify.persistent.title": "Suono persistente fino alla visualizzazione",
+  "notify.persistent.hint": "Mentre VibeTerm è in background, suona una volta al minuto finché un'attività completata non è stata vista, fino al tuo ritorno. Suono singolo, mai sovrapposto."
 }

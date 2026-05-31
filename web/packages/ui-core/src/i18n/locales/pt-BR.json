@@ -494,5 +494,12 @@
   "update.price.reset": "Restaurar o padrão embutido",
   "update.price.note": "Acionamento manual, busca a tabela de preços apenas neste momento; os dados ficam na config local e podem ser restaurados ao padrão embutido a qualquer momento.",
   "settings.tab.language": "Idioma",
-  "settings.language.hint": "Troca o idioma da interface. As mudanças valem na hora."
+  "settings.language.hint": "Troca o idioma da interface. As mudanças valem na hora.",
+  "notify.multiagent.title": "Alertas multiagente",
+  "notify.focused_other.title": "Avisar quando outra tarefa terminar",
+  "notify.focused_other.hint": "Enquanto você olha uma tarefa no VibeTerm, um som suave toca e a linha é destacada quando outra tarefa termina.",
+  "notify.dock_badge.title": "Selo no Dock para conclusões não vistas",
+  "notify.dock_badge.hint": "Mostra no ícone do Dock o número de tarefas concluídas mas não vistas; some quando você abre a tarefa.",
+  "notify.persistent.title": "Som persistente até ver",
+  "notify.persistent.hint": "Enquanto o VibeTerm está em segundo plano, toca uma vez por minuto enquanto houver uma tarefa concluída não vista, até você voltar. Som único, nunca se acumula."
 }

@@ -494,5 +494,12 @@
   "update.price.reset": "Restaurar el valor integrado por defecto",
   "update.price.note": "Activación manual, ahora mismo solo obtiene la tabla de precios; los datos se guardan en la config local y se pueden restaurar al valor integrado en cualquier momento.",
   "settings.tab.language": "Idioma",
-  "settings.language.hint": "Cambia el idioma de la interfaz. Los cambios se aplican al instante."
+  "settings.language.hint": "Cambia el idioma de la interfaz. Los cambios se aplican al instante.",
+  "notify.multiagent.title": "Avisos multiagente",
+  "notify.focused_other.title": "Avisar cuando termine otra tarea",
+  "notify.focused_other.hint": "Mientras miras una tarea en VibeTerm, suena un tono suave y se resalta la fila cuando termina otra tarea.",
+  "notify.dock_badge.title": "Insignia del Dock para finalizaciones no vistas",
+  "notify.dock_badge.hint": "Muestra en el icono del Dock el número de tareas terminadas pero no vistas; se borra al abrir la tarea.",
+  "notify.persistent.title": "Sonido persistente hasta verlo",
+  "notify.persistent.hint": "Mientras VibeTerm está en segundo plano, suena una vez por minuto mientras haya una tarea terminada sin ver, hasta que vuelvas. Un solo sonido, nunca se acumula."
 }

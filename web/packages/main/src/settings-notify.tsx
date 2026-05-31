@@ -229,6 +229,35 @@ export const NotifyTab: Component = () => {
             </For>
           </div>
 
+          {/* 多 agent 提醒方式 */}
+          <div style={sectionStyle()}>
+            <div style={sectionHeaderStyle()}>{t("notify.multiagent.title")}</div>
+            <ToggleRow
+              title={t("notify.focused_other.title")}
+              hint={t("notify.focused_other.hint")}
+              checked={p().notify_focused_other_task}
+              disabled={!p().enabled}
+              onChange={(v) => persist({ ...p(), notify_focused_other_task: v })}
+              testid="notify-focused-other-toggle"
+            />
+            <ToggleRow
+              title={t("notify.dock_badge.title")}
+              hint={t("notify.dock_badge.hint")}
+              checked={p().dock_badge_unseen}
+              disabled={!p().enabled}
+              onChange={(v) => persist({ ...p(), dock_badge_unseen: v })}
+              testid="notify-dock-badge-toggle"
+            />
+            <ToggleRow
+              title={t("notify.persistent.title")}
+              hint={t("notify.persistent.hint")}
+              checked={p().persistent_unseen_sound}
+              disabled={!p().enabled}
+              onChange={(v) => persist({ ...p(), persistent_unseen_sound: v })}
+              testid="notify-persistent-toggle"
+            />
+          </div>
+
           {/* 免打扰时段 */}
           <div style={sectionStyle()}>
             <div style={rowStyle()}>
@@ -520,6 +549,26 @@ const Toggle: Component<{
       }}
     />
   </button>
+);
+
+/** 标题 + 提示 + 右侧开关的一行(多 agent 提醒区块复用)。 */
+const ToggleRow: Component<{
+  title: string;
+  hint: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (v: boolean) => void;
+  testid?: string;
+}> = (p) => (
+  <div style={{ ...rowStyle(), opacity: p.disabled ? 0.5 : 1 }}>
+    <div style={{ flex: 1 }}>
+      <div style={{ "font-size": "12px", "font-weight": 500, color: "var(--color-text)" }}>
+        {p.title}
+      </div>
+      <div style={hintStyle()}>{p.hint}</div>
+    </div>
+    <Toggle checked={p.checked} onChange={p.onChange} disabled={p.disabled} testid={p.testid} />
+  </div>
 );
 
 const TimeInput: Component<{
