@@ -5169,7 +5169,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vibeterm"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -5205,7 +5205,7 @@ dependencies = [
 
 [[package]]
 name = "vibeterm-agent-watch"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -5219,7 +5219,7 @@ dependencies = [
 
 [[package]]
 name = "vibeterm-config"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "dirs 5.0.1",
  "filetime",
@@ -5234,7 +5234,7 @@ dependencies = [
 
 [[package]]
 name = "vibeterm-core"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "tempfile",
  "thiserror 1.0.69",
@@ -5248,7 +5248,7 @@ dependencies = [
 
 [[package]]
 name = "vibeterm-git"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "serde",
  "tempfile",
@@ -5259,7 +5259,7 @@ dependencies = [
 
 [[package]]
 name = "vibeterm-ipc"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -5268,7 +5268,7 @@ dependencies = [
 
 [[package]]
 name = "vibeterm-pty"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "portable-pty",
  "thiserror 1.0.69",
@@ -5278,7 +5278,7 @@ dependencies = [
 
 [[package]]
 name = "vibeterm-status"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "criterion",
  "regex",
@@ -5289,7 +5289,7 @@ dependencies = [
 
 [[package]]
 name = "vibeterm-tasks"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "serde",
  "serde_json",
