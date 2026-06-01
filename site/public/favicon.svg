@@ -1,14 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="VibeTerm">
   <rect width="256" height="256" rx="56" fill="#0d0e14"/>
-  <g stroke="#e6e8ed" stroke-width="7" stroke-linecap="round" fill="none">
-    <line x1="120" y1="106" x2="74" y2="168"/>
-    <line x1="120" y1="106" x2="132" y2="180"/>
-    <line x1="120" y1="106" x2="180" y2="138"/>
-  </g>
-  <g fill="#e6e8ed">
-    <circle cx="120" cy="106" r="17"/>
-    <circle cx="74" cy="168" r="12"/>
-    <circle cx="132" cy="180" r="12"/>
-    <circle cx="180" cy="138" r="12"/>
+  <g fill="none" stroke="#e6e8ed" stroke-width="19" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="86,82 152,128 86,174"/>
+    <line x1="150" y1="176" x2="198" y2="176"/>
   </g>
 </svg>
