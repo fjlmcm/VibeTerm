@@ -56,5 +56,7 @@ coverage/
 # Local scratch (audio test files, throwaway experiments)
 tmp/
 
-# Claude Code (local agent state — scheduled tasks lock, etc.)
-.claude/
+# Claude Code 本地 agent 运行时状态(scheduled_tasks.lock 等)忽略,
+# 但跟踪 .claude/skills/(项目级可调用 skill,如发版流程,应随仓库走)。
+.claude/*
+!.claude/skills/
