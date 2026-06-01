@@ -1,6 +1,6 @@
 {
   "name": "@vibeterm/ipc-types",
-  "version": "1.0.1",
+  "version": "1.0.7",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
