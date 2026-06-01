@@ -256,6 +256,37 @@ export const NotifyTab: Component = () => {
               onChange={(v) => persist({ ...p(), persistent_unseen_sound: v })}
               testid="notify-persistent-toggle"
             />
+            <Show when={p().persistent_unseen_sound}>
+              <div style={{ ...rowStyle(), "padding-left": "0", gap: "8px", "align-items": "center" }}>
+                <span style={hintStyle()}>{t("notify.persistent.interval")}</span>
+                <input
+                  type="number"
+                  min="5"
+                  max="3600"
+                  step="5"
+                  value={p().persistent_remind_secs}
+                  disabled={!p().enabled}
+                  onChange={(e) => {
+                    const v = Math.min(
+                      3600,
+                      Math.max(5, Math.round(Number(e.currentTarget.value) || 30)),
+                    );
+                    persist({ ...p(), persistent_remind_secs: v });
+                  }}
+                  style={{
+                    width: "70px",
+                    padding: "4px 8px",
+                    "font-size": "13px",
+                    color: "var(--color-text)",
+                    background: "var(--color-bg)",
+                    border: "1px solid var(--color-border)",
+                    "border-radius": "6px",
+                  }}
+                  data-testid="notify-persistent-interval"
+                />
+                <span style={hintStyle()}>{t("notify.persistent.interval_unit")}</span>
+              </div>
+            </Show>
           </div>
 
           {/* 免打扰时段 */}

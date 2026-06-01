@@ -39,8 +39,9 @@ struct TaskRuntime {
     /// 用户切到该 task 时 → seen=true。
     /// 任何终端转为 Running/WaitingInput → seen=true(被新工作覆盖,不再算"未看")。
     seen: bool,
-    /// 进程层 agent 识别结果(由后台轮询写入)
-    agent_kind: Option<String>,
+    /// 进程层 agent 识别结果(由后台轮询写入)。**per-terminal**:一个 task 可分屏多个 agent,
+    /// 各终端独立识别(key=terminal_id),故按终端存而非 task 级单值。
+    agent_kinds: HashMap<TerminalId, String>,
     /// 关键:slot_id → terminal_id 映射(后端做幂等,前端无需判断 spawn/attach)。
     /// 同一 (task, slot) 第二次 spawn 直接返回已有 terminal_id + add_sink。
     /// Canvas 和 Normal 视图同时挂载时,这是避免"开两个独立 PTY"的唯一防线。
@@ -56,15 +57,15 @@ struct TaskRuntime {
     /// hook auto-naming: 任务名是否还能被 UserPromptSubmit 自动重命名.
     /// 新建时 true. 自动改过名 / 用户手动改过名后 → false.
     auto_namable: bool,
-    /// agent transcript 当前轮状态(claude stop_reason / codex task_started↔complete):
-    /// Some(true)=刚答完一轮、Some(false)=正在干、None=非 transcript agent(走 PTY 嗅探)。
+    /// agent transcript 当前轮状态,**per-terminal**(key=terminal_id):
+    /// true=该终端刚答完一轮、false=正在干、缺键=非 transcript agent(走 PTY 嗅探)。
     /// 比 PTY 输出嗅探可靠 —— 压过 codex 底部状态栏持续刷新造成的"假 Running"。
-    agent_turn_done: Option<bool>,
-    /// 最近一次"已判定完成"的轮 id(claude 末条 assistant 的 uuid)。完成判定用它去重:
-    /// end_turn 的 uuid 变了 = 新一轮答完 → 即使 3s 轮询没采到中间 working 那一拍(快轮、
-    /// 纯文本秒回)也能判出新完成;同 uuid 反复读到则不重复通知。
-    /// None=尚未判过 / 该 agent 不提供 turn id(退回布尔跃迁判定)。
-    last_completed_turn_id: Option<String>,
+    /// 一个 task 分屏多个 agent 时各终端独立,故按终端存而非 task 级单值。
+    agent_turn_done: HashMap<TerminalId, bool>,
+    /// 最近一次"已判定完成"的轮 id,**per-terminal**(key=terminal_id)。完成判定去重:
+    /// turn_id 变了 = 新一轮答完 → 即使 3s 轮询没采到中间 working 那一拍(快轮、纯文本秒回)
+    /// 也能判出;同 id 反复读到则不重复通知。缺键=尚未判过 / 该 agent 不提供 turn id(退回布尔跃迁)。
+    last_completed_turn_id: HashMap<TerminalId, String>,
 }
 
 fn default_split_tree() -> SplitNode {
@@ -72,48 +73,46 @@ fn default_split_tree() -> SplitNode {
 }
 
 impl TaskRuntime {
-    /// 状态聚合(优先级从高到低):
-    ///   ① transcript 轮已结束(`agent_turn_done==Some(true)`)→ 压过所有 PTY 嗅探;
-    ///      是否未读由 `seen` 决定:刚答完非当前 → Done,看过(切回)/当前 → Idle。
-    ///   ② 任一终端 WaitingInput → WaitingInput(agent 轮中途等授权的真黄灯)。
-    ///   ③ 轮进行中(`Some(false)`)或任一终端 Running → Running。
-    ///   ④ 任一终端 Stalled → Stalled。
-    ///   ⑤ PTY 完成(`!seen`)非当前 → Done;否则 Idle。
+    /// 状态聚合(**per-terminal**,综合一个 task 下所有 agent 终端):
+    ///   - 每个终端:transcript 轮态 `agent_turn_done[term]` 压过该终端自己的 PTY 嗅探余波 ——
+    ///     done=true 的终端忽略其 PTY 的 WaitingInput/Running(codex 答完后输入框误判、收尾噪音)。
+    ///   - task 级优先级:任一终端 WaitingInput(真授权黄灯)> 任一在跑 → Running > 任一 Stalled
+    ///     > 否则按 `seen` 判 Done/Idle。
+    ///   - 分屏多 agent 时:A 答完 + B 仍在跑 → Running;全答完(未看)非当前 → Done。
     fn aggregated_status(&self, is_active: bool) -> TaskStatus {
-        // ① transcript "轮已结束"最权威 —— codex 答完后常驻输入框会被误判成 WaitingInput、
-        //    状态栏刷新造成假 Running,这些都得让位。是否"未读"由 seen 决定:
-        //    刚答完(seen=false)非当前 → Done;切回看过(set_active_main 置 seen=true)或当前 → Idle。
-        //    所以"切回变灰、再切出仍是灰(已读)",不会再被输入框的黄灯顶回去。
-        //    注意:只有 Some(true) 在此短路;Some(false)=轮进行中放到 WaitingInput 之后(授权黄灯优先)。
-        if self.agent_turn_done == Some(true) {
-            return if !self.seen && !is_active {
-                TaskStatus::Done
-            } else {
-                TaskStatus::Idle
-            };
+        let mut any_waiting = false;
+        let mut any_running = false;
+        let mut any_stalled = false;
+        // ① transcript 轮态:false=该终端轮在跑 → Running(压过该终端 PTY 的 idle/状态栏误判)。
+        for done in self.agent_turn_done.values() {
+            if !*done {
+                any_running = true;
+            }
         }
-        let mut has_running = false;
-        let mut has_stalled = false;
-        for v in self.terminal_statuses.values() {
-            match v {
-                TaskStatus::WaitingInput => return TaskStatus::WaitingInput,
-                TaskStatus::Stalled => has_stalled = true,
-                TaskStatus::Running => has_running = true,
+        // ② PTY 嗅探:transcript 已答完(true)的终端跳过 —— 以 transcript 为准,忽略答完后输入框
+        //    被误判的 WaitingInput / 收尾输出的假 Running。其余终端(在跑 / 非 transcript agent)按嗅探。
+        for (tid, status) in &self.terminal_statuses {
+            if self.agent_turn_done.get(tid) == Some(&true) {
+                continue;
+            }
+            match status {
+                TaskStatus::WaitingInput => any_waiting = true,
+                TaskStatus::Running => any_running = true,
+                TaskStatus::Stalled => any_stalled = true,
                 _ => {}
             }
         }
-        // ③ 轮进行中(Some(false))→ Running(WaitingInput 真授权黄灯已在上面优先,不被压)。
-        //    None=非 transcript agent,落到下面纯 PTY 嗅探。
-        if self.agent_turn_done == Some(false) {
+        // ③ task 级优先级:授权黄灯 > 在跑 > 卡死 > 完成/空闲。
+        if any_waiting {
+            return TaskStatus::WaitingInput;
+        }
+        if any_running {
             return TaskStatus::Running;
         }
-        if has_running {
-            return TaskStatus::Running;
-        }
-        if has_stalled {
+        if any_stalled {
             return TaskStatus::Stalled;
         }
-        // ⑤ PTY 完成(!seen):非当前任务 → Done(未看);当前正看的 → Idle(不打扰)。
+        // ④ 都不在跑/等待:未看(seen=false)非当前 → Done;看过/当前 → Idle。
         if !self.seen && !is_active {
             TaskStatus::Done
         } else {
@@ -207,14 +206,14 @@ impl TaskRegistry {
                 split_tree: default_split_tree(),
                 worktree,
                 seen: true,
-                agent_kind: None,
+                agent_kinds: HashMap::new(),
                 slot_terminals: HashMap::new(),
                 notify_muted: false,
                 permission_mode: None,
                 effort: None,
                 auto_namable: true,
-                agent_turn_done: None,
-                last_completed_turn_id: None,
+                agent_turn_done: HashMap::new(),
+                last_completed_turn_id: HashMap::new(),
             },
         );
         inner.order.push(id);
@@ -509,6 +508,10 @@ impl TaskRegistry {
             if t.terminal_ids.contains(&term_id) {
                 t.terminal_ids.retain(|x| *x != term_id);
                 t.terminal_statuses.remove(&term_id);
+                // per-terminal agent 状态随终端一起清理,防关闭后残留误判聚合。
+                t.agent_turn_done.remove(&term_id);
+                t.agent_kinds.remove(&term_id);
+                t.last_completed_turn_id.remove(&term_id);
                 owner = Some(*tid);
                 break;
             }
@@ -545,7 +548,7 @@ impl TaskRegistry {
                         // 刷新),不是新一轮 —— 不能标已读,否则刚答完的未读 Done 会被冲成 Idle
                         // (用户切回前圆点就变灰的 bug)。新一轮真开始时 transcript 会先把
                         // agent_turn_done 置 Some(false)/None,那时这里才正常 seen=true。
-                        if t.agent_turn_done != Some(true) {
+                        if t.agent_turn_done.get(&term_id) != Some(&true) {
                             t.seen = true;
                         }
                     }
@@ -641,25 +644,28 @@ impl TaskRegistry {
     pub fn set_agent_turn_done(
         &self,
         id: TaskId,
+        term_id: TerminalId,
         done: bool,
         turn_id: Option<&str>,
     ) -> Result<(bool, bool), TaskError> {
         let mut inner = self.lock()?;
         let t = inner.tasks.get_mut(&id).ok_or(TaskError::NotFound(id))?;
-        let was = t.agent_turn_done;
+        let was = t.agent_turn_done.get(&term_id).copied();
         let changed = was != Some(done);
         let just_completed = done
             && match turn_id {
                 // 有 turn id:新 id = 新完成(对快轮鲁棒,不依赖采到 working 那一拍)。
-                Some(tid) => t.last_completed_turn_id.as_deref() != Some(tid),
-                // 无 turn id:退回布尔跃迁(上一态非"已答完"才算刚完成)。
+                Some(tid) => {
+                    t.last_completed_turn_id.get(&term_id).map(String::as_str) != Some(tid)
+                }
+                // 无 turn id:退回布尔跃迁(该终端上一态非"已答完"才算刚完成)。
                 None => was != Some(true),
             };
-        t.agent_turn_done = Some(done);
+        t.agent_turn_done.insert(term_id, done);
         if just_completed {
             t.seen = false;
             if let Some(tid) = turn_id {
-                t.last_completed_turn_id = Some(tid.to_string());
+                t.last_completed_turn_id.insert(term_id, tid.to_string());
             }
         }
         Ok((changed, just_completed))
@@ -670,18 +676,47 @@ impl TaskRegistry {
         Ok(inner.tasks.get(&id).map(|t| t.name.clone()))
     }
 
+    /// task 是否有任一 agent(用于 is_agent 判断 / 通知 body)。多 agent 时返回任一 kind。
     pub fn agent_kind_of(&self, id: TaskId) -> Result<Option<String>, TaskError> {
         let inner = self.lock()?;
-        Ok(inner.tasks.get(&id).and_then(|t| t.agent_kind.clone()))
+        Ok(inner
+            .tasks
+            .get(&id)
+            .and_then(|t| t.agent_kinds.values().next().cloned()))
     }
 
-    /// 写入 agent 识别结果。返回 true 表示有变化(供 caller 决定是否 emit)。
-    pub fn set_agent_kind(&self, id: TaskId, kind: Option<String>) -> Result<bool, TaskError> {
+    /// 某终端的 agent kind(per-terminal,通知 body 用对应终端的 kind)。
+    pub fn agent_kind_of_terminal(
+        &self,
+        id: TaskId,
+        term_id: TerminalId,
+    ) -> Result<Option<String>, TaskError> {
+        let inner = self.lock()?;
+        Ok(inner
+            .tasks
+            .get(&id)
+            .and_then(|t| t.agent_kinds.get(&term_id).cloned()))
+    }
+
+    /// 写入某终端的 agent 识别结果(**per-terminal**)。返回 true 表示有变化(供 caller 决定是否 emit)。
+    pub fn set_agent_kind(
+        &self,
+        id: TaskId,
+        term_id: TerminalId,
+        kind: Option<String>,
+    ) -> Result<bool, TaskError> {
         let mut inner = self.lock()?;
         let t = inner.tasks.get_mut(&id).ok_or(TaskError::NotFound(id))?;
-        let changed = t.agent_kind != kind;
+        let changed = t.agent_kinds.get(&term_id).cloned() != kind;
         if changed {
-            t.agent_kind = kind;
+            match kind {
+                Some(k) => {
+                    t.agent_kinds.insert(term_id, k);
+                }
+                None => {
+                    t.agent_kinds.remove(&term_id);
+                }
+            }
         }
         Ok(changed)
     }
@@ -821,15 +856,15 @@ impl Inner {
                     split_tree: snap.split_tree.clone(),
                     worktree: snap.worktree.clone(),
                     seen: true,
-                    agent_kind: None,
+                    agent_kinds: HashMap::new(),
                     slot_terminals: HashMap::new(),
                     notify_muted: snap.notify_muted,
                     permission_mode: None,
                     effort: None,
                     // 从 disk 恢复:已 persist 过则不再自动重命名 (snap.auto_namable 字段)
                     auto_namable: snap.auto_namable,
-                    agent_turn_done: None,
-                    last_completed_turn_id: None,
+                    agent_turn_done: HashMap::new(),
+                    last_completed_turn_id: HashMap::new(),
                 },
             );
         }
@@ -910,7 +945,7 @@ impl Inner {
             location: t.location.clone(),
             split_tree: t.split_tree.clone(),
             worktree: t.worktree.clone(),
-            agent_kind: t.agent_kind.clone(),
+            agent_kind: t.agent_kinds.values().next().cloned(),
             // last_output 由 src-tauri 在 emit 前注入(需要 TerminalRegistry,核心层不持有)
             last_output: None,
             notify_muted: t.notify_muted,

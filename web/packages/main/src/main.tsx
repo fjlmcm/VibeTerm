@@ -498,6 +498,15 @@ function App() {
       console.error("[main] config/theme load failed", e);
     }
 
+    // 启动主动申请通知权限:macOS 不会自动申请,用户从不进「设置→通知」点按钮就永远收不到横幅。
+    // 仅在尚未授权时申请(default 弹系统框;已 denied 则 request 直接返回、不打扰)。
+    try {
+      if ((await ipc.notifyPermission()) !== "granted") {
+        await ipc.requestNotifyPermission();
+      }
+    } catch (e) {
+      console.error("[main] notify permission request failed", e);
+    }
 
     try {
       const list = await ipc.listTasks();

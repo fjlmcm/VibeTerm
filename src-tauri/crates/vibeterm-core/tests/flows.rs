@@ -289,7 +289,8 @@ fn agent_turn_done_overrides_waiting_input_and_respects_seen() {
     );
 
     // transcript 读到 task_complete → 轮已结束。压过 WaitingInput,非当前 + 未看 → Done。
-    let (changed, just_completed) = tasks.set_agent_turn_done(agent_task, true, None).unwrap();
+    let (changed, just_completed) =
+        tasks.set_agent_turn_done(agent_task, term, true, None).unwrap();
     assert!(changed && just_completed, "首次答完应是跃迁");
     assert_eq!(
         tasks.aggregated_status_of(agent_task).unwrap(),
@@ -315,7 +316,7 @@ fn agent_turn_done_overrides_waiting_input_and_respects_seen() {
     );
 
     // 用户提下一个 prompt → codex 又开始干(Some(false))→ Running(WaitingInput 上面已优先,这里无黄灯)。
-    let (changed, _) = tasks.set_agent_turn_done(agent_task, false, None).unwrap();
+    let (changed, _) = tasks.set_agent_turn_done(agent_task, term, false, None).unwrap();
     assert!(changed, "done→working 应是变化");
     tasks
         .update_terminal_status(term, TaskStatus::Idle, false)
@@ -341,7 +342,7 @@ fn agent_done_not_cleared_by_background_terminal_noise() {
     tasks.attach_terminal(agent_task, term).unwrap();
 
     // claude 答完一轮 → 非当前未看 → Done。
-    tasks.set_agent_turn_done(agent_task, true, None).unwrap();
+    tasks.set_agent_turn_done(agent_task, term, true, None).unwrap();
     assert_eq!(
         tasks.aggregated_status_of(agent_task).unwrap(),
         Some(TaskStatus::Done)
@@ -381,7 +382,7 @@ fn active_task_done_when_window_unfocused() {
     tasks.set_active_main(agent).unwrap(); // agent 就是当前选中 task
 
     // 窗口有焦点(默认)+ 当前 task 答完 → Idle(正盯着,不打扰)。
-    tasks.set_agent_turn_done(agent, true, None).unwrap();
+    tasks.set_agent_turn_done(agent, 1, true, None).unwrap();
     assert_eq!(
         tasks.aggregated_status_of(agent).unwrap(),
         Some(TaskStatus::Idle),
@@ -432,7 +433,7 @@ fn agent_completion_detected_by_new_turn_id_without_working_sample() {
 
     // 第一轮答完(uuid=A)→ 新 turn → 判完成 → 非当前未看 → Done。
     let (_c, jc1) = tasks
-        .set_agent_turn_done(agent_task, true, Some("A"))
+        .set_agent_turn_done(agent_task, 1, true, Some("A"))
         .unwrap();
     assert!(jc1, "首轮答完应判完成");
     assert_eq!(
@@ -442,7 +443,7 @@ fn agent_completion_detected_by_new_turn_id_without_working_sample() {
 
     // 同一轮被轮询反复读到(uuid 仍 A)→ 去重,不重复判完成。
     let (_c, jc_dup) = tasks
-        .set_agent_turn_done(agent_task, true, Some("A"))
+        .set_agent_turn_done(agent_task, 1, true, Some("A"))
         .unwrap();
     assert!(!jc_dup, "同 turn_id 不应重复判完成");
 
@@ -458,7 +459,7 @@ fn agent_completion_detected_by_new_turn_id_without_working_sample() {
     // Some(true) —— 布尔跃迁判定在此会漏(正是用户报的 bug)。但 end_turn 的 uuid 变成 B,
     // turn_id 去重必须判出新完成 → 再次 Done(未看)。
     let (changed, jc2) = tasks
-        .set_agent_turn_done(agent_task, true, Some("B"))
+        .set_agent_turn_done(agent_task, 1, true, Some("B"))
         .unwrap();
     assert!(
         jc2,
@@ -473,6 +474,54 @@ fn agent_completion_detected_by_new_turn_id_without_working_sample() {
         Some(TaskStatus::Done),
         "第二轮(快轮)完成也应 → Done(未看)"
     );
+}
+
+// 用户实测根因(分屏多 agent):一个 task 开 2 个 agent,旧逻辑 agent_kind/agent_turn_done 是
+// task 级单字段、完成检测只认第一个 agent → 后开的 agent 答完检测不到(不通知 + 答完误判 WaitingInput
+// 黄圈)。per-terminal 后各终端独立:A 答完 + B 在跑 → 整 task Running;B 答完独立判 just_completed。
+#[test]
+fn multi_agent_per_terminal_completion_independent() {
+    let _cfg = isolated_config();
+    let tasks = TaskRegistry::new();
+    let task = tasks.create("multi".into(), None, None).unwrap();
+    let other = tasks.create("other".into(), None, None).unwrap();
+    tasks.set_active_main(other).unwrap(); // task 非当前
+    let (term_a, term_b) = (1, 2);
+    tasks.attach_terminal(task, term_a).unwrap();
+    tasks.attach_terminal(task, term_b).unwrap();
+
+    // A 答完(claude),B 仍在跑 —— 整 task 应是 Running(B 还没完,不能显完成)。
+    tasks
+        .set_agent_turn_done(task, term_a, true, Some("a1"))
+        .unwrap();
+    tasks
+        .set_agent_turn_done(task, term_b, false, None)
+        .unwrap();
+    assert_eq!(
+        tasks.aggregated_status_of(task).unwrap(),
+        Some(TaskStatus::Running),
+        "一个 agent 答完但另一个在跑 → 整 task Running"
+    );
+
+    // 关键回归:B 答完必须独立判 just_completed —— 旧 task 级单字段会被 A 的 Some(true) 占据,
+    // B 答完 was==Some(true) → just_completed=false 漏掉(正是用户报的 bug)。per-terminal 不会。
+    let (_c, jc_b) = tasks
+        .set_agent_turn_done(task, term_b, true, Some("b1"))
+        .unwrap();
+    assert!(jc_b, "第二个 agent 答完应独立判完成,不被第一个吞掉");
+    assert_eq!(
+        tasks.aggregated_status_of(task).unwrap(),
+        Some(TaskStatus::Done),
+        "两个 agent 都答完(未看)非当前 → Done"
+    );
+
+    // B 再开一轮又答完(新 turn_id)→ 仍独立判完成(per-terminal turn_id 去重,不与 A 串)。
+    tasks.set_active_main(task).unwrap(); // 看过
+    tasks.set_active_main(other).unwrap();
+    let (_c, jc_b2) = tasks
+        .set_agent_turn_done(task, term_b, true, Some("b2"))
+        .unwrap();
+    assert!(jc_b2, "B 第二轮(新 turn_id)答完仍独立判完成");
 }
 
 #[test]

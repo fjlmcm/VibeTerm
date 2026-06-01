@@ -80,9 +80,6 @@ const NOTIFY_FOCUS_GRACE: std::time::Duration = std::time::Duration::from_secs(1
 /// 5s 让正常多轮对话每轮都提示,又不至于同轮边界的瞬时重复连响两声.
 const AGENT_COMPLETED_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(5);
 
-/// 间歇持续提醒(persistent_unseen_sound)的最小响铃间隔。全局单路(不 per-task),
-/// 60s 一次:不致烦扰,又不漏。仅在"有未看完成 + 主窗口失焦"时计时。
-const PERSISTENT_REMIND_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
 #[derive(Clone, Copy, Debug)]
 enum MenuLang {
@@ -890,30 +887,41 @@ fn refresh_dock_badge(app: &AppHandle, tasks: &TaskRegistry) {
     }
 }
 
-/// agent 完成一轮(transcript 权威信号:claude `stop_reason=end_turn` / codex `task_complete`)
-/// → 按 cwd 关联 task → 标 Done + Dock 角标 + 完成通知。比 PTY 输出超时可靠(agent 自己的结构
-/// 化记录)。去重:per-task last_turn_id,同一轮多次 emit 只标一次。active 任务不标(用户正看着)。
-/// agent transcript 轮状态更新(working/done)→ 关联 task → 设状态。
-/// done 跃迁(working→done,刚答完一轮)时额外 Dock 角标 + 通知;working/done 都 emit 刷新圆点。
-/// claude: turn_done = (stop_reason == "end_turn");codex: turn_done = task_completed(完成晚于开始)。
-/// 这套用 transcript 驱动 agent 任务的完成显示,压过 PTY 输出嗅探(尤其 codex 状态栏刷新的假 Running)。
-fn on_agent_turn_update(
+/// 3s 轮询兜底:对**一个 agent 终端**,用它自己的 cwd 读 transcript 完成态,据此 set_agent_turn_done
+/// 并按需发完成通知。**per-terminal**:一个 task 可分屏多个 agent,逐终端各自检测(task_id+term_id
+/// 已知,无需按 cwd 反查 task)—— 旧逻辑只认第一个 agent,后开的 agent 完成检测不到、不通知、答完误判黄圈。
+/// claude 用 stop_reason==end_turn 判完成,codex 用 task_completed;turn_id 给完成去重(快轮鲁棒)。
+/// 读不到 transcript 就跳过本轮(回退 PTY 嗅探 + 等下次轮询),绝不把完成态默认成 false 钉死 Running。
+fn poll_agent_turn_for_terminal(
     app: &AppHandle,
-    agent: &str,
-    match_cwd: &str,
-    is_claude: bool,
-    turn_done: bool,
-    turn_id: Option<&str>,
+    state: &AppState,
+    task_id: vibeterm_ipc::TaskId,
+    term_id: TerminalId,
+    kind: &str,
+    cwd: &str,
 ) {
-    let Some(state) = app.try_state::<AppState>() else {
+    if cwd.is_empty() {
         return;
+    }
+    let (done, turn_id) = match kind {
+        "claude" => {
+            let Some(sess) = vibeterm_agent_watch::claude::project::read_for_cwd(cwd) else {
+                return;
+            };
+            let done = sess.stop_reason.as_deref() == Some("end_turn");
+            (done, if done { sess.last_turn_id } else { None })
+        }
+        "codex" => {
+            let Some(snap) = vibeterm_agent_watch::codex::session::read_for_cwd(cwd) else {
+                return;
+            };
+            let done = snap.task_completed;
+            (done, if done { snap.last_turn_id } else { None })
+        }
+        _ => return,
     };
     let tasks: &TaskRegistry = &state.tasks;
-    // 兜底实时窗口焦点 —— macOS 切到别的 app 时 WindowEvent::Focused 不一定可靠触发;每次 agent
-    // 状态更新都按实时 is_focused() 校正,焦点变了立即刷新圆点 + 角标(失焦时当前 task 完成 → Done)。
-    // 轮询每 3s 经此,故即使 Focused 事件完全不来,也最多 3s 校正到位。
-    // 兜底实时焦点(Focused 事件 macOS 切 app 不一定可靠);set_window_focused 内已打日志,
-    // 这里焦点变了就刷新圆点 + 角标。轮询每 3s 经此,即使事件不来也最多 3s 校正。
+    // 兜底实时窗口焦点(macOS 切 app 时 Focused 事件不可靠;每轮校正 → 失焦时完成转 Done)。
     if tasks
         .set_window_focused(main_window_focused(app))
         .unwrap_or(false)
@@ -921,119 +929,33 @@ fn on_agent_turn_update(
         emit_tasks_changed(app, tasks);
         refresh_dock_badge(app, tasks);
     }
-    let pairs = match tasks.task_cwd_pairs() {
-        Ok(p) => p,
-        Err(_) => return,
-    };
-    // claude 用 cwd_to_project_dir 两边编码后比(规避 project_path 反解歧义);codex 精确比 cwd。
-    let target = if is_claude {
-        vibeterm_agent_watch::claude::project::cwd_to_project_dir(match_cwd)
-    } else {
-        match_cwd.to_string()
-    };
-    for (task_id, c) in pairs {
-        let hit = if is_claude {
-            vibeterm_agent_watch::claude::project::cwd_to_project_dir(&c) == target
-        } else {
-            c == match_cwd
-        };
-        if !hit {
-            continue;
-        }
-        // set_agent_turn_done 返回 (changed, just_completed)。
-        // changed=值真的变了才刷新 —— 轮询每 3s 兜底反复调,不变则不 emit,避免前端无谓刷新。
-        // just_completed=working/未知 → done 跃迁,才发完成通知。Err(task 不存在)忽略。
-        if let Ok((changed, just_completed)) =
-            tasks.set_agent_turn_done(task_id, turn_done, turn_id)
-        {
-            // changed=turn_done 布尔变了(Running↔Done/Idle);just_completed=新一轮答完(快轮时
-            // turn_done 没变但 seen 翻 false → 圆点也要刷成 Done)。任一成立都刷新圆点 + 角标。
-            if changed || just_completed {
-                tracing::info!(
-                    agent,
-                    task_id,
-                    turn_done,
-                    just_completed,
-                    turn_id = ?turn_id,
-                    "agent_turn_update: transcript 轮状态变化 → 刷新圆点"
-                );
-                emit_tasks_changed(app, tasks);
-                refresh_dock_badge(app, tasks);
-            }
-            if just_completed {
-                // 通知:交 fire 内 preflight 按窗口焦点决定 —— 后台都发(当前/非当前)、
-                // 前台非当前任务轻提示、前台当前任务静默。
-                let last = tasks
-                    .task_dto(task_id)
-                    .ok()
-                    .flatten()
-                    .and_then(|d| state.terminals.most_recent_tail(&d.terminal_ids))
-                    .unwrap_or_default();
-                fire_agent_completed_notification(
-                    app,
-                    tasks,
-                    task_id,
-                    agent,
-                    &format!("task-{task_id}"),
-                    last.trim(),
-                );
-            }
-        }
-    }
-}
-
-/// 3s 轮询兜底:按 task.cwd 主动读 transcript 完成状态 → on_agent_turn_update。
-/// 文件监听(notify/FSEvents)对 codex 的 ~/.codex/sessions 写入不可靠(实测漏 task_complete),
-/// 这里不依赖监听、直接读文件兜底。read_for_cwd 按 cwd 精确定位会话文件,比 watcher 全局
-/// find_latest 更准;on_agent_turn_update 仅在状态变化时 emit,无谓轮询不刷屏。
-fn poll_agent_turn_from_transcript(
-    app: &AppHandle,
-    tasks: &TaskRegistry,
-    task_id: vibeterm_ipc::TaskId,
-    kind: &str,
-) {
-    let Ok(Some(cwd)) = tasks.cwd(task_id) else {
+    // per-terminal:直接按 (task_id, term_id) 记完成态,无需按 cwd 反查 task。
+    let Ok((changed, just_completed)) =
+        tasks.set_agent_turn_done(task_id, term_id, done, turn_id.as_deref())
+    else {
         return;
     };
-    if cwd.is_empty() {
-        return;
+    if changed || just_completed {
+        emit_tasks_changed(app, tasks);
+        refresh_dock_badge(app, tasks);
     }
-    let (is_claude, turn_done, turn_id) = match kind {
-        "claude" => {
-            let sess = vibeterm_agent_watch::claude::project::read_for_cwd(&cwd);
-            let done = sess
-                .as_ref()
-                .map(|s| s.stop_reason.as_deref() == Some("end_turn"))
-                .unwrap_or(false);
-            // turn id = 末条 assistant 的 uuid;仅 done 时取,给完成判定去重(快轮也不漏)。
-            let tid = if done {
-                sess.and_then(|s| s.last_turn_id)
-            } else {
-                None
-            };
-            (true, done, tid)
-        }
-        "codex" => (
-            false,
-            vibeterm_agent_watch::codex::session::read_for_cwd(&cwd)
-                .map(|s| s.task_completed)
-                .unwrap_or(false),
-            // codex 维持布尔跃迁判定 —— 现状每次都灵,不引入 turn_id 改动风险。
-            None,
-        ),
-        _ => return,
-    };
-    // 诊断:每次轮询打出 read_for_cwd 读到的完成态 + turn_id。第二次完成若仍漏,看这里 ——
-    // turn_id 变了却没 fire = 逻辑问题;turn_id 没变 = 选错会话文件(读到了旧/别的会话)。
-    if is_claude {
-        tracing::debug!(
+    if just_completed {
+        let last = tasks
+            .task_dto(task_id)
+            .ok()
+            .flatten()
+            .and_then(|d| state.terminals.most_recent_tail(&d.terminal_ids))
+            .unwrap_or_default();
+        // session_id 含 term_id:同一 task 的不同 agent 终端各自独立通知 + 独立 30s throttle。
+        fire_agent_completed_notification(
+            app,
+            tasks,
             task_id,
-            turn_done,
-            turn_id = ?turn_id,
-            "poll: claude transcript 完成态(read_for_cwd)"
+            kind,
+            &format!("task-{task_id}-term-{term_id}"),
+            last.trim(),
         );
     }
-    on_agent_turn_update(app, kind, &cwd, is_claude, turn_done, turn_id.as_deref());
 }
 
 /// 前台轻提示 / 持续提醒用的"前端可播声音名"。系统声音名(Glass 等)前端 `<audio>` 放不了,
@@ -1082,7 +1004,10 @@ fn maybe_persistent_remind(app: &AppHandle, state: &AppState) {
                 *g = Some(now);
                 return;
             }
-            Some(t) if now.duration_since(t) >= PERSISTENT_REMIND_INTERVAL => {
+            Some(t)
+                if now.duration_since(t)
+                    >= std::time::Duration::from_secs(prefs.persistent_remind_secs.clamp(5, 3600)) =>
+            {
                 *g = Some(now);
             }
             _ => return,
@@ -1241,6 +1166,8 @@ fn send_notification(
         }
         Err(e) => {
             tracing::debug!(err = %e, "notification show failed");
+            // 横幅失败(未授权 / 系统拒绝)也要出声 —— 否则后台完成既无横幅又无声,彻底静默。
+            play_sound_native(app, configured, fallback);
         }
     }
 }
@@ -3974,7 +3901,11 @@ async fn save_statusline_config(
 /// 普通用户不配 OSC 7/633 也能拿到 cwd. 失败 (lsof 不可用 / 进程已死) 返回 None.
 #[cfg(target_os = "macos")]
 fn kernel_cwd_of(pid: u32) -> Option<String> {
+    // 关键:GUI 从 Dock/Launchpad 启动时进程不继承 shell 的 LANG,lsof 在非 UTF-8 locale 下
+    // 会把路径里的非 ASCII 字节转义成 `\xNN` 字面串(实测中文 "剧" → `\xe5\x89\xa7`),导致顶栏
+    // cwd 乱码、且按此 cwd 找 transcript 全落空。强制 LC_CTYPE=UTF-8 让 lsof 原样输出 UTF-8 路径。
     let out = std::process::Command::new("lsof")
+        .env("LC_CTYPE", "UTF-8")
         .args(["-a", "-d", "cwd", "-p", &pid.to_string(), "-F", "n"])
         .output()
         .ok()?;
@@ -3999,6 +3930,22 @@ fn kernel_cwd_of(pid: u32) -> Option<String> {
 #[cfg(not(target_os = "macos"))]
 fn kernel_cwd_of(_pid: u32) -> Option<String> {
     None
+}
+
+/// 取某终端当前 cwd(per-terminal 完成检测用):优先 OSC 633(shell 集成,最准),退到 lsof 内核
+/// cwd。与 get_terminal_cwd 同源,供后台 3s 轮询直接调(非 IPC),让每个 agent 终端按各自 cwd
+/// 定位 transcript —— 这是多 agent 完成检测能 per-terminal 工作的前提。
+fn terminal_cwd_for(state: &AppState, terminal_id: TerminalId) -> Option<String> {
+    if let Ok(map) = state.status_detectors.lock() {
+        if let Some(det) = map.get(&terminal_id) {
+            if let Ok(d) = det.lock() {
+                if let Some(cwd) = d.current_cwd() {
+                    return Some(cwd.to_string());
+                }
+            }
+        }
+    }
+    state.terminals.pid_of(terminal_id).and_then(kernel_cwd_of)
 }
 
 /// 拿某个 terminal 当前 cwd:
@@ -4505,17 +4452,9 @@ fn main() {
             vibeterm_agent_watch::codex::session::spawn_watcher(codex_tx);
             tauri::async_runtime::spawn(async move {
                 while let Some(snap) = codex_rx.recv().await {
-                    // transcript 轮状态:task_completed(完成晚于开始)→ done;否则(新 task_started 在干)→ working
-                    if let Some(ref s) = snap {
-                        on_agent_turn_update(
-                            &app_for_codex,
-                            "codex",
-                            &s.cwd,
-                            false,
-                            s.task_completed,
-                            None, // codex 维持布尔跃迁判定(不引入 turn_id 改动风险)
-                        );
-                    }
+                    // watcher 只刷新显示(model/ctx/cost)。完成检测**一律走 3s 轮询的
+                    // poll_agent_turn_for_terminal**(per-terminal:按每个 agent 终端各自 cwd 检测)——
+                    // watcher 推的是全局最新 rollout,不知对应哪个 task/terminal,无法 per-terminal 归属。
                     let _ = app_for_codex.emit("codex_session_changed", &snap);
                 }
             });
@@ -4538,12 +4477,10 @@ fn main() {
                     };
                     let mut any_changed = false;
                     for (task_id, term_ids) in pairs {
-                        // 逐 terminal 检测 agent — 关键修复:
-                        // 旧逻辑给 task 里 *所有* terminal 都开 stall 检测,导致同 task 里
-                        // 的 idle shell (split 出来的辅助窗口)被错误标记 Stalled.
-                        // 新:per-terminal 标记,只对真跑 agent 的那个 terminal 开 stall.
+                        // **per-terminal**:一个 task 可分屏多个 agent,逐终端独立识别 + 独立完成检测,
+                        // 不再只认第一个 agent(否则后开的 agent 完成检测不到 → 不通知 + 答完误判黄圈)。
+                        // stall 也只对真跑 agent 的终端开(辅助 idle shell 不开,见下方)。
                         let mut agent_per_term: Vec<(TerminalId, Option<String>)> = Vec::new();
-                        let mut task_agent_kind: Option<String> = None;
                         for term_id in &term_ids {
                             let kind = state
                                 .terminals
@@ -4551,26 +4488,26 @@ fn main() {
                                 .and_then(vibeterm_status::detect_agent_for_shell)
                                 .map(|k| k.as_str().to_string());
                             agent_per_term.push((*term_id, kind.clone()));
-                            if task_agent_kind.is_none() {
-                                if let Some(k) = kind {
-                                    task_agent_kind = Some(k);
-                                }
+                            // per-terminal 写入该终端的 agent kind。
+                            if let Ok(true) = state.tasks.set_agent_kind(task_id, *term_id, kind) {
+                                any_changed = true;
                             }
                         }
-                        let kind_for_turn = task_agent_kind.clone();
-                        if let Ok(true) = state.tasks.set_agent_kind(task_id, task_agent_kind) {
-                            any_changed = true;
-                        }
-                        // 兜底:文件监听(notify/FSEvents)可能漏 agent 完成写入(codex 尤甚),主 app
-                        // 收不到 → 圆点卡 Running。这里按 task.cwd 主动读一次 transcript 完成状态
-                        // (不依赖监听,文件已写就读得到),最多 3s 圆点转 Done。
-                        if let Some(kind) = kind_for_turn.as_deref() {
-                            poll_agent_turn_from_transcript(
-                                &app_for_agent,
-                                &state.tasks,
-                                task_id,
-                                kind,
-                            );
+                        // 兜底完成检测:逐 agent 终端,用**该终端自己的 cwd**主动读 transcript 完成态。
+                        // (watcher 不可靠 + 不知 per-terminal 归属;这里 task_id + term_id + cwd 都精确。)
+                        for (term_id, kind) in &agent_per_term {
+                            if let Some(kind) = kind {
+                                if let Some(cwd) = terminal_cwd_for(&state, *term_id) {
+                                    poll_agent_turn_for_terminal(
+                                        &app_for_agent,
+                                        &state,
+                                        task_id,
+                                        *term_id,
+                                        kind,
+                                        &cwd,
+                                    );
+                                }
+                            }
                         }
                         // 按 per-terminal 嗅探到的 agent kind:
                         //   - 装对应授权框正则(set_agent_rules) → body 正则识别 WaitingInput;

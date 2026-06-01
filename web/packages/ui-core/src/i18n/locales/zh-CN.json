@@ -501,5 +501,7 @@
   "notify.dock_badge.title": "Dock 角标显示未看完成",
   "notify.dock_badge.hint": "把“已完成但你还没看”的任务数显示在 Dock 图标上,打开该任务即清零。",
   "notify.persistent.title": "未看完成持续提醒声",
-  "notify.persistent.hint": "VibeTerm 在后台时,只要有完成的任务还没看,就每分钟轻响一声催你回来,直到你查看。全局单路,不叠加。"
+  "notify.persistent.interval": "提醒间隔",
+  "notify.persistent.interval_unit": "秒",
+  "notify.persistent.hint": "VibeTerm 在后台时,只要有完成的任务还没看,就按下面设定的间隔轻响一声催你回来,直到你查看。全局单路,不叠加。"
 }

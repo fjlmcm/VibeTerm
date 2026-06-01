@@ -35,10 +35,18 @@ pub fn projects_root() -> Option<PathBuf> {
     Some(dirs::home_dir()?.join(".claude").join(PROJECTS_SUBDIR))
 }
 
-/// 把 cwd 编码为 project dir 名: `/Users/mt/dev2/VibeTerm` → `-Users-mt-dev2-VibeTerm`.
-/// 仅替换 `/` 为 `-`, 保留点和大小写 (实测 `dev2.VibeTerm` → `-Users-mt-dev2.VibeTerm` 这种).
+/// 把 cwd 编码为 project dir 名,须与 Claude Code 完全一致:**每个非 ASCII 字母数字字符
+/// (`/` `.` `_`、空格、CJK 等)都逐字符替换为 `-`**,大小写保留,连续分隔符不合并。
+/// 例:`/Users/mt/dev/VibeTerm` → `-Users-mt-dev-VibeTerm`;`/x/jj_upload` → `-x-jj-upload`;
+/// `/x/.claude` → `-x--claude`;`/Users/u/短剧多agent` → `-Users-u----agent`(`短剧多`→`---`)。
+///
+/// 旧实现只 `replace('/', "-")`,在含 `.`/`_`/空格/CJK 的路径上算出错误目录名 →
+/// [`read_for_cwd`] 落空(None)→ 完成检测拿不到 → 圆点恒 Running、完成通知不触发。
+/// 纯 ASCII 字母数字路径两种规则碰巧一致,故 `/Users/mt/dev/VibeTerm` 开发机一直未暴露。
 pub fn cwd_to_project_dir(cwd: &str) -> String {
-    cwd.replace('/', "-")
+    cwd.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
 }
 
 /// 找一个目录下 mtime 最新的 *.jsonl, 返回路径 + mtime_ms.
@@ -637,10 +645,15 @@ mod tests {
 
     #[test]
     fn cwd_encoding() {
-        assert_eq!(
-            cwd_to_project_dir("/Users/mt/dev2/VibeTerm"),
-            "-Users-mt-dev2-VibeTerm"
-        );
+        // 纯字母数字 + `/`:旧实现也对(开发机路径属此类,故 bug 长期未暴露)。
+        assert_eq!(cwd_to_project_dir("/Users/u/Proj"), "-Users-u-Proj");
+        // 关键回归:其余字符须逐字符替换为 `-`(连续分隔符不合并),与 Claude Code 一致。
+        // 旧实现只替换 `/`,下列路径会算错目录名 → read_for_cwd 落空 → 圆点恒 Running、无完成通知。
+        assert_eq!(cwd_to_project_dir("/a/b_c"), "-a-b-c"); // 下划线 → -
+        assert_eq!(cwd_to_project_dir("/a/b.c"), "-a-b-c"); // 点 → -
+        assert_eq!(cwd_to_project_dir("/a/b c"), "-a-b-c"); // 空格 → -
+        assert_eq!(cwd_to_project_dir("/a/.x/b"), "-a--x-b"); // 隐藏目录:`/.` → `--`
+        assert_eq!(cwd_to_project_dir("/a/中文/b"), "-a----b"); // CJK 逐字符 → -(本次故障的触发类型)
     }
 
     #[test]

@@ -151,6 +151,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_persistent_remind_secs() -> u64 {
+    30
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotifyFile {
     #[serde(default = "NotifyFile::default_schema_version")]
@@ -175,6 +179,9 @@ pub struct NotifyFile {
     /// 仅特定场景(离机跑长任务)需要,默认关。一旦主窗口聚焦即停 —— 人回到 app 就不再催。
     #[serde(default)]
     pub persistent_unseen_sound: bool,
+    /// 持续提醒的响铃间隔(秒)。默认 30。仅 `persistent_unseen_sound` 开时生效;用时 clamp 到 [5,3600]。
+    #[serde(default = "default_persistent_remind_secs")]
+    pub persistent_remind_secs: u64,
 }
 
 impl Default for EventNotifyPrefs {
@@ -193,6 +200,7 @@ impl Default for NotifyFile {
             notify_focused_other_task: true,
             dock_badge_unseen: true,
             persistent_unseen_sound: false,
+            persistent_remind_secs: 30,
         }
     }
 }

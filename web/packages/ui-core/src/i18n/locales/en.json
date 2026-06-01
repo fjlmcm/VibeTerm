@@ -501,5 +501,7 @@
   "notify.dock_badge.title": "Dock badge for unseen completions",
   "notify.dock_badge.hint": "Show the number of finished-but-unseen tasks on the Dock icon; clears when you open the task.",
   "notify.persistent.title": "Persistent sound until seen",
-  "notify.persistent.hint": "While VibeTerm is in the background, chime once a minute as long as a finished task is unseen, until you come back. One sound, never stacks."
+  "notify.persistent.interval": "Reminder interval",
+  "notify.persistent.interval_unit": "sec",
+  "notify.persistent.hint": "While VibeTerm is in the background, chime at the interval below as long as a finished task is unseen, until you come back. One sound, never stacks."
 }

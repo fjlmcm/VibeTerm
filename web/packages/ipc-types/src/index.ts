@@ -296,6 +296,8 @@ export interface NotifyFile {
   dock_badge_unseen: boolean;
   /** 离开 app 期间有未看完成 → 间歇单路声音提醒,直到回来查看。默认 false */
   persistent_unseen_sound: boolean;
+  /** 持续提醒响铃间隔(秒)。默认 30,clamp 到 [5,3600]。 */
+  persistent_remind_secs: number;
 }
 
 /** 系统通知权限状态 — Tauri NotificationPermissionState 序列化为小写 string */
