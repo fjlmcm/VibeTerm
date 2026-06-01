@@ -133,7 +133,8 @@ fn resolve_clipboard_images_dir() -> Result<PathBuf, ConfigError> {
         .filter(|s| !s.is_empty());
     if let Some(s) = configured {
         let candidate = expand_user_path(s);
-        return validate_clipboard_images_dir(candidate).or_else(|_| default_clipboard_images_dir());
+        return validate_clipboard_images_dir(candidate)
+            .or_else(|_| default_clipboard_images_dir());
     }
     default_clipboard_images_dir()
 }

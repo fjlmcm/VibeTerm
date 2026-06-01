@@ -80,7 +80,6 @@ const NOTIFY_FOCUS_GRACE: std::time::Duration = std::time::Duration::from_secs(1
 /// 5s 让正常多轮对话每轮都提示,又不至于同轮边界的瞬时重复连响两声.
 const AGENT_COMPLETED_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(5);
 
-
 #[derive(Clone, Copy, Debug)]
 enum MenuLang {
     ZhCN,
@@ -1006,7 +1005,9 @@ fn maybe_persistent_remind(app: &AppHandle, state: &AppState) {
             }
             Some(t)
                 if now.duration_since(t)
-                    >= std::time::Duration::from_secs(prefs.persistent_remind_secs.clamp(5, 3600)) =>
+                    >= std::time::Duration::from_secs(
+                        prefs.persistent_remind_secs.clamp(5, 3600),
+                    ) =>
             {
                 *g = Some(now);
             }

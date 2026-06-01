@@ -289,8 +289,9 @@ fn agent_turn_done_overrides_waiting_input_and_respects_seen() {
     );
 
     // transcript 读到 task_complete → 轮已结束。压过 WaitingInput,非当前 + 未看 → Done。
-    let (changed, just_completed) =
-        tasks.set_agent_turn_done(agent_task, term, true, None).unwrap();
+    let (changed, just_completed) = tasks
+        .set_agent_turn_done(agent_task, term, true, None)
+        .unwrap();
     assert!(changed && just_completed, "首次答完应是跃迁");
     assert_eq!(
         tasks.aggregated_status_of(agent_task).unwrap(),
@@ -316,7 +317,9 @@ fn agent_turn_done_overrides_waiting_input_and_respects_seen() {
     );
 
     // 用户提下一个 prompt → codex 又开始干(Some(false))→ Running(WaitingInput 上面已优先,这里无黄灯)。
-    let (changed, _) = tasks.set_agent_turn_done(agent_task, term, false, None).unwrap();
+    let (changed, _) = tasks
+        .set_agent_turn_done(agent_task, term, false, None)
+        .unwrap();
     assert!(changed, "done→working 应是变化");
     tasks
         .update_terminal_status(term, TaskStatus::Idle, false)
@@ -342,7 +345,9 @@ fn agent_done_not_cleared_by_background_terminal_noise() {
     tasks.attach_terminal(agent_task, term).unwrap();
 
     // claude 答完一轮 → 非当前未看 → Done。
-    tasks.set_agent_turn_done(agent_task, term, true, None).unwrap();
+    tasks
+        .set_agent_turn_done(agent_task, term, true, None)
+        .unwrap();
     assert_eq!(
         tasks.aggregated_status_of(agent_task).unwrap(),
         Some(TaskStatus::Done)
