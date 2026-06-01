@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/hero.png" alt="VibeTerm" width="820">
+<img src="docs/hero.webp" alt="VibeTerm" width="820">
 
 # VibeTerm
 

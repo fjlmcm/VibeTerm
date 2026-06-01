@@ -65,7 +65,7 @@ def render(loc: str) -> str:
     # ---- 居中头部:hero 图 + 标题 + 标语 + 价值主张 + badge + 链接 + 语言切换 ----
     A('<div align="center">')
     A("")
-    A(f'<img src="docs/hero.png" alt="VibeTerm" width="820">')
+    A(f'<img src="docs/hero.webp" alt="VibeTerm" width="820">')
     A("")
     A("# VibeTerm")
     A("")
