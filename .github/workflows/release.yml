@@ -1,5 +1,7 @@
 # Release — tag push 触发 macOS universal + Windows x64 build
-# 产物上传到 GitHub Release 草稿(人工 review 后 publish)
+# 产物上传到 GitHub Release 并自动 publish(releaseDraft: false,不再人工 review)
+# 注意:多平台 matrix —— 先完成的 job 会先把 Release 设为已发布,后完成的平台(如 Windows)
+# 产物随后追加;故发布后短时间内可能暂缺某平台二进制,稍候补齐。
 #
 # macOS 签名+notarize 由 4 个 GitHub secret 驱动(见下方 env)
 # Windows 首发不签名(用户首次运行会遇到 SmartScreen 警告,属预期)
@@ -7,7 +9,7 @@
 name: Release
 
 on:
-  # tag push(v*)自动触发 macOS 签名+公证 + Windows build → Release 草稿。
+  # tag push(v*)自动触发 macOS 签名+公证 + Windows build → Release 自动 publish。
   # 6 个 APPLE_* secrets 已配置(Settings → Secrets and variables → Actions)。
   push:
     tags: ["v*"]
@@ -71,7 +73,7 @@ jobs:
           args: ${{ matrix.args }}
           tagName: ${{ github.ref_name }}
           releaseName: "VibeTerm ${{ github.ref_name }}"
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false
           releaseBody: |
             ## VibeTerm ${{ github.ref_name }}
