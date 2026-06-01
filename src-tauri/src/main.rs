@@ -75,9 +75,10 @@ struct AppState {
 /// 主动激活,不强制切 task. 取 10s 是经验:用户看到通知到点击通常 < 5s.
 const NOTIFY_FOCUS_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
 
-/// agent_completed 通知冷却时间. claude/codex 来回对话每次都会发 Stop hook,
-/// 30s 内合并避免对话场景连发. 长任务跑完往往 >> 30s, 不影响.
-const AGENT_COMPLETED_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(30);
+/// agent_completed 通知冷却时间(per-task). transcript 完成检测已是轮级精确(claude end_turn /
+/// codex task_complete,一轮一次 + set_agent_turn_done 去重),只需挡同一 task 几秒内的极快重复;
+/// 5s 让正常多轮对话每轮都提示,又不至于同轮边界的瞬时重复连响两声.
+const AGENT_COMPLETED_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// 间歇持续提醒(persistent_unseen_sound)的最小响铃间隔。全局单路(不 per-task),
 /// 60s 一次:不致烦扰,又不漏。仅在"有未看完成 + 主窗口失焦"时计时。
@@ -889,6 +890,147 @@ fn refresh_dock_badge(app: &AppHandle, tasks: &TaskRegistry) {
     }
 }
 
+/// agent 完成一轮(transcript 权威信号:claude `stop_reason=end_turn` / codex `task_complete`)
+/// → 按 cwd 关联 task → 标 Done + Dock 角标 + 完成通知。比 PTY 输出超时可靠(agent 自己的结构
+/// 化记录)。去重:per-task last_turn_id,同一轮多次 emit 只标一次。active 任务不标(用户正看着)。
+/// agent transcript 轮状态更新(working/done)→ 关联 task → 设状态。
+/// done 跃迁(working→done,刚答完一轮)时额外 Dock 角标 + 通知;working/done 都 emit 刷新圆点。
+/// claude: turn_done = (stop_reason == "end_turn");codex: turn_done = task_completed(完成晚于开始)。
+/// 这套用 transcript 驱动 agent 任务的完成显示,压过 PTY 输出嗅探(尤其 codex 状态栏刷新的假 Running)。
+fn on_agent_turn_update(
+    app: &AppHandle,
+    agent: &str,
+    match_cwd: &str,
+    is_claude: bool,
+    turn_done: bool,
+    turn_id: Option<&str>,
+) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let tasks: &TaskRegistry = &state.tasks;
+    // 兜底实时窗口焦点 —— macOS 切到别的 app 时 WindowEvent::Focused 不一定可靠触发;每次 agent
+    // 状态更新都按实时 is_focused() 校正,焦点变了立即刷新圆点 + 角标(失焦时当前 task 完成 → Done)。
+    // 轮询每 3s 经此,故即使 Focused 事件完全不来,也最多 3s 校正到位。
+    // 兜底实时焦点(Focused 事件 macOS 切 app 不一定可靠);set_window_focused 内已打日志,
+    // 这里焦点变了就刷新圆点 + 角标。轮询每 3s 经此,即使事件不来也最多 3s 校正。
+    if tasks
+        .set_window_focused(main_window_focused(app))
+        .unwrap_or(false)
+    {
+        emit_tasks_changed(app, tasks);
+        refresh_dock_badge(app, tasks);
+    }
+    let pairs = match tasks.task_cwd_pairs() {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    // claude 用 cwd_to_project_dir 两边编码后比(规避 project_path 反解歧义);codex 精确比 cwd。
+    let target = if is_claude {
+        vibeterm_agent_watch::claude::project::cwd_to_project_dir(match_cwd)
+    } else {
+        match_cwd.to_string()
+    };
+    for (task_id, c) in pairs {
+        let hit = if is_claude {
+            vibeterm_agent_watch::claude::project::cwd_to_project_dir(&c) == target
+        } else {
+            c == match_cwd
+        };
+        if !hit {
+            continue;
+        }
+        // set_agent_turn_done 返回 (changed, just_completed)。
+        // changed=值真的变了才刷新 —— 轮询每 3s 兜底反复调,不变则不 emit,避免前端无谓刷新。
+        // just_completed=working/未知 → done 跃迁,才发完成通知。Err(task 不存在)忽略。
+        if let Ok((changed, just_completed)) = tasks.set_agent_turn_done(task_id, turn_done, turn_id)
+        {
+            // changed=turn_done 布尔变了(Running↔Done/Idle);just_completed=新一轮答完(快轮时
+            // turn_done 没变但 seen 翻 false → 圆点也要刷成 Done)。任一成立都刷新圆点 + 角标。
+            if changed || just_completed {
+                tracing::info!(
+                    agent,
+                    task_id,
+                    turn_done,
+                    just_completed,
+                    turn_id = ?turn_id,
+                    "agent_turn_update: transcript 轮状态变化 → 刷新圆点"
+                );
+                emit_tasks_changed(app, tasks);
+                refresh_dock_badge(app, tasks);
+            }
+            if just_completed {
+                // 通知:交 fire 内 preflight 按窗口焦点决定 —— 后台都发(当前/非当前)、
+                // 前台非当前任务轻提示、前台当前任务静默。
+                let last = tasks
+                    .task_dto(task_id)
+                    .ok()
+                    .flatten()
+                    .and_then(|d| state.terminals.most_recent_tail(&d.terminal_ids))
+                    .unwrap_or_default();
+                fire_agent_completed_notification(
+                    app,
+                    tasks,
+                    task_id,
+                    agent,
+                    &format!("task-{task_id}"),
+                    last.trim(),
+                );
+            }
+        }
+    }
+}
+
+/// 3s 轮询兜底:按 task.cwd 主动读 transcript 完成状态 → on_agent_turn_update。
+/// 文件监听(notify/FSEvents)对 codex 的 ~/.codex/sessions 写入不可靠(实测漏 task_complete),
+/// 这里不依赖监听、直接读文件兜底。read_for_cwd 按 cwd 精确定位会话文件,比 watcher 全局
+/// find_latest 更准;on_agent_turn_update 仅在状态变化时 emit,无谓轮询不刷屏。
+fn poll_agent_turn_from_transcript(
+    app: &AppHandle,
+    tasks: &TaskRegistry,
+    task_id: vibeterm_ipc::TaskId,
+    kind: &str,
+) {
+    let Ok(Some(cwd)) = tasks.cwd(task_id) else {
+        return;
+    };
+    if cwd.is_empty() {
+        return;
+    }
+    let (is_claude, turn_done, turn_id) = match kind {
+        "claude" => {
+            let sess = vibeterm_agent_watch::claude::project::read_for_cwd(&cwd);
+            let done = sess
+                .as_ref()
+                .map(|s| s.stop_reason.as_deref() == Some("end_turn"))
+                .unwrap_or(false);
+            // turn id = 末条 assistant 的 uuid;仅 done 时取,给完成判定去重(快轮也不漏)。
+            let tid = if done { sess.and_then(|s| s.last_turn_id) } else { None };
+            (true, done, tid)
+        }
+        "codex" => (
+            false,
+            vibeterm_agent_watch::codex::session::read_for_cwd(&cwd)
+                .map(|s| s.task_completed)
+                .unwrap_or(false),
+            // codex 维持布尔跃迁判定 —— 现状每次都灵,不引入 turn_id 改动风险。
+            None,
+        ),
+        _ => return,
+    };
+    // 诊断:每次轮询打出 read_for_cwd 读到的完成态 + turn_id。第二次完成若仍漏,看这里 ——
+    // turn_id 变了却没 fire = 逻辑问题;turn_id 没变 = 选错会话文件(读到了旧/别的会话)。
+    if is_claude {
+        tracing::debug!(
+            task_id,
+            turn_done,
+            turn_id = ?turn_id,
+            "poll: claude transcript 完成态(read_for_cwd)"
+        );
+    }
+    on_agent_turn_update(app, kind, &cwd, is_claude, turn_done, turn_id.as_deref());
+}
+
 /// 前台轻提示 / 持续提醒用的"前端可播声音名"。系统声音名(Glass 等)前端 `<audio>` 放不了,
 /// 退到 bundled fallback,保证前台/持续场景一定有声(系统横幅那条路才用得了系统声音)。
 fn frontend_sound_for(app: &AppHandle, configured: &str, fallback: &str) -> String {
@@ -1056,21 +1198,9 @@ fn notify_status_transition(
     let body = format_notify_body(&label, last_output.as_deref(), agent_kind.as_deref());
     let title = "VibeTerm — 等待你的输入".to_string();
     let configured = event_prefs.sound.as_deref().unwrap_or("");
-    let (use_frontend_audio, native_sound, raw_sound) =
-        resolve_notify_sound(app, configured, "tone20");
-
-    // 通知点击聚焦:用唯一 id 作为 hint,前端的 click listener 用
-    // task_id 切到对应 task. tauri-plugin-notification 没有同步 callback API,
-    // 我们把 task_id 编进 id (id 是 i32) — 不冲突时直接 cast,溢出时降级 0.
-    send_notification(
-        app,
-        task_id,
-        title,
-        body,
-        &native_sound,
-        use_frontend_audio,
-        &raw_sound,
-    );
+    // 通知点击聚焦:把 task_id 编进通知 id(i32),前端 click listener 用它切到对应 task。
+    // 声音由 send_notification 内部 afplay(绕开 webview),tone20 作 fallback。
+    send_notification(app, task_id, title, body, configured, "tone20");
 }
 
 /// 实际发系统通知 + 自定义文件音效旁路 + 记录 last_notify (用于点击聚焦).
@@ -1080,24 +1210,24 @@ fn send_notification(
     task_id: vibeterm_ipc::TaskId,
     title: String,
     body: String,
-    native_sound: &str,
-    use_frontend_audio: bool,
-    raw_sound: &str,
+    configured: &str,
+    fallback: &str,
 ) {
     use tauri_plugin_notification::NotificationExt;
     let id: i32 = i32::try_from(task_id).unwrap_or(0);
-    let mut builder = app.notification().builder().id(id).title(title).body(body);
-    if !native_sound.is_empty() {
-        builder = builder.sound(native_sound);
-    }
-    match builder.show() {
+    // 横幅:tauri-plugin-notification 走 Rust 端、不经 webview。不带 .sound —— 声音单独 afplay。
+    match app
+        .notification()
+        .builder()
+        .id(id)
+        .title(title)
+        .body(body)
+        .show()
+    {
         Ok(()) => {
-            if use_frontend_audio {
-                let _ = app.emit(
-                    "notification_play_sound",
-                    serde_json::json!({ "sound": raw_sound }),
-                );
-            }
+            // 声音:Rust afplay 直接播文件,绕开 webview 的 autoplay/后台限制
+            // (webview <audio> 在无 user gesture / 窗口后台时被拦 —— 这正是"有时没声音"的根因)。
+            play_sound_native(app, configured, fallback);
             if let Some(s) = app.try_state::<AppState>() {
                 if let Ok(mut g) = s.last_notify.lock() {
                     *g = Some((task_id, std::time::Instant::now()));
@@ -1107,6 +1237,84 @@ fn send_notification(
         Err(e) => {
             tracing::debug!(err = %e, "notification show failed");
         }
+    }
+}
+
+/// 进程内音频播放线程的句柄。afplay 每次 fork 新进程、开关默认音频输出设备,GUI app 子进程
+/// 下连续播放第二次常哑(afplay 自身 exit 0,声音却没出来)。改用 rodio:常驻线程持有一个
+/// OutputStream(设备一直开、不反复开关),每次播放只塞一个 Sink。
+static AUDIO_TX: std::sync::OnceLock<std::sync::mpsc::Sender<std::path::PathBuf>> =
+    std::sync::OnceLock::new();
+
+/// 启动常驻音频线程(持有 rodio OutputStream)。app 启动时调用一次。
+fn init_audio_thread() {
+    let (tx, rx) = std::sync::mpsc::channel::<std::path::PathBuf>();
+    let spawned = std::thread::Builder::new()
+        .name("vibeterm-audio".into())
+        .spawn(move || {
+            let (_stream, handle) = match rodio::OutputStream::try_default() {
+                Ok(s) => {
+                    tracing::info!("audio: OutputStream 就绪(常驻)");
+                    s
+                }
+                Err(e) => {
+                    tracing::warn!(err = %e, "audio: 无默认输出设备,通知声音禁用");
+                    return;
+                }
+            };
+            // _stream 在本线程常驻 alive。串行播放:每条通知开一个 Sink,append 后
+            // sleep_until_end 同步播到完再释放 —— 不用 detach。detach 是把 source 挂到 mixer
+            // 异步播,连续播放时第二个 source 常不出声(用户实测:第二次弹了通知却没声音)。
+            // 串行 = 每次独立 Sink、播完即释放,连续多次稳定。每步打 debug 便于诊断。
+            while let Ok(path) = rx.recv() {
+                tracing::info!(path = %path.display(), "audio: 收到播放请求");
+                let src = match std::fs::File::open(&path) {
+                    Ok(f) => match rodio::Decoder::new(std::io::BufReader::new(f)) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::warn!(err = %e, "audio: 解码失败");
+                            continue;
+                        }
+                    },
+                    Err(e) => {
+                        tracing::warn!(err = %e, "audio: 打开文件失败");
+                        continue;
+                    }
+                };
+                match rodio::Sink::try_new(&handle) {
+                    Ok(sink) => {
+                        sink.append(src);
+                        tracing::info!("audio: 开始播放(Sink)");
+                        sink.sleep_until_end(); // 同步播到完,本线程串行
+                        tracing::info!("audio: 播放结束");
+                    }
+                    Err(e) => tracing::warn!(err = %e, "audio: Sink 创建失败"),
+                }
+            }
+            tracing::warn!("audio: 播放线程退出(channel 关闭)");
+        });
+    if spawned.is_ok() {
+        let _ = AUDIO_TX.set(tx);
+    } else {
+        tracing::warn!("audio: 音频线程启动失败");
+    }
+}
+
+/// 播放通知声音 —— 解析文件路径后发给常驻音频线程(rodio 进程内播放,绕开 afplay 反复 fork)。
+/// `configured` 解析不到(空 / "default" / 无此文件)就退到 `fallback`;再不行则静默。
+fn play_sound_native(app: &AppHandle, configured: &str, fallback: &str) {
+    let path =
+        resolve_sound_to_path(app, configured).or_else(|| resolve_sound_to_path(app, fallback));
+    let Some(path) = path else {
+        tracing::debug!(configured, fallback, "notify 声音:无可播文件,静默");
+        return;
+    };
+    tracing::info!(path = %path.display(), "notify 声音 → rodio(send)");
+    match AUDIO_TX.get() {
+        Some(tx) => {
+            let _ = tx.send(path);
+        }
+        None => tracing::warn!("notify 声音:音频线程未初始化"),
     }
 }
 
@@ -1155,29 +1363,20 @@ pub fn fire_agent_completed_notification(
         format!("{label} · {last_message}")
     };
     let configured = event_prefs.sound.as_deref().unwrap_or("");
-    let (use_frontend_audio, native_sound, raw_sound) =
-        resolve_notify_sound(app, configured, "ringtone2");
     match route {
-        NotifyRoute::Background => send_notification(
-            app,
-            task_id,
-            title,
-            body,
-            &native_sound,
-            use_frontend_audio,
-            &raw_sound,
-        ),
+        NotifyRoute::Background => {
+            // 后台:系统横幅 + afplay 声音,都走 Rust 端、不经 webview。
+            tracing::info!(configured, "fire 完成通知 → Background(横幅 + afplay)");
+            send_notification(app, task_id, title, body, configured, "ringtone2");
+        }
         NotifyRoute::ForegroundLight => {
-            // 前台轻提示:不发系统横幅(macOS 前台横幅常被吞),只前端音一声 + 列表行高亮。
-            let fe = if use_frontend_audio {
-                raw_sound.as_str()
-            } else {
-                "ringtone2"
-            };
-            let _ = app.emit(
-                "notification_play_sound",
-                serde_json::json!({ "sound": fe }),
+            // 前台轻提示:不发横幅(macOS 前台横幅常被吞),只 afplay 一声 + 列表行高亮。
+            // afplay 是独立进程,前台也不受 webview autoplay 限制,稳。
+            tracing::info!(
+                configured,
+                "fire 完成通知 → ForegroundLight(afplay + 行高亮)"
             );
+            play_sound_native(app, configured, "ringtone2");
             let _ = app.emit("task_flash", task_id);
         }
     }
@@ -2358,7 +2557,8 @@ async fn set_active_task(
 ) -> IpcResult<()> {
     state.tasks.set_active_main(id).map_err(map_task_err)?;
     let _ = app.emit("active_task_changed", id);
-    // 切到任务 → set_active_main 已翻 seen=true,未看完成数可能减 → 刷新 Dock 角标
+    // 切换当前任务 → 重算各 task 聚合 status(切出的完成任务变 Done、切入的变 Idle)+ 刷新角标。
+    emit_tasks_changed(&app, &state.tasks);
     refresh_dock_badge(&app, &state.tasks);
     Ok(())
 }
@@ -4072,6 +4272,8 @@ fn fix_path_for_gui_launch() {}
 // ============================
 fn main() {
     init_tracing();
+    // 常驻音频线程(通知声音用 rodio 进程内播放,替代反复 fork 的 afplay)。早启动,后续直接 send。
+    init_audio_thread();
     // 必须早于任何 which::which / PTY spawn — 否则 GUI 启动的 .app 看不到用户 PATH
     fix_path_for_gui_launch();
 
@@ -4277,6 +4479,15 @@ fn main() {
             vibeterm_agent_watch::claude::project::spawn_watcher(sess_tx);
             tauri::async_runtime::spawn(async move {
                 while let Some(sess) = sess_rx.recv().await {
+                    // watcher 只刷新显示(model/ctx/cost),不驱动完成检测。
+                    // 为何:这里的 ClaudeSession 来自 find_active_session_file() —— 全局 mtime 最新
+                    // 的会话,未必是本任务 agent 的。典型反例:同一仓库里 Claude Code 自身几百 MB 的
+                    // transcript,每条消息都在写 → mtime 几乎永远最新,且超限只能读末尾 stop_reason。
+                    // 若用它驱动完成,会把"另一个 claude 会话答完了"误判成本任务 agent 答完 → claude
+                    // 完成漏报(只剩 claude 自己 hook 弹的无声通知)。完成检测一律走 3s 轮询的
+                    // poll_agent_turn_from_transcript → read_for_cwd(按 task.cwd 精确定位 + 排除超限
+                    // 巨型会话)。codex 因会话按日期分目录、snapshot 自带精确 cwd,无此碰撞,保留其
+                    // watcher 完成路径。
                     let _ = app_for_session.emit("claude_session_changed", &sess);
                 }
             });
@@ -4289,6 +4500,17 @@ fn main() {
             vibeterm_agent_watch::codex::session::spawn_watcher(codex_tx);
             tauri::async_runtime::spawn(async move {
                 while let Some(snap) = codex_rx.recv().await {
+                    // transcript 轮状态:task_completed(完成晚于开始)→ done;否则(新 task_started 在干)→ working
+                    if let Some(ref s) = snap {
+                        on_agent_turn_update(
+                            &app_for_codex,
+                            "codex",
+                            &s.cwd,
+                            false,
+                            s.task_completed,
+                            None, // codex 维持布尔跃迁判定(不引入 turn_id 改动风险)
+                        );
+                    }
                     let _ = app_for_codex.emit("codex_session_changed", &snap);
                 }
             });
@@ -4330,8 +4552,20 @@ fn main() {
                                 }
                             }
                         }
+                        let kind_for_turn = task_agent_kind.clone();
                         if let Ok(true) = state.tasks.set_agent_kind(task_id, task_agent_kind) {
                             any_changed = true;
+                        }
+                        // 兜底:文件监听(notify/FSEvents)可能漏 agent 完成写入(codex 尤甚),主 app
+                        // 收不到 → 圆点卡 Running。这里按 task.cwd 主动读一次 transcript 完成状态
+                        // (不依赖监听,文件已写就读得到),最多 3s 圆点转 Done。
+                        if let Some(kind) = kind_for_turn.as_deref() {
+                            poll_agent_turn_from_transcript(
+                                &app_for_agent,
+                                &state.tasks,
+                                task_id,
+                                kind,
+                            );
                         }
                         // 按 per-terminal 嗅探到的 agent kind:
                         //   - 装对应授权框正则(set_agent_rules) → body 正则识别 WaitingInput;
@@ -4591,20 +4825,31 @@ fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // 通知聚焦:窗口聚焦 + NOTIFY_FOCUS_GRACE 内有 last_notify → 通知前端切 task.
-            // tauri-plugin-notification 桌面端无 click callback,这是近似实现.
-            if let tauri::WindowEvent::Focused(true) = event {
+            // 主窗口焦点变化:① 同步 window_focused —— 失焦时当前选中 task 完成会显 Done(未看)
+            // 并计入 Dock 角标(用户在别的 app 也能从 Dock 看到),聚焦时标当前 task 已读;
+            // ② 聚焦 + NOTIFY_FOCUS_GRACE 内有 last_notify → 通知前端切 task(桌面通知无 click callback 的近似)。
+            if let tauri::WindowEvent::Focused(focused) = event {
                 if window.label() == "main" {
+                    tracing::info!(
+                        focused = *focused,
+                        "WindowEvent::Focused(主窗口焦点事件触发)"
+                    );
                     let app = window.app_handle().clone();
                     if let Some(state) = app.try_state::<AppState>() {
-                        let task = state.last_notify.lock().ok().and_then(|mut g| {
-                            g.take().filter(|(_, t)| t.elapsed() < NOTIFY_FOCUS_GRACE)
-                        });
-                        if let Some((task_id, _)) = task {
-                            let _ = app.emit(
-                                "notification_focus_target",
-                                serde_json::json!({"task_id": task_id}),
-                            );
+                        if state.tasks.set_window_focused(*focused).unwrap_or(false) {
+                            emit_tasks_changed(&app, &state.tasks);
+                            refresh_dock_badge(&app, &state.tasks);
+                        }
+                        if *focused {
+                            let task = state.last_notify.lock().ok().and_then(|mut g| {
+                                g.take().filter(|(_, t)| t.elapsed() < NOTIFY_FOCUS_GRACE)
+                            });
+                            if let Some((task_id, _)) = task {
+                                let _ = app.emit(
+                                    "notification_focus_target",
+                                    serde_json::json!({"task_id": task_id}),
+                                );
+                            }
                         }
                     }
                 }

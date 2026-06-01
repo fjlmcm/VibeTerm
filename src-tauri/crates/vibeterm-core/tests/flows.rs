@@ -227,6 +227,10 @@ fn mark_agent_completed_flips_aggregate_to_done() {
     let _cfg = isolated_config();
     let tasks = TaskRegistry::new();
     let task_id = tasks.create("agent-task".into(), None, None).unwrap();
+    // Done 现在要求"非当前 active"(当前正看的任务完成显示 Idle、不打扰)。create 第一个 task
+    // 默认即 active_main,故另建一个切过去,让 agent-task 成为后台任务 —— 完成后才聚合成 Done。
+    let other = tasks.create("other".into(), None, None).unwrap();
+    tasks.set_active_main(other).unwrap();
     let term = 7;
     tasks.attach_terminal(task_id, term).unwrap();
     // agent 跑起来 → Running
@@ -260,6 +264,212 @@ fn mark_agent_completed_flips_aggregate_to_done() {
 
     // 重复 mark 是幂等 — 返回 false
     assert!(!tasks.mark_agent_completed(task_id).unwrap());
+}
+
+// codex 答完后那个常驻输入框会被嗅探成 WaitingInput。锁住:transcript "轮已结束"
+// (set_agent_turn_done(true)) 必须压过 WaitingInput 黄灯;切回看过(seen=true)后再切出 = Idle,
+// 不再被输入框黄灯顶回去(用户实测 bug:切回变灰、再切出又变黄圈)。
+#[test]
+fn agent_turn_done_overrides_waiting_input_and_respects_seen() {
+    let _cfg = isolated_config();
+    let tasks = TaskRegistry::new();
+    let agent_task = tasks.create("codex-task".into(), None, None).unwrap();
+    let other = tasks.create("other".into(), None, None).unwrap();
+    tasks.set_active_main(other).unwrap(); // agent_task 非当前
+    let term = 7;
+    tasks.attach_terminal(agent_task, term).unwrap();
+
+    // 复现前提:没有 transcript 信号时,codex 答完后输入框误判 WaitingInput,聚合确会显示黄灯。
+    tasks
+        .update_terminal_status(term, TaskStatus::WaitingInput, false)
+        .unwrap();
+    assert_eq!(
+        tasks.aggregated_status_of(agent_task).unwrap(),
+        Some(TaskStatus::WaitingInput),
+    );
+
+    // transcript 读到 task_complete → 轮已结束。压过 WaitingInput,非当前 + 未看 → Done。
+    let (changed, just_completed) = tasks.set_agent_turn_done(agent_task, true, None).unwrap();
+    assert!(changed && just_completed, "首次答完应是跃迁");
+    assert_eq!(
+        tasks.aggregated_status_of(agent_task).unwrap(),
+        Some(TaskStatus::Done),
+        "轮已结束应压过 WaitingInput,非当前未看 → Done"
+    );
+
+    // 切回看(set_active_main 置 seen=true)→ 当前任务不打扰 → Idle。
+    tasks.set_active_main(agent_task).unwrap();
+    assert_eq!(
+        tasks.aggregated_status_of(agent_task).unwrap(),
+        Some(TaskStatus::Idle),
+        "切回当前 → Idle"
+    );
+
+    // 再切出 —— 已看过(seen=true),即使输入框仍 WaitingInput、轮仍 Some(true),也应是 Idle,
+    // 不再被黄灯顶回去(正是用户报的 bug)。
+    tasks.set_active_main(other).unwrap();
+    assert_eq!(
+        tasks.aggregated_status_of(agent_task).unwrap(),
+        Some(TaskStatus::Idle),
+        "看过后再切出应保持 Idle,不再变黄圈"
+    );
+
+    // 用户提下一个 prompt → codex 又开始干(Some(false))→ Running(WaitingInput 上面已优先,这里无黄灯)。
+    let (changed, _) = tasks.set_agent_turn_done(agent_task, false, None).unwrap();
+    assert!(changed, "done→working 应是变化");
+    tasks
+        .update_terminal_status(term, TaskStatus::Idle, false)
+        .unwrap();
+    assert_eq!(
+        tasks.aggregated_status_of(agent_task).unwrap(),
+        Some(TaskStatus::Running),
+        "轮进行中 → Running"
+    );
+}
+
+// claude 答完后 caffeinate keep-alive / MCP server 的后台输出会把终端打成 Running,
+// 旧逻辑无条件 seen=true 把未读 Done 冲成 Idle(用户报:答完弹通知,但切回去前圆点就变灰了)。
+// 锁住:轮已结束(Some(true))时,终端后台 Running/WaitingInput 不清未读。
+#[test]
+fn agent_done_not_cleared_by_background_terminal_noise() {
+    let _cfg = isolated_config();
+    let tasks = TaskRegistry::new();
+    let agent_task = tasks.create("claude-task".into(), None, None).unwrap();
+    let other = tasks.create("other".into(), None, None).unwrap();
+    tasks.set_active_main(other).unwrap(); // agent_task 非当前
+    let term = 9;
+    tasks.attach_terminal(agent_task, term).unwrap();
+
+    // claude 答完一轮 → 非当前未看 → Done。
+    tasks.set_agent_turn_done(agent_task, true, None).unwrap();
+    assert_eq!(
+        tasks.aggregated_status_of(agent_task).unwrap(),
+        Some(TaskStatus::Done)
+    );
+
+    // 答完后 caffeinate / MCP / 收尾输出把终端打成 Running —— 不该清掉未读 Done。
+    tasks
+        .update_terminal_status(term, TaskStatus::Running, false)
+        .unwrap();
+    assert_eq!(
+        tasks.aggregated_status_of(agent_task).unwrap(),
+        Some(TaskStatus::Done),
+        "轮已结束时后台 Running 不该把未读 Done 冲成 Idle"
+    );
+
+    // 用户切回看 → Idle;再切出 → 已看过,保持 Idle。
+    tasks.set_active_main(agent_task).unwrap();
+    assert_eq!(
+        tasks.aggregated_status_of(agent_task).unwrap(),
+        Some(TaskStatus::Idle)
+    );
+    tasks.set_active_main(other).unwrap();
+    assert_eq!(
+        tasks.aggregated_status_of(agent_task).unwrap(),
+        Some(TaskStatus::Idle),
+        "看过后再切出保持 Idle"
+    );
+}
+
+// 用户把 VibeTerm 切到后台(窗口失焦)时,当前选中 task 完成应显 Done(未看)并计入 Dock 角标 ——
+// 不能因"它是 active_main"就当作"正盯着"。回到窗口标已读。(用户报:失焦完成只通知,圆点不变。)
+#[test]
+fn active_task_done_when_window_unfocused() {
+    let _cfg = isolated_config();
+    let tasks = TaskRegistry::new();
+    let agent = tasks.create("agent".into(), None, None).unwrap();
+    tasks.set_active_main(agent).unwrap(); // agent 就是当前选中 task
+
+    // 窗口有焦点(默认)+ 当前 task 答完 → Idle(正盯着,不打扰)。
+    tasks.set_agent_turn_done(agent, true, None).unwrap();
+    assert_eq!(
+        tasks.aggregated_status_of(agent).unwrap(),
+        Some(TaskStatus::Idle),
+        "聚焦时当前 task 完成 → Idle"
+    );
+
+    // 切到别的 app(窗口失焦)→ 当前 task 不再算"盯着" → Done(未看)+ 计角标。
+    assert!(
+        tasks.set_window_focused(false).unwrap(),
+        "焦点变化应返回 true"
+    );
+    assert_eq!(
+        tasks.aggregated_status_of(agent).unwrap(),
+        Some(TaskStatus::Done),
+        "失焦时当前 task 完成 → Done(未看)"
+    );
+    assert_eq!(tasks.unseen_done_count(), 1, "失焦完成计入 Dock 角标");
+
+    // 回到窗口(聚焦)→ 标已读 → Idle + 角标清。
+    assert!(tasks.set_window_focused(true).unwrap());
+    assert_eq!(
+        tasks.aggregated_status_of(agent).unwrap(),
+        Some(TaskStatus::Idle),
+        "回到窗口 → 已读 Idle"
+    );
+    assert_eq!(tasks.unseen_done_count(), 0);
+
+    // 再失焦 → 已看过,不再翻 Done。
+    tasks.set_window_focused(false).unwrap();
+    assert_eq!(
+        tasks.aggregated_status_of(agent).unwrap(),
+        Some(TaskStatus::Idle),
+        "看过后再失焦保持 Idle"
+    );
+}
+
+// 根因回归(用户报:claude 失焦后"第二次起"完成漏判,只剩 claude 自己 hook 的无声通知)。
+// 快轮(纯文本秒回、无工具调用)时 3s 轮询常采不到中间 working 那一拍,agent_turn_done 一直停在
+// Some(true)。完成判定若只靠布尔跃迁(was != Some(true))就会漏。改用 turn_id 去重:end_turn 的
+// uuid 变了 = 新一轮答完,即使没采到 working 也判出;同 uuid 不重复。
+#[test]
+fn agent_completion_detected_by_new_turn_id_without_working_sample() {
+    let _cfg = isolated_config();
+    let tasks = TaskRegistry::new();
+    let agent_task = tasks.create("claude".into(), None, None).unwrap();
+    let other = tasks.create("other".into(), None, None).unwrap();
+    tasks.set_active_main(other).unwrap(); // agent_task 非当前
+
+    // 第一轮答完(uuid=A)→ 新 turn → 判完成 → 非当前未看 → Done。
+    let (_c, jc1) = tasks
+        .set_agent_turn_done(agent_task, true, Some("A"))
+        .unwrap();
+    assert!(jc1, "首轮答完应判完成");
+    assert_eq!(
+        tasks.aggregated_status_of(agent_task).unwrap(),
+        Some(TaskStatus::Done)
+    );
+
+    // 同一轮被轮询反复读到(uuid 仍 A)→ 去重,不重复判完成。
+    let (_c, jc_dup) = tasks
+        .set_agent_turn_done(agent_task, true, Some("A"))
+        .unwrap();
+    assert!(!jc_dup, "同 turn_id 不应重复判完成");
+
+    // 用户切回看过(seen=true)再切出 → Idle。
+    tasks.set_active_main(agent_task).unwrap();
+    tasks.set_active_main(other).unwrap();
+    assert_eq!(
+        tasks.aggregated_status_of(agent_task).unwrap(),
+        Some(TaskStatus::Idle)
+    );
+
+    // 关键:第二轮是"快轮",轮询没采到 working(始终读到 done),agent_turn_done 一直停在
+    // Some(true) —— 布尔跃迁判定在此会漏(正是用户报的 bug)。但 end_turn 的 uuid 变成 B,
+    // turn_id 去重必须判出新完成 → 再次 Done(未看)。
+    let (changed, jc2) = tasks
+        .set_agent_turn_done(agent_task, true, Some("B"))
+        .unwrap();
+    assert!(
+        jc2,
+        "新 turn_id(uuid 变化)即使没采到 working、turn_done 布尔没变也应判完成"
+    );
+    assert!(!changed, "turn_done 布尔未变(Some(true)→Some(true))→ changed=false");
+    assert_eq!(
+        tasks.aggregated_status_of(agent_task).unwrap(),
+        Some(TaskStatus::Done),
+        "第二轮(快轮)完成也应 → Done(未看)"
+    );
 }
 
 #[test]

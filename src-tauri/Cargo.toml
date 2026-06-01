@@ -75,6 +75,15 @@ serde_json         = { workspace = true }
 [dependencies.which]
 version = "6"
 
+# 通知声音:进程内播放,不再 fork afplay。afplay 每次开新进程、开关默认音频输出设备,
+# 在 GUI app 的子进程环境下连续播放第二次常哑(afplay 自身 exit 0,但声音没出来)。
+# rodio 在一条常驻音频线程里持有一个 OutputStream(设备一直开、不反复开关),每次播放
+# 只塞一个 Sink —— 连续播放稳定。mp3 解码走 symphonia。
+[dependencies.rodio]
+version = "0.20"
+default-features = false
+features = ["symphonia-mp3"]
+
 # 粘贴图片:官方 clipboard plugin(跨平台读 image bitmap)+ image crate 编 PNG
 [dependencies.tauri-plugin-clipboard-manager]
 version = "2"

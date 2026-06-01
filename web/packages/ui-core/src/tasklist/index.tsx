@@ -419,8 +419,6 @@ export const TaskList: Component<TaskListProps> = (props) => {
                                 "white-space": "nowrap",
                                 overflow: "hidden",
                                 "text-overflow": "ellipsis",
-                                "text-decoration": task().status === "done" ? "line-through" : "none",
-                                "text-decoration-color": "var(--color-text-2)",
                               }}
                             >
                               {task().name}

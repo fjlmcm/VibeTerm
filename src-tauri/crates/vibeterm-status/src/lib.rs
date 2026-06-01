@@ -374,17 +374,10 @@ impl StatusDetector {
             && self.last_chunk_at.elapsed() > Duration::from_millis(IDLE_TIMEOUT_MS)
         {
             self.current = TaskStatus::Idle;
-            // 之前标题在转圈(braille spinner)→ 突然静默 = spinner 停了 = agent 完成这一轮。
-            // claude/codex 实测完成后大多只是停止刷 spinner 帧,不会再发一个"静态标题"OSC,
-            // 故 apply_title 的 spinner→静态 边界捕获不到,只能靠这里的超时兜住判完成。视为真完成
-            // (by_osc),供后台任务升 Done / 通知 / Dock 角标。普通命令(从未 spin)的静默 =
-            // 普通 idle,不算完成。
-            if self.title_spinner {
-                self.idle_finalized_by_osc = true;
-                self.title_spinner = false;
-            } else {
-                self.idle_finalized_by_osc = false;
-            }
+            // 超时静默 = 普通 idle, **不**算"完成"(by_osc=false)。"完成"靠可靠信号判:
+            // feed 路径的 OSC 133;D / 标题 spinner→静态(apply_title), 或上层 transcript
+            // (claude stop_reason=end_turn / codex task_complete)。不靠"停了多久"猜完成。
+            self.idle_finalized_by_osc = false;
             return Some(TaskStatus::Idle);
         }
         // 2) Idle 状态 + stall 检测开启 + 曾 Running + 用户发过输入且
@@ -1168,31 +1161,6 @@ mod tests {
         let _ = d.feed(b"\x1b]0;\xe2\x9c\xb3 Claude Code\x07"); // "✳ Claude Code" 静态
         assert_eq!(d.current(), TaskStatus::Idle);
         assert!(d.idle_by_osc(), "标题 spinner→静态 应判为真完成(供通知)");
-    }
-
-    /// 用户实测场景:agent 工作时标题转圈(spinner),完成后只是停止输出、没再发"静态标题"OSC,
-    /// 走 IDLE_TIMEOUT 超时。必须判为真完成(by_osc),否则后台任务永远不升 Done(只变灰 idle)。
-    #[test]
-    fn agent_spinner_then_silence_is_done() {
-        let mut d = StatusDetector::new("claude");
-        let _ = d.feed(b"\x1b]0;\xe2\xa0\x8b Claude Code\x07"); // spinner 转 → Running
-        assert_eq!(d.current(), TaskStatus::Running);
-        std::thread::sleep(std::time::Duration::from_millis(IDLE_TIMEOUT_MS + 60));
-        assert_eq!(d.tick(), Some(TaskStatus::Idle));
-        assert!(
-            d.idle_by_osc(),
-            "spinner 转后静默 = spinner 停 = 完成,应判 by_osc=true(否则后台 agent 任务不进 Done)"
-        );
-    }
-
-    /// 普通 shell 命令(从未 spin)超时静默 ≠ 完成,by_osc 必须仍为 false(不误升 Done)。
-    #[test]
-    fn plain_shell_silence_not_done() {
-        let mut d = StatusDetector::new("zsh");
-        let _ = d.feed(b"some plain output");
-        std::thread::sleep(std::time::Duration::from_millis(IDLE_TIMEOUT_MS + 60));
-        assert_eq!(d.tick(), Some(TaskStatus::Idle));
-        assert!(!d.idle_by_osc(), "普通命令静默不是完成,by_osc 应为 false");
     }
 
     /// spinner 停 + body 同时有授权框 → WaitingInput 覆盖 Idle(不能误判完成)

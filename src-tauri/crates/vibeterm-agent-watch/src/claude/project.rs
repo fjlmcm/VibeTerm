@@ -65,6 +65,41 @@ pub(crate) fn latest_jsonl_in(dir: &Path) -> Option<(PathBuf, i64)> {
     best
 }
 
+/// 取目录下 mtime 最新、且大小 ≤ `max_bytes` 的 jsonl(完成检测专用)。
+///
+/// 为何不复用 [`latest_jsonl_in`]:同一 cwd 编码出同一个 project dir,而该 dir 下可能**并存
+/// 多个 claude 会话** —— 任务里跑的 agent 会话,外加 **Claude Code 自身**对同一仓库的
+/// transcript(可达数百 MB、且每条消息都在写,mtime 几乎永远最新)。`latest_jsonl_in` 只看
+/// mtime,会选中这个巨型会话;`build_snapshot` 又对 >`JSONL_MAX_BYTES` 的文件只 seek 读末尾
+/// `TAIL_BYTES` → 把 Claude Code 自己的 `stop_reason` 误当成本任务 agent 的 → 完成检测被污染
+/// /漏判(codex 会话按日期分目录、无此碰撞,故每次都灵)。完成检测须落到本任务真正的小会话:
+/// 选文件阶段就排除超限,落到次新的可解析会话。
+pub(crate) fn newest_jsonl_under(dir: &Path, max_bytes: u64) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    let mut best: Option<(PathBuf, i64)> = None;
+    for ent in entries.flatten() {
+        let p = ent.path();
+        if p.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+            continue;
+        }
+        let Ok(m) = ent.metadata() else { continue };
+        if m.len() > max_bytes {
+            continue; // 超限:无法可靠归属到本任务,跳过 → 落到次新可解析会话
+        }
+        let mtime = m
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        match &best {
+            Some((_, bm)) if *bm >= mtime => {}
+            _ => best = Some((p, mtime)),
+        }
+    }
+    best.map(|(p, _)| p)
+}
+
 /// 全局扫所有 project dir, 找 mtime 最新的 jsonl. 返回 (path, project_dir_name, mtime).
 fn find_active_session_file() -> Option<(PathBuf, String, i64)> {
     let root = projects_root()?;
@@ -102,12 +137,18 @@ struct AssistantLine<'a> {
     message: Option<Message>,
     // 顶层 timestamp (ISO8601) — prompt-cache TTL 算法用
     timestamp: Option<&'a str>,
+    // 顶层 uuid — 完成检测去重标识
+    uuid: Option<&'a str>,
+    // 顶层 stop_reason(部分格式); 主要在 message.stop_reason
+    stop_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 struct Message {
     model: Option<String>,
     usage: Option<UsageBlock>,
+    // 一轮结束标志: "end_turn" = 答完, "tool_use" = 中间步骤
+    stop_reason: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -200,6 +241,12 @@ fn parse_last_assistant(path: &Path) -> Option<ParsedSession> {
         let model = parsed
             .model
             .or_else(|| parsed.message.as_ref().and_then(|m| m.model.clone()));
+        // 完成检测:stop_reason(顶层优先, 否则 message 内)+ uuid(去重)。须在 move message 前取。
+        let stop_reason = parsed
+            .stop_reason
+            .clone()
+            .or_else(|| parsed.message.as_ref().and_then(|m| m.stop_reason.clone()));
+        let turn_id = parsed.uuid.map(|s| s.to_string());
         let ts_ms = parsed.timestamp.and_then(super::blocks::chrono_parse_iso);
         let usage = parsed
             .usage
@@ -225,6 +272,8 @@ fn parse_last_assistant(path: &Path) -> Option<ParsedSession> {
             cache_5m_until_ms: None,
             cache_1h_until_ms: None,
             effort: None,
+            stop_reason,
+            turn_id,
         });
     }
     // 最后填 TTL 到期时刻 — 仅在 last 存在时填
@@ -244,6 +293,8 @@ struct ParsedSession {
     cache_5m_until_ms: Option<i64>,
     cache_1h_until_ms: Option<i64>,
     effort: Option<String>,
+    stop_reason: Option<String>,
+    turn_id: Option<String>,
 }
 
 /// 从一行 transcript 里抠出 `"effort":{"level":"<x>"}` 的 level 值.
@@ -363,6 +414,8 @@ fn build_snapshot(path: &Path, project_dir: &str, cwd_hint: Option<&str>) -> Opt
         cache_5m_until_ms: parsed.cache_5m_until_ms,
         cache_1h_until_ms: parsed.cache_1h_until_ms,
         effort: parsed.effort,
+        stop_reason: parsed.stop_reason,
+        last_turn_id: parsed.turn_id,
     })
 }
 
@@ -503,7 +556,9 @@ pub fn read_for_cwd(cwd: &str) -> Option<ClaudeSession> {
         );
         return None;
     }
-    let (path, _) = latest_jsonl_in(&canon_dir)?;
+    // 完成检测:排除超限的巨型同 cwd 会话(典型即 Claude Code 自身几百 MB 的 transcript),
+    // 否则会掩盖本任务 agent 真正的小会话 → 漏判完成(见 newest_jsonl_under 文档)。
+    let path = newest_jsonl_under(&canon_dir, JSONL_MAX_BYTES)?;
     // 传 cwd_hint 让 build_snapshot 查 ~/.claude.json 做 1M 确定性识别
     build_snapshot(&path, &project_dir_name, Some(cwd))
 }
@@ -586,6 +641,49 @@ mod tests {
             cwd_to_project_dir("/Users/mt/dev2/VibeTerm"),
             "-Users-mt-dev2-VibeTerm"
         );
+    }
+
+    #[test]
+    fn parses_stop_reason_and_uuid() {
+        // assistant end_turn = 一轮答完(供完成检测)
+        let jsonl = r#"{"type":"assistant","uuid":"u-end","timestamp":"2026-05-27T20:23:00.000Z","message":{"model":"claude-opus-4-8","stop_reason":"end_turn","usage":{"input_tokens":100,"output_tokens":10}}}
+"#;
+        let tmp = std::env::temp_dir().join("vt-test-claude-endturn.jsonl");
+        std::fs::write(&tmp, jsonl).unwrap();
+        let s = build_snapshot(&tmp, "-x", Some("/x")).unwrap();
+        assert_eq!(s.stop_reason.as_deref(), Some("end_turn"));
+        assert_eq!(s.last_turn_id.as_deref(), Some("u-end"));
+
+        // tool_use = 中间步骤, 不算完成
+        let jsonl2 = r#"{"type":"assistant","uuid":"u-tool","timestamp":"2026-05-27T20:24:00.000Z","message":{"model":"claude-opus-4-8","stop_reason":"tool_use","usage":{"input_tokens":50,"output_tokens":5}}}
+"#;
+        let tmp2 = std::env::temp_dir().join("vt-test-claude-tooluse.jsonl");
+        std::fs::write(&tmp2, jsonl2).unwrap();
+        let s2 = build_snapshot(&tmp2, "-x", Some("/x")).unwrap();
+        assert_eq!(s2.stop_reason.as_deref(), Some("tool_use"));
+    }
+
+    // 根因回归:同 cwd 的 project dir 下并存"本任务小会话"+"Claude Code 自身巨型会话"时,
+    // 完成检测必须落到小会话,不能被 mtime 最新但超限的巨型会话掩盖(否则读它末尾 stop_reason
+    // 误判 → claude 完成漏报、只有 claude 自己的 hook 弹无声通知;codex 因会话分目录不受影响)。
+    #[test]
+    fn newest_jsonl_under_skips_oversized_sibling() {
+        let dir = std::env::temp_dir().join(format!("vt-test-newest-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // 本任务 agent 的小会话(先写)
+        std::fs::write(dir.join("small.jsonl"), b"{}\n").unwrap();
+        // 巨型会话(Claude Code 自身)—— 写在最后 → mtime 最新,但 4096 > 1024 上限
+        std::fs::write(dir.join("huge.jsonl"), vec![b'x'; 4096]).unwrap();
+
+        // huge.jsonl mtime 最新,若不滤大小(latest_jsonl_in)会选中它;newest_jsonl_under
+        // 必须排除超限 → 落到 small.jsonl。
+        let picked = newest_jsonl_under(&dir, 1024).expect("应选出未超限的小会话");
+        assert_eq!(picked.file_name().unwrap(), "small.jsonl");
+        // 任何情况下都不得返回超限文件
+        assert!(std::fs::metadata(&picked).unwrap().len() <= 1024);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -194,6 +194,10 @@ fn build_snapshot(path: &Path) -> Option<CodexSnapshot> {
     let mut token_events: Vec<(i64, u64)> = Vec::new();
     let mut secondary: Option<RateLimit> = None;
     let mut plan_type: Option<String> = None;
+    // 最后一个 task_complete / task_started 事件 timestamp。比较二者得"当前轮是否已完成"
+    // (complete 不早于 started = 已完成;started 更晚 = 新一轮在干,未完成)。
+    let mut last_task_complete_ts: Option<String> = None;
+    let mut last_task_started_ts: Option<String> = None;
 
     for line in reader.lines().map_while(Result::ok) {
         let trimmed = line.trim();
@@ -225,7 +229,18 @@ fn build_snapshot(path: &Path) -> Option<CodexSnapshot> {
             }
             "event_msg" => {
                 let ts_ms = parsed.timestamp.as_deref().and_then(parse_iso);
-                if let Ok(tc) = serde_json::from_value::<TokenCountPayload>(parsed.payload) {
+                // event_msg 的子类型在 payload.type。codex 答完一轮 = payload.type=task_complete
+                // (实测在此,不在顶层 type)。先判它,再走 token_count。
+                let sub = parsed
+                    .payload
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                if sub.as_deref() == Some("task_complete") {
+                    last_task_complete_ts = parsed.timestamp.clone();
+                } else if sub.as_deref() == Some("task_started") {
+                    last_task_started_ts = parsed.timestamp.clone();
+                } else if let Ok(tc) = serde_json::from_value::<TokenCountPayload>(parsed.payload) {
                     if tc.sub_type != "token_count" {
                         continue;
                     }
@@ -246,6 +261,10 @@ fn build_snapshot(path: &Path) -> Option<CodexSnapshot> {
                         plan_type = rl.plan_type;
                     }
                 }
+            }
+            "task_complete" => {
+                // codex 答完一轮的权威信号(顶层 type)。记最后一个的 timestamp 做去重。
+                last_task_complete_ts = parsed.timestamp.clone();
             }
             _ => {}
         }
@@ -304,6 +323,13 @@ fn build_snapshot(path: &Path) -> Option<CodexSnapshot> {
         tokens_per_min_recent,
         burn_rate_level: burn_level,
         effort,
+        // 当前轮是否已完成:complete 存在且不早于 started(started 更晚 = 新一轮在干,未完成)。
+        task_completed: match (&last_task_complete_ts, &last_task_started_ts) {
+            (Some(c), Some(s)) => c.as_str() >= s.as_str(),
+            (Some(_), None) => true,
+            _ => false,
+        },
+        last_turn_id: last_task_complete_ts,
     })
 }
 
@@ -472,6 +498,18 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore] // 诊断:跑真实最新 rollout 看 Rust 实际算的 task_completed(turn_done)
+    fn debug_latest_rollout() {
+        let p = find_latest_rollout().expect("no rollout");
+        eprintln!("rollout: {}", p.display());
+        let s = build_snapshot(&p).expect("build None");
+        eprintln!(
+            "DEBUG task_completed={} cwd={:?} turn_id={:?}",
+            s.task_completed, s.cwd, s.last_turn_id
+        );
+    }
+
+    #[test]
     fn parses_codex_rollout() {
         let jsonl = r#"{"timestamp":"2026-05-27T20:21:51.000Z","type":"session_meta","payload":{"id":"abc-123","timestamp":"2026-05-27T20:21:51.000Z","cwd":"/Users/test","originator":"codex-tui","cli_version":"0.133.0","model_provider":"openai"}}
 {"timestamp":"2026-05-27T20:22:00.000Z","type":"turn_context","payload":{"turn_id":"t1","cwd":"/Users/test","current_date":"2026-05-27","model":"gpt-5.5","effort":"xhigh"}}
@@ -497,6 +535,43 @@ mod tests {
         assert_eq!(p.window_minutes, Some(10080));
         assert_eq!(p.resets_at, Some(1780144255));
         assert!(snap.secondary_limit.is_none());
+    }
+
+    #[test]
+    fn detects_task_complete() {
+        // codex 答完一轮 = event_msg 的 payload.type=task_complete(实测真实结构,非顶层 type)
+        let jsonl = concat!(
+            r#"{"timestamp":"2026-05-31T14:00:00.000Z","type":"session_meta","payload":{"id":"c1","timestamp":"2026-05-31T14:00:00.000Z","cwd":"/Users/test","cli_version":"0.140.0","model_provider":"openai"}}"#,
+            "\n",
+            r#"{"timestamp":"2026-05-31T14:02:30.000Z","type":"event_msg","payload":{"type":"task_complete","last_agent_message":"done"}}"#,
+            "\n",
+        );
+        let tmp = std::env::temp_dir().join("vt-test-codex-taskcomplete.jsonl");
+        std::fs::write(&tmp, jsonl).unwrap();
+        let snap = build_snapshot(&tmp).unwrap();
+        assert!(
+            snap.task_completed,
+            "event_msg payload.type=task_complete 应置 task_completed=true"
+        );
+        assert_eq!(
+            snap.last_turn_id.as_deref(),
+            Some("2026-05-31T14:02:30.000Z")
+        );
+    }
+
+    #[test]
+    fn no_task_complete_is_false() {
+        let jsonl = concat!(
+            r#"{"timestamp":"2026-05-31T14:00:00.000Z","type":"session_meta","payload":{"id":"c2","timestamp":"2026-05-31T14:00:00.000Z","cwd":"/y","cli_version":"0.140.0","model_provider":"openai"}}"#,
+            "\n",
+            r#"{"timestamp":"2026-05-31T14:01:00.000Z","type":"task_started","payload":{}}"#,
+            "\n",
+        );
+        let tmp = std::env::temp_dir().join("vt-test-codex-notask.jsonl");
+        std::fs::write(&tmp, jsonl).unwrap();
+        let snap = build_snapshot(&tmp).unwrap();
+        assert!(!snap.task_completed);
+        assert!(snap.last_turn_id.is_none());
     }
 
     #[test]

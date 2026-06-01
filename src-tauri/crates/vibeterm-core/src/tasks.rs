@@ -56,6 +56,15 @@ struct TaskRuntime {
     /// hook auto-naming: 任务名是否还能被 UserPromptSubmit 自动重命名.
     /// 新建时 true. 自动改过名 / 用户手动改过名后 → false.
     auto_namable: bool,
+    /// agent transcript 当前轮状态(claude stop_reason / codex task_started↔complete):
+    /// Some(true)=刚答完一轮、Some(false)=正在干、None=非 transcript agent(走 PTY 嗅探)。
+    /// 比 PTY 输出嗅探可靠 —— 压过 codex 底部状态栏持续刷新造成的"假 Running"。
+    agent_turn_done: Option<bool>,
+    /// 最近一次"已判定完成"的轮 id(claude 末条 assistant 的 uuid)。完成判定用它去重:
+    /// end_turn 的 uuid 变了 = 新一轮答完 → 即使 3s 轮询没采到中间 working 那一拍(快轮、
+    /// 纯文本秒回)也能判出新完成;同 uuid 反复读到则不重复通知。
+    /// None=尚未判过 / 该 agent 不提供 turn id(退回布尔跃迁判定)。
+    last_completed_turn_id: Option<String>,
 }
 
 fn default_split_tree() -> SplitNode {
@@ -63,14 +72,26 @@ fn default_split_tree() -> SplitNode {
 }
 
 impl TaskRuntime {
-    /// 状态聚合:
-    ///   优先级:WaitingInput > Stalled > Running > Done > Idle
-    ///   - 任一终端 WaitingInput → WaitingInput
-    ///   - 任一终端 Stalled (无任何 Running/WaitingInput) → Stalled
-    ///   - 任一终端 Running → Running
-    ///   - 全部 Idle 且 !seen → Done
-    ///   - 否则 Idle
-    fn aggregated_status(&self) -> TaskStatus {
+    /// 状态聚合(优先级从高到低):
+    ///   ① transcript 轮已结束(`agent_turn_done==Some(true)`)→ 压过所有 PTY 嗅探;
+    ///      是否未读由 `seen` 决定:刚答完非当前 → Done,看过(切回)/当前 → Idle。
+    ///   ② 任一终端 WaitingInput → WaitingInput(agent 轮中途等授权的真黄灯)。
+    ///   ③ 轮进行中(`Some(false)`)或任一终端 Running → Running。
+    ///   ④ 任一终端 Stalled → Stalled。
+    ///   ⑤ PTY 完成(`!seen`)非当前 → Done;否则 Idle。
+    fn aggregated_status(&self, is_active: bool) -> TaskStatus {
+        // ① transcript "轮已结束"最权威 —— codex 答完后常驻输入框会被误判成 WaitingInput、
+        //    状态栏刷新造成假 Running,这些都得让位。是否"未读"由 seen 决定:
+        //    刚答完(seen=false)非当前 → Done;切回看过(set_active_main 置 seen=true)或当前 → Idle。
+        //    所以"切回变灰、再切出仍是灰(已读)",不会再被输入框的黄灯顶回去。
+        //    注意:只有 Some(true) 在此短路;Some(false)=轮进行中放到 WaitingInput 之后(授权黄灯优先)。
+        if self.agent_turn_done == Some(true) {
+            return if !self.seen && !is_active {
+                TaskStatus::Done
+            } else {
+                TaskStatus::Idle
+            };
+        }
         let mut has_running = false;
         let mut has_stalled = false;
         for v in self.terminal_statuses.values() {
@@ -81,13 +102,19 @@ impl TaskRuntime {
                 _ => {}
             }
         }
+        // ③ 轮进行中(Some(false))→ Running(WaitingInput 真授权黄灯已在上面优先,不被压)。
+        //    None=非 transcript agent,落到下面纯 PTY 嗅探。
+        if self.agent_turn_done == Some(false) {
+            return TaskStatus::Running;
+        }
         if has_running {
             return TaskStatus::Running;
         }
         if has_stalled {
             return TaskStatus::Stalled;
         }
-        if !self.seen {
+        // ⑤ PTY 完成(!seen):非当前任务 → Done(未看);当前正看的 → Idle(不打扰)。
+        if !self.seen && !is_active {
             TaskStatus::Done
         } else {
             TaskStatus::Idle
@@ -111,6 +138,10 @@ struct Inner {
     tasks: HashMap<TaskId, TaskRuntime>,
     order: Vec<TaskId>,
     active_main: Option<TaskId>,
+    /// 主窗口是否有焦点。用户切到别的 app(失焦)时,即使有 active_main,也不算"正盯着" ——
+    /// 该 task 完成会显 Done(未看)并计入 Dock 角标。重新聚焦时标 active_main 为已读。
+    /// 不持久化(每次启动默认聚焦);属 UI 概念,故放 Inner 而非领域快照。
+    window_focused: bool,
 }
 
 impl Default for TaskRegistry {
@@ -182,6 +213,8 @@ impl TaskRegistry {
                 permission_mode: None,
                 effort: None,
                 auto_namable: true,
+                agent_turn_done: None,
+                last_completed_turn_id: None,
             },
         );
         inner.order.push(id);
@@ -371,6 +404,11 @@ impl TaskRegistry {
         if let Some(t) = inner.tasks.get_mut(&id) {
             t.seen = true;
         }
+        tracing::info!(
+            task_id = id,
+            changed,
+            "set_active_main(切换当前任务 → 标已读)"
+        );
         // active_main 变更才写盘(switch tab 频率高,小心写放大)
         if changed {
             let snap = inner.snapshot();
@@ -380,6 +418,31 @@ impl TaskRegistry {
             }
         }
         Ok(())
+    }
+
+    /// 主窗口焦点变化。失焦 → 当前选中 task 不再算"正盯着",其完成显 Done(未看)、计入 Dock 角标;
+    /// 重新聚焦 → 标 active_main 为已读(用户回来看了,否则再失焦又被算未看 Done)。
+    /// 返回 Ok(true) 若焦点状态真的变了(调用方据此 emit 刷新圆点 + 角标);不写盘(UI 状态)。
+    pub fn set_window_focused(&self, focused: bool) -> Result<bool, TaskError> {
+        let mut inner = self.lock()?;
+        if inner.window_focused == focused {
+            return Ok(false);
+        }
+        inner.window_focused = focused;
+        tracing::info!(
+            focused,
+            active_main = ?inner.active_main,
+            "set_window_focused(主窗口焦点翻转)"
+        );
+        // 重新聚焦 → 当前 task 标已读(与 set_active_main 同语义),其 Done 消化为 Idle。
+        if focused {
+            if let Some(active) = inner.active_main {
+                if let Some(t) = inner.tasks.get_mut(&active) {
+                    t.seen = true;
+                }
+            }
+        }
+        Ok(true)
     }
 
     pub fn active_main(&self) -> Option<TaskId> {
@@ -466,9 +529,10 @@ impl TaskRegistry {
     ) -> Result<Option<(TaskId, TaskStatus, TaskStatus)>, TaskError> {
         let mut inner = self.lock()?;
         let active_main = inner.active_main;
+        let window_focused = inner.window_focused;
         for (tid, t) in inner.tasks.iter_mut() {
             if t.terminal_ids.contains(&term_id) {
-                let prev_agg = t.aggregated_status();
+                let prev_agg = t.aggregated_status(active_main == Some(*tid) && window_focused);
                 let prev = t.terminal_statuses.insert(term_id, status);
                 // seen 维护:
                 //   - 任何终端转为 Running/WaitingInput → seen=true
@@ -476,7 +540,14 @@ impl TaskRegistry {
                 //   普通 shell 命令的 idle_timeout 升上来的 Idle 不算"真完成", 不打 Done 红点.
                 match status {
                     TaskStatus::Running | TaskStatus::WaitingInput => {
-                        t.seen = true;
+                        // 轮已结束(transcript Some(true))时,终端后续的 Running/WaitingInput 是
+                        // agent 后台噪音(claude 收尾输出 / caffeinate keep-alive / MCP / codex 状态栏
+                        // 刷新),不是新一轮 —— 不能标已读,否则刚答完的未读 Done 会被冲成 Idle
+                        // (用户切回前圆点就变灰的 bug)。新一轮真开始时 transcript 会先把
+                        // agent_turn_done 置 Some(false)/None,那时这里才正常 seen=true。
+                        if t.agent_turn_done != Some(true) {
+                            t.seen = true;
+                        }
                     }
                     TaskStatus::Idle => {
                         if by_osc && prev == Some(TaskStatus::Running) && active_main != Some(*tid)
@@ -491,7 +562,7 @@ impl TaskRegistry {
                         // 终端层不主动报 Done;ignore
                     }
                 }
-                let new_agg = t.aggregated_status();
+                let new_agg = t.aggregated_status(active_main == Some(*tid) && window_focused);
                 return Ok(if prev_agg != new_agg {
                     Some((*tid, prev_agg, new_agg))
                 } else {
@@ -505,7 +576,10 @@ impl TaskRegistry {
     /// 获取 task 的当前聚合状态(供通知 throttle 判断)
     pub fn aggregated_status_of(&self, id: TaskId) -> Result<Option<TaskStatus>, TaskError> {
         let inner = self.lock()?;
-        Ok(inner.tasks.get(&id).map(|t| t.aggregated_status()))
+        Ok(inner
+            .tasks
+            .get(&id)
+            .map(|t| t.aggregated_status(inner.active_main == Some(id) && inner.window_focused)))
     }
 
     /// 未看完成数 —— 聚合状态为 Done(完成但用户未看)的任务个数。
@@ -515,11 +589,30 @@ impl TaskRegistry {
         match self.lock() {
             Ok(inner) => inner
                 .tasks
-                .values()
-                .filter(|t| matches!(t.aggregated_status(), TaskStatus::Done))
+                .iter()
+                .filter(|(id, t)| {
+                    matches!(
+                        t.aggregated_status(
+                            inner.active_main == Some(**id) && inner.window_focused
+                        ),
+                        TaskStatus::Done
+                    )
+                })
                 .count(),
             Err(_) => 0,
         }
+    }
+
+    /// 所有带 cwd 的 task → (id, cwd)。供 agent-watch 完成信号(claude end_turn / codex
+    /// task_complete)按 cwd 反向关联 task。codex 精确比 cwd;claude 用 cwd_to_project_dir
+    /// 两边编码后比(规避 project_path 反解歧义)。
+    pub fn task_cwd_pairs(&self) -> Result<Vec<(TaskId, String)>, TaskError> {
+        let inner = self.lock()?;
+        Ok(inner
+            .tasks
+            .iter()
+            .filter_map(|(id, t)| t.cwd.clone().map(|c| (*id, c)))
+            .collect())
     }
 
     /// hook 收到"agent 完成 turn"信号时调用. 把 seen 翻为 false —
@@ -534,6 +627,42 @@ impl TaskRegistry {
         }
         t.seen = false;
         Ok(true)
+    }
+
+    /// 设 agent transcript 轮状态(working/done)。返回 `(changed, just_completed)`:
+    /// - `changed`:`agent_turn_done` 值是否真的变了 —— 调用方据此决定是否 emit + 刷新角标;
+    /// - `just_completed`:是否"刚答完一轮" —— 供通知 + 标未看。
+    ///
+    /// `turn_id`:本轮的稳定标识(claude = 末条 assistant 的 uuid)。**完成判定优先用它去重**:
+    /// `done==true` 且 turn_id 与上次"已判完成"的不同 = 新一轮答完 → 即使 3s 轮询没采到中间
+    /// working 那一拍(快轮、纯文本秒回,`agent_turn_done` 仍停在 `Some(true)`)也能判出;同
+    /// turn_id 反复读到则不重复。`turn_id==None`(该 agent 不给 id)退回布尔跃迁(working/未知
+    /// → done)。完成时同标 `seen=false`(未看),与 Dock 角标 / 聚合 Done 一致。
+    pub fn set_agent_turn_done(
+        &self,
+        id: TaskId,
+        done: bool,
+        turn_id: Option<&str>,
+    ) -> Result<(bool, bool), TaskError> {
+        let mut inner = self.lock()?;
+        let t = inner.tasks.get_mut(&id).ok_or(TaskError::NotFound(id))?;
+        let was = t.agent_turn_done;
+        let changed = was != Some(done);
+        let just_completed = done
+            && match turn_id {
+                // 有 turn id:新 id = 新完成(对快轮鲁棒,不依赖采到 working 那一拍)。
+                Some(tid) => t.last_completed_turn_id.as_deref() != Some(tid),
+                // 无 turn id:退回布尔跃迁(上一态非"已答完"才算刚完成)。
+                None => was != Some(true),
+            };
+        t.agent_turn_done = Some(done);
+        if just_completed {
+            t.seen = false;
+            if let Some(tid) = turn_id {
+                t.last_completed_turn_id = Some(tid.to_string());
+            }
+        }
+        Ok((changed, just_completed))
     }
 
     pub fn name_of(&self, id: TaskId) -> Result<Option<String>, TaskError> {
@@ -674,6 +803,7 @@ impl Inner {
             tasks: HashMap::new(),
             order: vec![],
             active_main: None,
+            window_focused: true,
         }
     }
     fn from_file(f: TasksFile) -> Self {
@@ -698,6 +828,8 @@ impl Inner {
                     effort: None,
                     // 从 disk 恢复:已 persist 过则不再自动重命名 (snap.auto_namable 字段)
                     auto_namable: snap.auto_namable,
+                    agent_turn_done: None,
+                    last_completed_turn_id: None,
                 },
             );
         }
@@ -718,6 +850,7 @@ impl Inner {
             tasks,
             order,
             active_main,
+            window_focused: true,
         }
     }
     fn snapshot(&self) -> TasksFile {
@@ -753,12 +886,26 @@ impl Inner {
             .collect()
     }
     fn runtime_to_dto(&self, id: TaskId, t: &TaskRuntime) -> TaskDto {
+        let is_active = self.active_main == Some(id) && self.window_focused;
+        let status = t.aggregated_status(is_active);
+        // 诊断:圆点状态的完整判定依据 —— RUST_LOG=vibeterm=debug 可见。
+        // turn_done(transcript 轮)/seen(已看)/is_active(当前选中 且 窗口聚焦)/window_focused 共同决定。
+        tracing::debug!(
+            task_id = id,
+            ?status,
+            turn_done = ?t.agent_turn_done,
+            seen = t.seen,
+            is_active,
+            window_focused = self.window_focused,
+            active_main = ?self.active_main,
+            "圆点状态判定"
+        );
         TaskDto {
             id,
             name: t.name.clone(),
             cwd: t.cwd.clone(),
             pinned: t.pinned,
-            status: t.aggregated_status(),
+            status,
             terminal_ids: t.terminal_ids.clone(),
             location: t.location.clone(),
             split_tree: t.split_tree.clone(),

@@ -95,6 +95,11 @@ pub struct ClaudeSession {
     /// 等级 (`low` / `medium` / `high` / `xhigh` 等). Claude 仅在 hook 触发时把 effort
     /// 写进 transcript, 没 hook / 没取到 → None (widget 不显, 不臆造).
     pub effort: Option<String>,
+    /// 最后一条 assistant 的 `stop_reason`:`"end_turn"` = 一轮答完(供完成检测),
+    /// `"tool_use"` = 中间步骤。None = 该格式无此字段(优雅降级,不臆造完成)。
+    pub stop_reason: Option<String>,
+    /// 最后一条 assistant 顶层 `uuid` — 完成检测去重(同一轮 watcher 多次 emit 只标一次)。
+    pub last_turn_id: Option<String>,
 }
 
 // ---- Codex ----
@@ -126,6 +131,10 @@ pub struct CodexSnapshot {
     pub burn_rate_level: String,
     /// 最新 turn 的 reasoning effort (`xhigh` / `high` / `normal` / `low`)
     pub effort: Option<String>,
+    /// 最近一条记录是否为 `task_complete` 事件(= codex 答完一轮,供完成检测)。
+    pub task_completed: bool,
+    /// 最后一个 `task_complete` 的去重标识(timestamp/序号)。
+    pub last_turn_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
