@@ -464,7 +464,10 @@ fn agent_completion_detected_by_new_turn_id_without_working_sample() {
         jc2,
         "新 turn_id(uuid 变化)即使没采到 working、turn_done 布尔没变也应判完成"
     );
-    assert!(!changed, "turn_done 布尔未变(Some(true)→Some(true))→ changed=false");
+    assert!(
+        !changed,
+        "turn_done 布尔未变(Some(true)→Some(true))→ changed=false"
+    );
     assert_eq!(
         tasks.aggregated_status_of(agent_task).unwrap(),
         Some(TaskStatus::Done),

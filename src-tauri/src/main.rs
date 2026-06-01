@@ -943,7 +943,8 @@ fn on_agent_turn_update(
         // set_agent_turn_done 返回 (changed, just_completed)。
         // changed=值真的变了才刷新 —— 轮询每 3s 兜底反复调,不变则不 emit,避免前端无谓刷新。
         // just_completed=working/未知 → done 跃迁,才发完成通知。Err(task 不存在)忽略。
-        if let Ok((changed, just_completed)) = tasks.set_agent_turn_done(task_id, turn_done, turn_id)
+        if let Ok((changed, just_completed)) =
+            tasks.set_agent_turn_done(task_id, turn_done, turn_id)
         {
             // changed=turn_done 布尔变了(Running↔Done/Idle);just_completed=新一轮答完(快轮时
             // turn_done 没变但 seen 翻 false → 圆点也要刷成 Done)。任一成立都刷新圆点 + 角标。
@@ -1005,7 +1006,11 @@ fn poll_agent_turn_from_transcript(
                 .map(|s| s.stop_reason.as_deref() == Some("end_turn"))
                 .unwrap_or(false);
             // turn id = 末条 assistant 的 uuid;仅 done 时取,给完成判定去重(快轮也不漏)。
-            let tid = if done { sess.and_then(|s| s.last_turn_id) } else { None };
+            let tid = if done {
+                sess.and_then(|s| s.last_turn_id)
+            } else {
+                None
+            };
             (true, done, tid)
         }
         "codex" => (
