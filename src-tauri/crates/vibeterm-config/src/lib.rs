@@ -133,9 +133,22 @@ fn resolve_clipboard_images_dir() -> Result<PathBuf, ConfigError> {
         .filter(|s| !s.is_empty());
     if let Some(s) = configured {
         let candidate = expand_user_path(s);
-        return validate_clipboard_images_dir(candidate)
-            .or_else(|_| Ok(config_dir()?.join("clipboard-images")));
+        return validate_clipboard_images_dir(candidate).or_else(|_| default_clipboard_images_dir());
     }
+    default_clipboard_images_dir()
+}
+
+/// 粘贴图片的默认目录,**必须无空格** —— 路径会被裸注入 PTY 喂给 agent CLI,只有无空格裸路径
+/// 才能被 claude code / codex 自动识别为图片附件。config_dir 在 macOS 是
+/// `~/Library/Application Support/VibeTerm`(含空格),裸注入会让 claude code 把断裂的路径当
+/// 普通文本(codex 容错能 unquote 带引号路径,claude code 不能)。故改落到无空格的 cache 目录
+/// `~/Library/Caches/com.vibeterm.desktop/clipboard-images`(Linux: `~/.cache/...`)。
+/// 注:用户名本身含空格(`/Users/John Doe/...`)的极少数情况无法靠换目录消除,属已知边界。
+fn default_clipboard_images_dir() -> Result<PathBuf, ConfigError> {
+    if let Some(base) = dirs::cache_dir() {
+        return Ok(base.join("com.vibeterm.desktop").join("clipboard-images"));
+    }
+    // cache_dir 不可用(极罕见)→ 退回 config_dir,至少能落盘(可能含空格)。
     Ok(config_dir()?.join("clipboard-images"))
 }
 

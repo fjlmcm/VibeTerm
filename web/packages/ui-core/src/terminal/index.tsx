@@ -30,7 +30,7 @@ import {
   openExternal,
 } from "../ipc";
 import { createKeybindingDispatcher as kbCreateDispatcher, registerTerminalFocus } from "../keybindings";
-import { shellQuoteOne, shellQuotePaths } from "./shell-quote";
+import { shellQuotePaths } from "./shell-quote";
 import {
   terminalFontFamily,
   terminalLineHeight,
@@ -185,13 +185,19 @@ export function Terminal(props: TerminalProps) {
 
   // hostEl 有可见尺寸时才 fit,避免 0×0 容器(display:none / 首帧未布局)报错
   const tryFit = () => {
-    if (!fit || !hostEl) return;
+    if (!fit || !hostEl || !term) return;
     if (hostEl.offsetWidth <= 0 || hostEl.offsetHeight <= 0) return;
+    // follow-bottom 守门:fit 触发的 resize 会按行数增减扰动 xterm 视口(ydisp/ybase),
+    // 用户正向上看历史时会被冲走。记录 fit 前是否贴底:仅当原本在底部才跟随到底,
+    // 否则不打断用户正在看的历史(agent 提问/界面变动引起的频繁 resize 不再冲乱滚动)。
+    const buf = term.buffer.active;
+    const wasAtBottom = buf.viewportY >= buf.baseY;
     try {
       fit.fit();
     } catch (e) {
       console.warn("[terminal] fit failed", e);
     }
+    if (wasAtBottom) term.scrollToBottom();
   };
 
   const findNext = () => {
@@ -230,10 +236,11 @@ export function Terminal(props: TerminalProps) {
           ENCODER.encode(shellQuotePaths(r.paths) + " "),
         );
       } else if (r.kind === "image") {
-        await writePty(
-          terminalId!,
-          ENCODER.encode(shellQuoteOne(r.path) + " "),
-        );
+        // claude code 只把 bracketed paste(粘贴/拖拽)里的图片路径转成图片附件,裸键入的路径
+        // 当普通文本;且路径【加引号会阻止转图片】。故走 term.paste 注入【裸路径】—— xterm 会按
+        // PTY 的 bracketed paste 模式自动包 ESC[200~/201~(claude/codex/shell 都会开启),
+        // 等价于"拖拽文件入终端"。见 anthropics/claude-code#4705 / #27904 / #62208。
+        term!.paste(r.path);
       } else if (r.kind === "text") {
         term!.paste(r.text);
       }
@@ -259,6 +266,17 @@ export function Terminal(props: TerminalProps) {
     font_size_reset: () => setTerminalFontSize(FONT_DEFAULT),
     scroll_to_bottom: () => term?.scrollToBottom(),
   });
+
+  // CJK IME 合成态:由 compositionstart/end 维护,比 keydown 的 isComposing/keyCode===229 可靠。
+  // WKWebView 下拼音选词「提交候选的数字键 keydown」常不带这俩标记 → 漏进 PTY(打中文成 2112)。
+  // 合成期间用本标志在 customKeyEventHandler 里一律拦下。
+  let composing = false;
+  const onCompositionStart = () => {
+    composing = true;
+  };
+  const onCompositionEnd = () => {
+    composing = false;
+  };
 
   const onWinKeydown = (e: KeyboardEvent) => {
     // CJK IME 合成期间不拦截快捷键 — 让 IME 自己消费 Enter / Esc / 上下选词.
@@ -441,9 +459,15 @@ export function Terminal(props: TerminalProps) {
     //   产生完整 input event 走 onData 路径 -> 一次性原子推到 PTY.
     //   keyCode 229 是浏览器在 IME 合成期间历史值, 双保险.
     term.attachCustomKeyEventHandler((e) => {
-      if (e.isComposing || e.keyCode === 229) return false;
+      if (composing || e.isComposing || e.keyCode === 229) return false;
       return true;
     });
+    // compositionstart/end 在 xterm 自己的隐藏 textarea 上触发 — 在此订阅维护合成态。
+    const ta = term.textarea;
+    if (ta) {
+      ta.addEventListener("compositionstart", onCompositionStart);
+      ta.addEventListener("compositionend", onCompositionEnd);
+    }
 
     try {
       webgl = new WebglAddon();
@@ -651,6 +675,8 @@ export function Terminal(props: TerminalProps) {
     window.removeEventListener("keydown", onWinKeydown, true);
     window.removeEventListener("paste", onWinPaste, true);
     hostEl?.removeEventListener("contextmenu", onHostContextMenu);
+    term?.textarea?.removeEventListener("compositionstart", onCompositionStart);
+    term?.textarea?.removeEventListener("compositionend", onCompositionEnd);
     resizeObserver?.disconnect();
     intersectionObserver?.disconnect();
     // 三态 PTY cleanup(见 teardownPty 注释):
