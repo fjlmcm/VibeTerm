@@ -1,92 +1,111 @@
 <div align="center">
 
+<img src="docs/hero.png" alt="VibeTerm" width="820">
+
 # VibeTerm
 
-**满屏星火,一目了然。**
+**Sparks everywhere, clear at a glance.**
 
-专为 vibe coding 打造的现代终端管理器。本地优先,CJK 原生支持,让 agent 各自奔忙,谁燃、谁熄、谁在唤你,尽收眼底 —— 不侵入、不登录、不上云。
+A modern terminal manager built for vibe coding. Local-first, CJK-native. Let the agents run — who's burning, who's burned out, who's pinging you — all in plain sight. No intrusion, no login, no cloud.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey.svg)](https://github.com/fjlmcm/VibeTerm/releases)
-[![Stack](https://img.shields.io/badge/Tauri%202-Rust%20%C2%B7%20SolidJS-ffc131.svg)](#技术栈)
+[![Release](https://img.shields.io/github/v/release/fjlmcm/VibeTerm?color=success)](https://github.com/fjlmcm/VibeTerm/releases)
+[![Stack](https://img.shields.io/badge/Tauri%202-Rust%20%C2%B7%20SolidJS-ffc131.svg)](https://github.com/fjlmcm/VibeTerm)
 
-[**官网**](https://www.vibeterm.org) · [**下载**](https://github.com/fjlmcm/VibeTerm/releases)
+[**www.vibeterm.org**](https://www.vibeterm.org) · [**Download**](https://github.com/fjlmcm/VibeTerm/releases) · [**GitHub**](https://github.com/fjlmcm/VibeTerm)
+
+**English** · [简体中文](README.zh.md) · [繁體中文](README.zh-hant.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · [Tiếng Việt](README.vi.md) · [Bahasa Indonesia](README.id.md) · [Español](README.es.md) · [Português](README.pt-br.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Italiano](README.it.md) · [Русский](README.ru.md) · [Türkçe](README.tr.md)
 
 </div>
 
 ---
 
-## 它解决什么
+## It doesn't run your agents for you. It just keeps an eye on them.
 
-agent 一多就乱:满屏终端,哪个在干活、哪个卡住了、哪个在等你回话?
+- **Never touches your config** — It works out state by sniffing: reading output and read-only file watching. It never writes to ~/.claude or ~/.codex, installs no hooks, runs no background services. Not a byte of your agent config gets touched.
+- **Keeps a bunch of agents in check** — Agents get messy once you've got a few. It floats the stuck ones and the ones waiting on you to the top, so you're not clicking through each one to see who needs you.
+- **A terminal stays a terminal** — It does the terminal basics well. No feature bloat, no ambition to become an agent workbench.
+- **CJK that just works** — Wide characters, IME input, copying text with emoji in it — the things English terminals keep getting wrong. Handled here.
+- **Everything stays on your machine** — No login, no data collection, offline by default. It only goes online when you check for updates — and even then, it only reads.
+- **MIT, open source** — All the code is public. Read it, change it, do whatever you want with it.
 
-VibeTerm 不抢 agent 的活,只帮你看住它们——把卡住的、等你回话的排到眼前,你不用挨个点开确认谁该管了。它先把终端的本分做好,再顺手替你盯住满屏 agent 的动静。
+## Five states, clear at a glance.
 
-## 特性
+- 🔵 **Running** — Steady blue dot with a glow. The agent's working.
+- 🟡 **Waiting** — Amber dot, breathing — it's waiting on you. Worth a look.
+- 🔴 **Stalled** — Red-orange ring. Quiet for over 5 minutes, probably stuck.
+- ⚪ **Idle** — Still grey dot. Nothing going on.
+- 🟢 **Done** — Outlined ring, struck through. This one's actually finished.
 
-### Agent 感知
+## Everything a terminal should do — plus the agent layer.
 
-- **状态纯嗅探** — 运行 / 等待输入 / 卡死 / 完成,不碰你的配置直接认出来
-- **卡死检测 + 紧迫度排序** — 卡住的、等你的自动排到最前
-- **实时用量** — 上下文 %、5h/7d 额度、burn rate、cache TTL、成本,一屏看完
-- **用量统计** — Claude / Codex 的 token 与成本估算,离线聚合、可导出
+_All the usual terminal features, plus state-awareness and orchestration built for a screen full of AI agents._
 
-### 终端
+### Agents
 
-- **n 叉分屏 + git worktree** — 每个任务一棵独立终端树
-- **Canvas 画布** — 任务卡片化、框选、命令广播到多个终端
-- **浮窗** — 把任意任务弹成独立窗口
-- **GPU 渲染(WebGL)+ CJK 原生** — 流畅且不丢字
+- **Sees what an agent's doing** — Working, waiting, stalled, or done — figured out without touching your config.
+- **Stall detection + urgency sort** — Screen full of agents? The stuck ones and the ones waiting on you go to the top.
+- **Live usage** — Context left, 5h/7d quota, burn rate, cache, cost — all on one bar.
+- **Usage stats** — Token and cost numbers for Claude / Codex. Computed offline, exportable.
 
-### 效率与定制
+### Terminal
 
-命令面板 · Prompt 模板库 · 可配状态栏(拖拽 widget) · 桌面通知(24 内置音效 + 免打扰) · 10 套内置主题热切换。
+- **Splits + worktrees** — Mount a git worktree, one terminal tree per task.
+- **Canvas board** — Lay tasks out as cards, drag-select, send one command to several terminals.
+- **Floating windows** — Pop any task into its own window and keep watching.
+- **GPU rendering** — WebGL-accelerated — and CJK still won't drop glyphs or stutter.
 
-## 零侵入(底线)
+### Workflow
 
-agent 状态全靠**纯嗅探 + 只读监听**得来,三层判定:
+- **Command palette** — Custom keybindings and actions — drive the whole thing from the keyboard.
+- **Prompt presets** — Handy presets for claude / codex / shell, a keystroke away.
+- **Configurable status bar** — Drag the widgets around; each agent type gets its own layout.
+- **Desktop notifications** — 24 built-in sounds + quiet hours, only when an agent's state changes.
+- **Hot-swap themes** — 10 built-in themes, switch anytime, macOS and Windows.
 
-1. **OSC 133 / 633 序列** — shell 集成的命令边界标记,最可靠
-2. **agent 输出规则** — 对 11 个常见 agent 的授权提示做匹配,认出「等你拍板」
-3. **OSC 标题 spinner** — 窗口标题里的 braille 在转 = agent 在干活
+## How does it know what an agent's doing without touching your config?
 
-**绝不**写入 `~/.claude` / `~/.codex`,不装 hook,不起常驻 server。无账号、无遥测、默认不联网(仅你手动检查更新时才联一下,只读不上传)。
+Three layers of sniffing, plus read-only file watching. No hooks, no login, nothing written.
 
-## CJK 一等公民
+1. **OSC 133 / 633 sequences** — Command boundary markers from shell integration. The most reliable layer: it knows exactly when a command starts, ends, or sits waiting for input.
+2. **Reading agent output** — Matches the approval prompts of 11 common agents to tell when one's waiting on you.
+3. **That spinner in the title bar** — If the braille spinner in the window title is moving, the agent's working.
 
-英文那几个主流 AI 终端,没一个把中日韩当回事——几乎每个仓库都躺着长期没修的 CJK issue,被英文用户的急活盖了过去。VibeTerm 把它当正事:
+> **The one rule: hands off your stuff** — Never writes ~/.claude or ~/.codex, installs no hooks, runs no background services. Every state is watched, never injected.
 
-- IME 合成全程拦截(`isComposing` / keyCode 229),不误发、不卡
-- 东亚宽字符与 ambiguous width 量得准,表格不错位
-- 中文换行不截断,流式 UTF-8 边界不破字
-- `Intl.Segmenter` 守门复制,不撕裂代理对与 ZWJ
+## Not one of the major English AI terminals takes CJK seriously.
 
-## 安装
+Almost every major AI-terminal repo has CJK bugs sitting open, buried under English users' urgent ones. Nobody's really done this part. VibeTerm treats it as actual work.
 
-**下载**:[GitHub Releases](https://github.com/fjlmcm/VibeTerm/releases) — macOS(`.dmg`)与 Windows,同一个包页。macOS 11+。
+- IME composition held the whole way (isComposing / keyCode 229). No misfires, no lag.
+- Wide and ambiguous widths measured right, so tables stay lined up.
+- Chinese line-wrap doesn't truncate; streaming never splits a glyph.
+- Copy is guarded by Intl.Segmenter, so it won't tear surrogate pairs or break ZWJ emoji.
+- CJK doesn't drop or shift under GPU rendering.
 
-**自行构建**(需 Rust、Node、pnpm):
+## Give it a go?
+
+macOS 11+ and Windows — same download page.
+
+**[Download →](https://github.com/fjlmcm/VibeTerm/releases)** — macOS `.dmg` · Windows `.exe` / `.msi`.
+
+Or build it from source:
 
 ```bash
 pnpm install
-pnpm build      # = tauri build,产物在 src-tauri/target/release/bundle/
-pnpm dev        # 本地开发(Vite 热重载 + tauri dev)
+pnpm build      # = tauri build → src-tauri/target/release/bundle/
+pnpm dev        # dev (Vite HMR + tauri dev)
 ```
 
-## 技术栈
+Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
-**Tauri 2 + Rust(workspace,8 业务 crate)+ SolidJS + xterm.js(WebGL GPU 渲染)**,pnpm monorepo。
+## Standing on these shoulders.
 
-- Rust 侧 `src-tauri/`:领域核心 / PTY / 状态嗅探 / agent 只读监听 / 配置 / 任务 / IPC / git
-- Web 侧 `web/packages/`:`@vibeterm/main`(根 app)· `ui-core`(组件库)· `ipc-types`(IPC schema 镜像)
-- 官网 `site/`:Astro 静态站(三语 + 多主题),见 [`site/README.md`](site/README.md)
+Special thanks to ryoppippi's ccusage (MIT). The usage stats, model pricing, and 5-hour blocks all drew from it; pricing data comes from LiteLLM and Anthropic's official numbers.
 
-## 致谢
+Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
-特别感谢 [ryoppippi/ccusage](https://github.com/ryoppippi/ccusage)(MIT)—— 用量聚合、模型定价、5 小时块逻辑的参考来源;价格数据渊源 [LiteLLM](https://github.com/BerriAI/litellm) 与 Anthropic 官方定价。
+## MIT License
 
-也借鉴 / 站在这些项目肩上:[Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm)(portable-pty)· [Tabby](https://github.com/Eugeny/tabby) 等。完整清单见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
-
-## License
-
-[MIT](LICENSE) © 2026 VibeTerm contributors
+[MIT](LICENSE) · © 2026 VibeTerm contributors
