@@ -705,29 +705,50 @@ const codexLimitPill = (label: string | null, l: CodexRateLimit | null, item: St
   );
 };
 
-/** 按 window 时长从 primary/secondary 中选, primary/secondary 的语义随 plan 反转
- *  (free: primary=7d secondary=null; pro: primary=5h secondary=7d), 用 window_minutes
- *  匹配避免依赖不稳定的 raw 字段名. */
-function pickCodexLimitByMinutes(snap: CodexSnapshot | null, targetMin: number): CodexRateLimit | null {
-  if (!snap) return null;
-  const tolerance = 60; // 容差: 5h 是 300, 1h 是 60. 用 60 分钟容差足够.
-  const candidates = [snap.primary_limit, snap.secondary_limit].filter((x): x is CodexRateLimit => x !== null);
-  for (const c of candidates) {
-    // window_minutes 可能为 null(free 计划/新模型) → 无法判定 5h/7d, 跳过
-    if (c.window_minutes == null) continue;
-    if (Math.abs(c.window_minutes - targetMin) < tolerance) return c;
-  }
-  return null;
+// Codex 额度窗口按"时长类别"挑, 不锁死具体分钟数 —— 服务端会改: free 计划 2026-06 起
+// 把长窗从周(7d=10080)改成月度(30d=43200), primary/secondary 语义也随 plan 反转
+// (free: primary=长窗 secondary=null; pro: primary=5h secondary=长窗). 用 1 天为界分
+// 短/长窗, 对未来再变窗(如 14d)也鲁棒. window_minutes / used_percent / resets_at 均服务端权威.
+const CODEX_LONG_WINDOW_MIN_MINUTES = 1440; // >= 1 天算长窗
+
+type CodexLimitWithWindow = CodexRateLimit & { window_minutes: number };
+
+function codexLimitsWithWindow(snap: CodexSnapshot | null): CodexLimitWithWindow[] {
+  if (!snap) return [];
+  // window_minutes 可能为 null(free 计划/新模型) → 无法归类, 过滤掉.
+  return [snap.primary_limit, snap.secondary_limit].filter(
+    (x): x is CodexLimitWithWindow => x != null && x.window_minutes != null,
+  );
+}
+
+/** 短窗 (< 1 天, 如 5h=300) —— pro 计划才有; free 计划无短窗 → null. 多个取最短. */
+export function pickCodexShortWindow(snap: CodexSnapshot | null): CodexRateLimit | null {
+  return (
+    codexLimitsWithWindow(snap)
+      .filter((l) => l.window_minutes < CODEX_LONG_WINDOW_MIN_MINUTES)
+      .sort((a, b) => a.window_minutes - b.window_minutes)[0] ?? null
+  );
+}
+
+/** 长窗 (>= 1 天) —— 周(10080)或月(43200), 多个取最长. free 计划唯一的窗口. */
+export function pickCodexLongWindow(snap: CodexSnapshot | null): CodexRateLimit | null {
+  return (
+    codexLimitsWithWindow(snap)
+      .filter((l) => l.window_minutes >= CODEX_LONG_WINDOW_MIN_MINUTES)
+      .sort((a, b) => b.window_minutes - a.window_minutes)[0] ?? null
+  );
 }
 
 const codex5hWidget: WidgetRenderer = (item, ctx) => {
   if (ctx.agentKind() !== "codex") return null;
-  return codexLimitPill("5h", pickCodexLimitByMinutes(ctx.codexSnap(), 300), item);
+  // label=null → 由 window_minutes 动态渲染真实窗口 (5h / 1h …), 不硬编码.
+  return codexLimitPill(null, pickCodexShortWindow(ctx.codexSnap()), item);
 };
 
 const codex7dWidget: WidgetRenderer = (item, ctx) => {
   if (ctx.agentKind() !== "codex") return null;
-  return codexLimitPill("7d", pickCodexLimitByMinutes(ctx.codexSnap(), 10080), item);
+  // label=null → 周显示 "7d", 月显示 "30d", 跟随服务端实际窗口.
+  return codexLimitPill(null, pickCodexLongWindow(ctx.codexSnap()), item);
 };
 
 const codexEffortWidget: WidgetRenderer = (item, ctx) => {
@@ -1071,8 +1092,8 @@ export const WIDGET_LIST: WidgetMeta[] = [
   { id: "claude-7d-opus", display_name: "Claude 7d Opus", description: "Opus 单独 7d 配额", category: "claude" },
   { id: "codex-model", display_name: "Codex Model", description: "Codex 模型简写", category: "codex" },
   { id: "codex-ctx", display_name: "Codex Context %", description: "当前上下文百分比", category: "codex" },
-  { id: "codex-5h", display_name: "Codex 5h", description: "5 小时配额 (按 window_minutes 自动选, 跟 Claude 对齐)", category: "codex" },
-  { id: "codex-7d", display_name: "Codex 7d", description: "7 天配额 (按 window_minutes 自动选, 跟 Claude 对齐)", category: "codex" },
+  { id: "codex-5h", display_name: "Codex 5h", description: "短周期配额 (5h 窗口, 按 window_minutes 自动选)", category: "codex" },
+  { id: "codex-7d", display_name: "Codex 7d", description: "长周期配额 (周/月窗口自动选; free 计划现为月度 30d)", category: "codex" },
   { id: "codex-burn-rate", display_name: "Codex Burn Rate", description: "token_count 事件累计 tokens/min", category: "codex" },
   { id: "codex-effort", display_name: "Codex Effort", description: "reasoning effort (xhigh/high/normal/low)", category: "codex" },
   { id: "claude-effort", display_name: "Claude Effort", description: "reasoning effort (low/medium/high/xhigh/max,需 hook 已装)", category: "claude" },

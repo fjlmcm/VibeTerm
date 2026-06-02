@@ -356,7 +356,7 @@
   "statusbar.widget_desc.codex-model": "Короткое имя модели Codex",
   "statusbar.widget_desc.codex-ctx": "Текущий процент контекста",
   "statusbar.widget_desc.codex-5h": "Квота за 5 часов (выбирается автоматически по window_minutes, согласовано с Claude)",
-  "statusbar.widget_desc.codex-7d": "Квота за 7 дней (выбирается автоматически по window_minutes, согласовано с Claude)",
+  "statusbar.widget_desc.codex-7d": "Квота за длинный период (недельное/месячное окно выбирается автоматически по window_minutes; free теперь месячное 30d)",
   "statusbar.widget_desc.codex-burn-rate": "Накопленная скорость token/мин из событий token_count",
   "statusbar.widget_desc.codex-effort": "Глубина рассуждений (xhigh/high/normal/low)",
   "statusbar.widget_desc.claude-effort": "Глубина рассуждений (low/medium/high/xhigh/max)",

@@ -10,7 +10,13 @@
 import type { RenderContext } from "../widgets";
 import { t } from "../../i18n";
 import { formatLocalHM, formatLocalDateHM } from "./anchor";
-import { formatReset, formatResetUnix } from "../widgets";
+import {
+  formatReset,
+  formatResetUnix,
+  formatCodexWindow,
+  pickCodexShortWindow,
+  pickCodexLongWindow,
+} from "../widgets";
 
 /// 通用 agent 详情数据 — Claude 跟 Codex 都映射到这套字段, AgentPanel 渲染一致.
 export interface AgentPanelData {
@@ -126,20 +132,16 @@ export function collectCodexData(ctx: RenderContext): AgentPanelData {
   const c = ctx.codexSnap();
   const block = ctx.codexBlock?.() ?? null;
 
-  // 5h: 优先本地 block (含 tokens_used + cost), 没有就看 rate_limits 里 window=300
-  const tol = 60;
-  const limits = c ? [c.primary_limit, c.secondary_limit].filter((x) => x != null) : [];
-  const fiveHFromLimits = limits.find(
-    (l) => l && l.window_minutes != null && Math.abs(l.window_minutes - 300) < tol,
-  );
-  const sevenDFromLimits = limits.find(
-    (l) => l && l.window_minutes != null && Math.abs(l.window_minutes - 10080) < tol,
-  );
+  // 短窗(5h 之类)优先本地 block (含 tokens_used + cost), 没有再看 rate_limits.
+  // 长窗(>=1天)走 rate_limits —— 周(10080)/月(43200) 按 window_minutes 自动选, 不锁死分钟数
+  // (free 计划 2026-06 起从 7d 改月度). 用 widgets 里同一套 picker, 分类逻辑单一来源.
+  const shortFromLimits = pickCodexShortWindow(c);
+  const longFromLimits = pickCodexLongWindow(c);
 
-  // 优先 block (本地算的), fallback rate_limits
-  const fiveHPct = block != null ? block.elapsed_pct : (fiveHFromLimits?.used_percent ?? null);
+  // 优先 block (本地算的), fallback rate_limits 短窗
+  const fiveHPct = block != null ? block.elapsed_pct : (shortFromLimits?.used_percent ?? null);
   const fiveHResetUnix =
-    block != null ? Math.floor(block.end_at_ms / 1000) : (fiveHFromLimits?.resets_at ?? null);
+    block != null ? Math.floor(block.end_at_ms / 1000) : (shortFromLimits?.resets_at ?? null);
 
   const quotas: AgentPanelData["quotas"] = [
     {
@@ -151,12 +153,16 @@ export function collectCodexData(ctx: RenderContext): AgentPanelData {
     },
     {
       key: "7d",
-      label: t("statusbar.popover.7d_window"),
-      pct: sevenDFromLimits?.used_percent ?? null,
-      resetLabel: sevenDFromLimits ? formatResetUnix(sevenDFromLimits.resets_at) : null,
+      // 标签跟随实际窗口: 周→"7d", 月→"30d"; 无数据时回退到 i18n 占位.
+      label:
+        longFromLimits?.window_minutes != null
+          ? formatCodexWindow(longFromLimits.window_minutes)
+          : t("statusbar.popover.7d_window"),
+      pct: longFromLimits?.used_percent ?? null,
+      resetLabel: longFromLimits ? formatResetUnix(longFromLimits.resets_at) : null,
       resetAt:
-        sevenDFromLimits && sevenDFromLimits.resets_at != null
-          ? formatLocalDateHM(sevenDFromLimits.resets_at * 1000)
+        longFromLimits && longFromLimits.resets_at != null
+          ? formatLocalDateHM(longFromLimits.resets_at * 1000)
           : null,
     },
   ];

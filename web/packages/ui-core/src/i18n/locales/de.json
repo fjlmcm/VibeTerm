@@ -356,7 +356,7 @@
   "statusbar.widget_desc.codex-model": "Kurzname des Codex-Modells",
   "statusbar.widget_desc.codex-ctx": "Aktueller Kontext in Prozent",
   "statusbar.widget_desc.codex-5h": "5-Stunden-Kontingent (automatisch nach window_minutes gewählt, an Claude ausgerichtet)",
-  "statusbar.widget_desc.codex-7d": "7-Tage-Kontingent (automatisch nach window_minutes gewählt, an Claude ausgerichtet)",
+  "statusbar.widget_desc.codex-7d": "Langzeit-Kontingent (Wochen-/Monatsfenster automatisch nach window_minutes; Free jetzt monatlich 30d)",
   "statusbar.widget_desc.codex-burn-rate": "Kumulierte Token/Min aus token_count-Events",
   "statusbar.widget_desc.codex-effort": "Reasoning Effort (xhigh/high/normal/low)",
   "statusbar.widget_desc.claude-effort": "Reasoning Effort (low/medium/high/xhigh/max)",

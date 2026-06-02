@@ -356,7 +356,7 @@
   "statusbar.widget_desc.codex-model": "Codex モデル略称",
   "statusbar.widget_desc.codex-ctx": "現在のコンテキスト割合",
   "statusbar.widget_desc.codex-5h": "5 時間クォータ (window_minutes で自動選択, Claude と整合)",
-  "statusbar.widget_desc.codex-7d": "7 日間クォータ (window_minutes で自動選択, Claude と整合)",
+  "statusbar.widget_desc.codex-7d": "長期クォータ (週/月ウィンドウを window_minutes で自動選択; free は現在月次 30d)",
   "statusbar.widget_desc.codex-burn-rate": "token_count イベント累計 tokens/min",
   "statusbar.widget_desc.codex-effort": "reasoning effort (xhigh/high/normal/low)",
   "statusbar.widget_desc.claude-effort": "reasoning effort (low/medium/high/xhigh/max)",

@@ -356,7 +356,7 @@
   "statusbar.widget_desc.codex-model": "Nome breve del modello Codex",
   "statusbar.widget_desc.codex-ctx": "Percentuale di contesto corrente",
   "statusbar.widget_desc.codex-5h": "Quota di 5 ore (scelta in automatico da window_minutes, allineata a Claude)",
-  "statusbar.widget_desc.codex-7d": "Quota di 7 giorni (scelta in automatico da window_minutes, allineata a Claude)",
+  "statusbar.widget_desc.codex-7d": "Quota a lungo periodo (finestra settimanale/mensile scelta in automatico da window_minutes; free ora mensile 30d)",
   "statusbar.widget_desc.codex-burn-rate": "Token/min cumulativi dagli eventi token_count",
   "statusbar.widget_desc.codex-effort": "Reasoning effort (xhigh/high/normal/low)",
   "statusbar.widget_desc.claude-effort": "Reasoning effort (low/medium/high/xhigh/max)",

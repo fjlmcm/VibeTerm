@@ -356,7 +356,7 @@
   "statusbar.widget_desc.codex-model": "Codex model kısa adı",
   "statusbar.widget_desc.codex-ctx": "Geçerli bağlam yüzdesi",
   "statusbar.widget_desc.codex-5h": "5 saatlik kota (window_minutes ile otomatik seçilir, Claude ile hizalı)",
-  "statusbar.widget_desc.codex-7d": "7 günlük kota (window_minutes ile otomatik seçilir, Claude ile hizalı)",
+  "statusbar.widget_desc.codex-7d": "Uzun dönem kotası (haftalık/aylık pencere window_minutes ile otomatik seçilir; free artık aylık 30d)",
   "statusbar.widget_desc.codex-burn-rate": "token_count olaylarından kümülatif token/dk",
   "statusbar.widget_desc.codex-effort": "Akıl yürütme effort'u (xhigh/high/normal/low)",
   "statusbar.widget_desc.claude-effort": "Akıl yürütme effort'u (low/medium/high/xhigh/max)",

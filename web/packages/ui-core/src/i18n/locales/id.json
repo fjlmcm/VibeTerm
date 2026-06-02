@@ -356,7 +356,7 @@
   "statusbar.widget_desc.codex-model": "Nama singkat model Codex",
   "statusbar.widget_desc.codex-ctx": "Persentase konteks saat ini",
   "statusbar.widget_desc.codex-5h": "Kuota 5 jam (dipilih otomatis lewat window_minutes, selaras dengan Claude)",
-  "statusbar.widget_desc.codex-7d": "Kuota 7 hari (dipilih otomatis lewat window_minutes, selaras dengan Claude)",
+  "statusbar.widget_desc.codex-7d": "Kuota periode panjang (jendela mingguan/bulanan dipilih otomatis lewat window_minutes; free kini bulanan 30d)",
   "statusbar.widget_desc.codex-burn-rate": "Token/menit kumulatif dari peristiwa token_count",
   "statusbar.widget_desc.codex-effort": "Reasoning effort (xhigh/high/normal/low)",
   "statusbar.widget_desc.claude-effort": "Reasoning effort (low/medium/high/xhigh/max)",

@@ -46,6 +46,18 @@ pub struct QuotaWindow {
     pub resets_at: Option<i64>,
 }
 
+/// window_minutes → 人类标签, 镜像前端 `formatCodexWindow`。
+/// 不锁死具体分钟数: 5h(300)→"5h"、周(10080)→"7d"、月(43200)→"30d"。
+/// (Codex 服务端 2026-06 起把 free 长窗从 7d 改为月度 30d, 锁死分钟数会漏标。)
+fn codex_window_label(window_minutes: Option<u64>) -> String {
+    match window_minutes {
+        Some(m) if m >= 1440 => format!("{}d", ((m as f64) / 1440.0).round() as u64),
+        Some(m) if m >= 60 => format!("{}h", ((m as f64) / 60.0).round() as u64),
+        Some(m) if m > 0 => format!("{m}m"),
+        _ => "window".into(),
+    }
+}
+
 /// 降级链单步诊断 —— 接 /doctor, 让"走了哪个源 / 为何降级"可见。
 #[derive(Debug, Clone, Serialize)]
 pub struct SourceAttempt {
@@ -211,13 +223,8 @@ impl AgentProvider for CodexProvider {
             .into_iter()
             .flatten()
         {
-            let label = match limit.window_minutes {
-                Some(300) => "5h",
-                Some(10080) => "7d",
-                _ => "window",
-            };
             quotas.push(QuotaWindow {
-                label: label.into(),
+                label: codex_window_label(limit.window_minutes),
                 used_pct: limit.used_percent,
                 window_minutes: limit.window_minutes,
                 resets_at: limit.resets_at,
@@ -273,5 +280,16 @@ mod tests {
     fn agent_kind_as_str() {
         assert_eq!(AgentKind::Claude.as_str(), "claude");
         assert_eq!(AgentKind::Codex.as_str(), "codex");
+    }
+
+    #[test]
+    fn codex_window_label_maps_durations() {
+        assert_eq!(codex_window_label(Some(300)), "5h"); // pro 短窗
+        assert_eq!(codex_window_label(Some(10080)), "7d"); // 周
+        assert_eq!(codex_window_label(Some(43200)), "30d"); // free 月度 (2026-06+)
+        assert_eq!(codex_window_label(Some(60)), "1h");
+        assert_eq!(codex_window_label(Some(30)), "30m");
+        assert_eq!(codex_window_label(Some(0)), "window");
+        assert_eq!(codex_window_label(None), "window");
     }
 }

@@ -356,7 +356,7 @@
   "statusbar.widget_desc.codex-model": "Codex 模型简写",
   "statusbar.widget_desc.codex-ctx": "当前上下文百分比",
   "statusbar.widget_desc.codex-5h": "5 小时配额 (按 window_minutes 自动选, 跟 Claude 对齐)",
-  "statusbar.widget_desc.codex-7d": "7 天配额 (按 window_minutes 自动选, 跟 Claude 对齐)",
+  "statusbar.widget_desc.codex-7d": "长周期配额 (周/月窗口按 window_minutes 自动选; free 计划现为月度 30d)",
   "statusbar.widget_desc.codex-burn-rate": "token_count 事件累计 tokens/min",
   "statusbar.widget_desc.codex-effort": "reasoning effort (xhigh/high/normal/low)",
   "statusbar.widget_desc.claude-effort": "reasoning effort (low/medium/high/xhigh/max)",

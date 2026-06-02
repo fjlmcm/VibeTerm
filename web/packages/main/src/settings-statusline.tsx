@@ -128,7 +128,8 @@ const MOCK_CODEX: CodexSnapshot = {
   context_window: 258400,
   // (22000 - 12000) / (258400 - 12000) * 100 ≈ 4.06
   context_used_pct: 4.06,
-  primary_limit: { used_percent: 32, window_minutes: 10080, resets_at: Math.floor(Date.now() / 1000) + 4.5 * 86400 },
+  // free 计划 2026-06 起为月度窗口 (30d=43200), 预览即所见.
+  primary_limit: { used_percent: 32, window_minutes: 43200, resets_at: Math.floor(Date.now() / 1000) + 18 * 86400 },
   secondary_limit: null,
   plan_type: "free",
   updated_at_ms: Date.now(),

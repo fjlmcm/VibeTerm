@@ -356,7 +356,7 @@
   "statusbar.widget_desc.codex-model": "Codex model short name",
   "statusbar.widget_desc.codex-ctx": "Current context percentage",
   "statusbar.widget_desc.codex-5h": "5-hour quota (auto-picked by window_minutes, aligned with Claude)",
-  "statusbar.widget_desc.codex-7d": "7-day quota (auto-picked by window_minutes, aligned with Claude)",
+  "statusbar.widget_desc.codex-7d": "Long-period quota (weekly/monthly window auto-picked by window_minutes; free is now monthly 30d)",
   "statusbar.widget_desc.codex-burn-rate": "Cumulative tokens/min from token_count events",
   "statusbar.widget_desc.codex-effort": "Reasoning effort (xhigh/high/normal/low)",
   "statusbar.widget_desc.claude-effort": "Reasoning effort (low/medium/high/xhigh/max)",

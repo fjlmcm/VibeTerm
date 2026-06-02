@@ -356,7 +356,7 @@
   "statusbar.widget_desc.codex-model": "Tên model Codex rút gọn",
   "statusbar.widget_desc.codex-ctx": "Phần trăm ngữ cảnh hiện tại",
   "statusbar.widget_desc.codex-5h": "Hạn mức 5 giờ (tự chọn theo window_minutes, khớp với Claude)",
-  "statusbar.widget_desc.codex-7d": "Hạn mức 7 ngày (tự chọn theo window_minutes, khớp với Claude)",
+  "statusbar.widget_desc.codex-7d": "Hạn mức dài hạn (cửa sổ tuần/tháng tự chọn theo window_minutes; free hiện là hàng tháng 30d)",
   "statusbar.widget_desc.codex-burn-rate": "Token/phút tích luỹ từ sự kiện token_count",
   "statusbar.widget_desc.codex-effort": "Mức reasoning effort (xhigh/high/normal/low)",
   "statusbar.widget_desc.claude-effort": "Mức reasoning effort (low/medium/high/xhigh/max)",

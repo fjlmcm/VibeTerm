@@ -356,7 +356,7 @@
   "statusbar.widget_desc.codex-model": "Codex 모델 약칭",
   "statusbar.widget_desc.codex-ctx": "현재 context 백분율",
   "statusbar.widget_desc.codex-5h": "5시간 할당량 (window_minutes로 자동 선택, Claude와 정렬)",
-  "statusbar.widget_desc.codex-7d": "7일 할당량 (window_minutes로 자동 선택, Claude와 정렬)",
+  "statusbar.widget_desc.codex-7d": "장기 할당량 (주/월 창을 window_minutes로 자동 선택; free는 현재 월간 30d)",
   "statusbar.widget_desc.codex-burn-rate": "token_count 이벤트 누적 tokens/min",
   "statusbar.widget_desc.codex-effort": "reasoning effort (xhigh/high/normal/low)",
   "statusbar.widget_desc.claude-effort": "reasoning effort (low/medium/high/xhigh/max)",
