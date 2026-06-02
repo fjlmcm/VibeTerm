@@ -34,6 +34,7 @@ import type {
   UsageStats,
   AppUpdateInfo,
   PricingStatus,
+  AgentTerminalCompleted,
 } from "@vibeterm/ipc-types";
 
 // ===== Terminal =====
@@ -394,6 +395,15 @@ export function onTerminalExited(
   return tauriListen<{ terminal_id: TerminalId; exit_code: number | null }>(
     "terminal_exited",
     (e) => handler(e.payload),
+  );
+}
+
+/** 某 task 的某终端 agent 刚完成一轮 — 用于切回任务时自动定位焦点到该终端。 */
+export function onAgentTerminalCompleted(
+  handler: (p: AgentTerminalCompleted) => void,
+): Promise<UnlistenFn> {
+  return tauriListen<AgentTerminalCompleted>("agent_terminal_completed", (e) =>
+    handler(e.payload),
   );
 }
 

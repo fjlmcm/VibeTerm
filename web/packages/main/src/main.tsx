@@ -6,7 +6,7 @@
 import { For, Show, createEffect, createMemo, createSignal, onMount, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
 
-import { Terminal, TaskList, Titlebar, theme as themeMod, ipc, t, SplitView, singleLeaf, splitLeaf, removeLeaf, newSlotId, bumpSlotIdAtLeast, collectSlots, setRatiosAt, getTerminalFontSize, initKeybindings, createKeybindingDispatcher, rightmostBottomSlot, leftmostBottomSlot, createCanvasViewport, StatusBar, playNotifySound, shouldConfirmCloseTask, type SplitNode } from "@vibeterm/ui-core";
+import { Terminal, TaskList, Titlebar, theme as themeMod, ipc, t, SplitView, singleLeaf, splitLeaf, removeLeaf, newSlotId, bumpSlotIdAtLeast, collectSlots, setRatiosAt, getTerminalFontSize, initKeybindings, createKeybindingDispatcher, focusTerminal, rightmostBottomSlot, leftmostBottomSlot, createCanvasViewport, StatusBar, playNotifySound, shouldConfirmCloseTask, type SplitNode } from "@vibeterm/ui-core";
 import { Plus, X, Settings as SettingsIcon, SplitSquareHorizontal, SplitSquareVertical, LayoutGrid, Layers, BarChart3 } from "lucide-solid";
 import type { TaskDto, Theme } from "@vibeterm/ipc-types";
 import { CommandPalette } from "./command-palette";
@@ -101,6 +101,23 @@ function App() {
   const [promptPickerOpen, setPromptPickerOpen] = createSignal(false);
   const [activeTerminalId, setActiveTerminalId] = createSignal<number | null>(null);
 
+  // "离开期间某 agent 终端刚完成" 的待消费记录:taskId → terminalId(最近一次完成覆盖)。
+  // agent_terminal_completed 事件在该 task 非当前激活时写入;切回该 task 时一次性消费,
+  // 把焦点定位到那个终端(一个 task 多 agent 场景)。
+  const [pendingFocusTermByTask, setPendingFocusTermByTask] = createSignal<Map<number, number>>(
+    new Map(),
+  );
+  // 反查:terminalId 在 task tid 下属于哪个 slot(无则 null,如终端已关闭)。
+  const slotOfTerminalInTask = (tid: number, termId: number): number | null => {
+    const tk = tasks().find((t) => t.id === tid);
+    if (!tk) return null;
+    const map = slotToTerm();
+    for (const s of collectSlots(tk.split_tree)) {
+      if (map.get(slotKey(tid, s)) === termId) return s;
+    }
+    return null;
+  };
+
   // 切换 task (点 sidebar) 时, activeTerminalId 不会自动跟随 —
   // 这里同步: task → 它的 active slot (或第一个有 terminal 的 slot) → terminal_id
   // 状态栏 / executeAction / 浮窗等都依赖 activeTerminalId 跟随当前可见终端
@@ -129,6 +146,25 @@ function App() {
     // 任务的终端;Terminal onReady 回填后此 effect 重跑会写入正确值。
     if (termId !== undefined) setActiveTerminalId(termId);
     else setActiveTerminalId(null);
+  });
+
+  // 切回某 task 时:若它在"离开期间"有 agent 终端刚完成(未消费),把焦点定位到那个终端。
+  // 一次性消费(无论是否解析到 slot 都清掉,避免悬挂);设 active slot 后上面的同步 effect
+  // 会把 activeTerminalId 跟到该终端,再 focus 其 xterm 让光标落在那里。
+  createEffect(() => {
+    const tid = activeTaskId();
+    if (tid === null) return;
+    const termId = pendingFocusTermByTask().get(tid);
+    if (termId === undefined) return;
+    const slot = slotOfTerminalInTask(tid, termId);
+    setPendingFocusTermByTask((m) => {
+      const n = new Map(m);
+      n.delete(tid);
+      return n;
+    });
+    if (slot === null) return; // 终端已关闭 / 映射未就绪 → 消费但不强切
+    setActiveSlotFor(tid, slot);
+    requestAnimationFrame(() => focusTerminal(termId));
   });
 
   // B2 view mode:normal(左列表 + 右终端)/ canvas(全屏卡片画布)
@@ -635,6 +671,17 @@ function App() {
       playNotifySound(sound).catch((e) => console.warn("[main] play notify sound failed", e));
     });
 
+    // 某 task 的某终端 agent 完成:若该 task 当前不是激活 task(用户在别处),记下来,
+    // 等用户切回该 task 时把焦点定位到这个终端(见上方消费 effect)。已在看则不打扰。
+    const offAgentDone = await ipc.onAgentTerminalCompleted(({ task_id, terminal_id }) => {
+      if (activeTaskId() === task_id) return;
+      setPendingFocusTermByTask((m) => {
+        const n = new Map(m);
+        n.set(task_id, terminal_id);
+        return n;
+      });
+    });
+
     // 全局快捷键 — 从 keybindings.toml 路由 (用户改 toml / 设置 UI 立刻生效).
     // 旧版硬编码 Mod+K/N/, 已删, 全部走 dispatcher.
     await initKeybindings();
@@ -696,6 +743,7 @@ function App() {
       offActions();
       offNotifyFocus();
       offNotifySound();
+      offAgentDone();
       window.removeEventListener("keydown", onKey);
       if (bakeTimer !== null) {
         clearTimeout(bakeTimer);

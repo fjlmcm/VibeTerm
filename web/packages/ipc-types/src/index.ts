@@ -189,6 +189,13 @@ export interface TerminalExited {
   exit_code: number | null;
 }
 
+// Rust emit "agent_terminal_completed":某 task 的某终端 agent 刚完成一轮。
+// 前端据此在切回该 task 时把焦点定位到最后完成的终端(一个 task 多 agent)。
+export interface AgentTerminalCompleted {
+  task_id: TaskId;
+  terminal_id: TerminalId;
+}
+
 // ---- env.toml ----
 export interface ProxySection {
   enabled: boolean;

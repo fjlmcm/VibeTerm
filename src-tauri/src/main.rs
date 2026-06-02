@@ -1003,6 +1003,11 @@ fn poll_agent_turn_for_terminal(
         refresh_dock_badge(app, tasks);
     }
     if just_completed {
+        // 前端用:切回该 task 时把焦点自动定位到"最后完成的那个终端"(一个 task 多 agent 场景)。
+        let _ = app.emit(
+            "agent_terminal_completed",
+            serde_json::json!({ "task_id": task_id, "terminal_id": term_id }),
+        );
         let last = tasks
             .task_dto(task_id)
             .ok()
