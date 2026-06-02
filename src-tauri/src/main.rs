@@ -80,6 +80,20 @@ const NOTIFY_FOCUS_GRACE: std::time::Duration = std::time::Duration::from_secs(1
 /// 5s 让正常多轮对话每轮都提示,又不至于同轮边界的瞬时重复连响两声.
 const AGENT_COMPLETED_COOLDOWN: std::time::Duration = std::time::Duration::from_secs(5);
 
+/// transcript 完成检测的"归属窗口":只有本终端 PTY 在此窗口内**确有产出**,才认可
+/// `read_for_cwd` 报出的"答完一轮"是本终端的完成。
+///
+/// 根因:`read_for_cwd(cwd)` 取的是该 cwd 编码目录下 mtime 最新的 claude 会话,而同一个
+/// `~/.claude/projects/<编码cwd>/` 目录下可能并存多个 claude(同项目多终端、不同终端 app、
+/// 甚至 `cwd_to_project_dir` 有损编码把不同项目映射进同一目录)。别的 claude 答完会把它的
+/// jsonl 顶成最新 → 本终端的完成轮询误读成"自己答完了" → 给本不相干的别处任务发完成通知
+/// (用户实测:在 ghostty 等别的终端里跑 claude 完成,VibeTerm 也弹通知)。
+/// 本终端没产出 = 这一轮不是它答的,跳过(回退 PTY 嗅探 + 等下次轮询)。
+///
+/// 8s > 3s 轮询间隔,给本终端真完成留足余量(首次 in-window 轮询必采到),绝不漏报自己的完成;
+/// 同时把"早已静默等输入 / 在别处跑"的终端干净排除。
+const AGENT_COMPLETION_OUTPUT_WINDOW_MS: u128 = 8_000;
+
 #[derive(Clone, Copy, Debug)]
 enum MenuLang {
     ZhCN,
@@ -902,15 +916,65 @@ fn poll_agent_turn_for_terminal(
     if cwd.is_empty() {
         return;
     }
+    // 完成归属守门:本终端 PTY 近 AGENT_COMPLETION_OUTPUT_WINDOW_MS 内无任何产出,则
+    // transcript 里"最新会话答完一轮"不是本终端干的 —— 是同 cwd 编码目录下别的 claude
+    // (另一终端 / 另一终端 app / lossy 编码碰撞的另一项目)写的会话被 read_for_cwd 顶成最新。
+    // 据此跳过,绝不给本不相干的任务发完成通知(回退 PTY 嗅探 + 等下次轮询)。
+    let recent_output = state
+        .status_detectors
+        .lock()
+        .ok()
+        .and_then(|m| m.get(&term_id).cloned())
+        .map(|d| {
+            d.lock()
+                .map(|det| det.since_last_chunk_ms() <= AGENT_COMPLETION_OUTPUT_WINDOW_MS)
+                .unwrap_or(false)
+        })
+        .unwrap_or(false);
+    if !recent_output {
+        return;
+    }
     let (done, turn_id) = match kind {
         "claude" => {
-            let Some(sess) = vibeterm_agent_watch::claude::project::read_for_cwd(cwd) else {
+            use vibeterm_agent_watch::claude::project as cproj;
+            // 精确归属:本终端只读**自己绑定的会话**,而非"目录里最新会话"。
+            //   - 已绑定 + 绑定会话近窗口内仍在更新(== 本终端正在写它)→ 信它,无视同目录别的 claude;
+            //   - 已绑定但绑定会话久不更新(claude 重启 / /clear 换文件 / 早先误绑)→ 换绑到目录最新会话
+            //     (本终端此刻在产出,最新会话就是它新写的那个);
+            //   - 未绑定 → 此刻本终端在产出(recent_output 已守门),目录最新会话即本终端的 → 绑定它。
+            let pin = state
+                .tasks
+                .agent_session_pin(task_id, term_id)
+                .ok()
+                .flatten();
+            let sess = match pin {
+                Some(sid)
+                    if cproj::session_age_ms(cwd, &sid)
+                        .map(|age| age <= AGENT_COMPLETION_OUTPUT_WINDOW_MS)
+                        .unwrap_or(false) =>
+                {
+                    cproj::read_for_session(cwd, &sid)
+                }
+                _ => {
+                    let newest = cproj::read_for_cwd(cwd);
+                    if let Some(nsid) = newest.as_ref().map(|s| s.session_id.clone()) {
+                        if !nsid.is_empty() {
+                            let _ = state.tasks.set_agent_session_pin(task_id, term_id, &nsid);
+                        }
+                    }
+                    newest
+                }
+            };
+            let Some(sess) = sess else {
                 return;
             };
             let done = sess.stop_reason.as_deref() == Some("end_turn");
             (done, if done { sess.last_turn_id } else { None })
         }
         "codex" => {
+            // codex rollout 按日期平铺、`read_for_cwd` 按文件内 session_meta.cwd **精确**匹配,
+            // 不存在 claude 那种"cwd 有损编码把别项目并进同目录"的跨项目漏判;同 cwd 多会话的
+            // 残留由上面的 recent_output 守门兜住(本终端无产出则不归属),故不另做 session 绑定。
             let Some(snap) = vibeterm_agent_watch::codex::session::read_for_cwd(cwd) else {
                 return;
             };
@@ -1439,6 +1503,27 @@ mod cwd_expand_tests {
     use super::*;
 
     #[test]
+    fn locale_utf8_detection() {
+        use std::collections::HashMap;
+        let none = |_: &str| None;
+        // 全空(GUI 启动常态)→ 不是 UTF-8 → 上层会注入 en_US.UTF-8
+        assert!(!locale_env_has_utf8(&HashMap::new(), none));
+        // 继承的 LANG=C / 空 LC_* → 仍非 UTF-8(中文路径乱码的真实场景)
+        let inherit_c = |k: &str| (k == "LANG").then(|| "C".to_string());
+        assert!(!locale_env_has_utf8(&HashMap::new(), inherit_c));
+        // merged 显式 UTF-8 → 尊重,判定为已是 UTF-8
+        let mut m = HashMap::new();
+        m.insert("LANG".to_string(), "zh_CN.UTF-8".to_string());
+        assert!(locale_env_has_utf8(&m, none));
+        // 仅继承 LC_CTYPE=UTF-8(macOS 形态)→ UTF-8
+        let inherit_ctype = |k: &str| (k == "LC_CTYPE").then(|| "UTF-8".to_string());
+        assert!(locale_env_has_utf8(&HashMap::new(), inherit_ctype));
+        // LC_ALL 大小写无关
+        let inherit_upper = |k: &str| (k == "LC_ALL").then(|| "ja_JP.utf8".to_string());
+        assert!(locale_env_has_utf8(&HashMap::new(), inherit_upper));
+    }
+
+    #[test]
     fn expand_tilde_only() {
         std::env::set_var("HOME", "/Users/test");
         assert_eq!(expand_path_str("~"), "/Users/test");
@@ -1596,6 +1681,26 @@ fn ensure_zsh_zdotdir() -> Option<std::path::PathBuf> {
     .clone()
 }
 
+/// 子环境的 locale 类别(`LC_ALL`/`LC_CTYPE`/`LANG`)是否任一为 UTF-8。
+/// `overrides`(env.toml / 内联,优先)缺则走 `inherit`(进程继承)。纯函数便于测,
+/// 进程级 [`fix_locale_for_gui_launch`] 复用它判断"是否已有 UTF-8 locale 无需兜"。
+fn locale_env_has_utf8(
+    overrides: &std::collections::HashMap<String, String>,
+    inherit: impl Fn(&str) -> Option<String>,
+) -> bool {
+    ["LC_ALL", "LC_CTYPE", "LANG"].iter().any(|k| {
+        overrides
+            .get(*k)
+            .cloned()
+            .or_else(|| inherit(k))
+            .map(|v| {
+                let v = v.to_ascii_lowercase();
+                v.contains("utf-8") || v.contains("utf8")
+            })
+            .unwrap_or(false)
+    })
+}
+
 fn spawn_inner(
     opts: SpawnPtyOpts,
     channel: Channel<Vec<u8>>,
@@ -1645,6 +1750,8 @@ fn spawn_inner(
     merged
         .entry("TERM_PROGRAM_VERSION".into())
         .or_insert_with(|| env!("CARGO_PKG_VERSION").into());
+    // CJK locale 不在这里逐 spawn 兜:进程级 `fix_locale_for_gui_launch()`(main 最早期)已把
+    // LC_CTYPE 兜成 UTF-8,PTY shell 连同 lsof/ps/git 等所有子进程一律继承。env.toml 仍可覆盖。
 
     // shell 集成自动注入(默认开,config 可关):为 zsh 设临时 ZDOTDIR,让现成的
     // OSC 133 parser 拿到 shell 权威的 prompt/command/exit-code 标记。VS Code/Ghostty
@@ -4220,11 +4327,37 @@ fn fix_path_for_gui_launch() {
 #[cfg(not(target_os = "macos"))]
 fn fix_path_for_gui_launch() {}
 
+/// 进程级 CJK locale 兜底 —— **从底层一次性解决**所有"中文乱码"类问题的根因修复。
+///
+/// macOS 从 Dock/Launchpad/Finder 启动的 GUI app 不继承用户 shell 的 `LANG`/`LC_*`,整个进程
+/// 落到 C/POSIX locale。后果遍布全栈:zsh 把中文路径在 `%~` prompt 里转义成 `\M-^F\M-^M…`
+/// 乱码;`lsof`/`ps` 输出的中文路径/命令行被转义 → cwd 解析 / agent 识别失败。过去是逐个 spawn
+/// 点打补丁(lsof 设了、ps 没设、PTY 没设),散且易漏。这里在 `main()` **最早期、建任何线程前**
+/// (`set_var` 此刻单线程安全)一次性把 `LC_CTYPE` 兜成 UTF-8 —— 之后 PTY shell、lsof、ps、git、
+/// which 等**所有子进程一律继承**,无需再各自 `.env()`。
+///
+/// 只设 `LC_CTYPE`(字符分类),**不碰 `LANG`/`LC_MESSAGES`**:乱码只与字符处理有关,不应顺带把
+/// 程序消息、原生菜单语言(`MenuLang` 读 `LANG`)强行变英文。值用裸 `UTF-8`(macOS 专有、必然可用),
+/// 不臆造 `zh_Hans_CN.UTF-8` 这类可能不存在、`setlocale` 失败反落 C 的 locale。
+/// 已有任一 UTF-8 locale(用户从 terminal 启动 / 显式设过)→ 尊重,不动。
+#[cfg(target_os = "macos")]
+fn fix_locale_for_gui_launch() {
+    if !locale_env_has_utf8(&std::collections::HashMap::new(), |k| std::env::var(k).ok()) {
+        std::env::set_var("LC_CTYPE", "UTF-8");
+        tracing::info!("fix_locale: 进程无 UTF-8 locale,兜底 LC_CTYPE=UTF-8(GUI 启动)");
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn fix_locale_for_gui_launch() {}
+
 // ============================
 // main
 // ============================
 fn main() {
     init_tracing();
+    // CJK 根因兜底:必须最早(建任何线程前 set_var 才安全)。让全进程及所有子进程继承 UTF-8 ctype。
+    fix_locale_for_gui_launch();
     // 常驻音频线程(通知声音用 rodio 进程内播放,替代反复 fork 的 afplay)。早启动,后续直接 send。
     init_audio_thread();
     // 必须早于任何 which::which / PTY spawn — 否则 GUI 启动的 .app 看不到用户 PATH

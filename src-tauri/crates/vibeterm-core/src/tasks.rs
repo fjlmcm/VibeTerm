@@ -66,6 +66,12 @@ struct TaskRuntime {
     /// turn_id 变了 = 新一轮答完 → 即使 3s 轮询没采到中间 working 那一拍(快轮、纯文本秒回)
     /// 也能判出;同 id 反复读到则不重复通知。缺键=尚未判过 / 该 agent 不提供 turn id(退回布尔跃迁)。
     last_completed_turn_id: HashMap<TerminalId, String>,
+    /// 完成检测**绑定的 agent 会话 id**,**per-terminal**(key=terminal_id)。
+    /// 同一个 `~/.claude/projects/<编码cwd>/` 目录下可能并存多个 claude 会话(同项目多终端 /
+    /// 不同终端 app / cwd 有损编码碰撞的别的项目)。"取目录最新会话"会把别的 claude 的完成
+    /// 误判成本终端的。绑定后本终端只读自己这个 `<sid>.jsonl` —— 上层在本终端确有产出时把当前
+    /// 会话绑定到此(那一刻在写的就是它),据此精确归属完成。缺键=尚未绑定。
+    agent_session_pins: HashMap<TerminalId, String>,
 }
 
 fn default_split_tree() -> SplitNode {
@@ -214,6 +220,7 @@ impl TaskRegistry {
                 auto_namable: true,
                 agent_turn_done: HashMap::new(),
                 last_completed_turn_id: HashMap::new(),
+                agent_session_pins: HashMap::new(),
             },
         );
         inner.order.push(id);
@@ -512,6 +519,7 @@ impl TaskRegistry {
                 t.agent_turn_done.remove(&term_id);
                 t.agent_kinds.remove(&term_id);
                 t.last_completed_turn_id.remove(&term_id);
+                t.agent_session_pins.remove(&term_id);
                 owner = Some(*tid);
                 break;
             }
@@ -669,6 +677,36 @@ impl TaskRegistry {
             }
         }
         Ok((changed, just_completed))
+    }
+
+    /// 读某终端完成检测**绑定的会话 id**(per-terminal)。缺键=尚未绑定。
+    pub fn agent_session_pin(
+        &self,
+        id: TaskId,
+        term_id: TerminalId,
+    ) -> Result<Option<String>, TaskError> {
+        let inner = self.lock()?;
+        Ok(inner
+            .tasks
+            .get(&id)
+            .and_then(|t| t.agent_session_pins.get(&term_id).cloned()))
+    }
+
+    /// 绑定某终端的完成检测会话 id(per-terminal)。仅在本终端确有产出、当前会话即本终端所写时
+    /// 由上层调用。返回 true 表示绑定值变了。
+    pub fn set_agent_session_pin(
+        &self,
+        id: TaskId,
+        term_id: TerminalId,
+        session_id: &str,
+    ) -> Result<bool, TaskError> {
+        let mut inner = self.lock()?;
+        let t = inner.tasks.get_mut(&id).ok_or(TaskError::NotFound(id))?;
+        let changed = t.agent_session_pins.get(&term_id).map(String::as_str) != Some(session_id);
+        if changed {
+            t.agent_session_pins.insert(term_id, session_id.to_string());
+        }
+        Ok(changed)
     }
 
     pub fn name_of(&self, id: TaskId) -> Result<Option<String>, TaskError> {
@@ -865,6 +903,7 @@ impl Inner {
                     auto_namable: snap.auto_namable,
                     agent_turn_done: HashMap::new(),
                     last_completed_turn_id: HashMap::new(),
+                    agent_session_pins: HashMap::new(),
                 },
             );
         }

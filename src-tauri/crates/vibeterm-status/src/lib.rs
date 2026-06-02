@@ -321,6 +321,16 @@ impl StatusDetector {
         matches!(self.current, TaskStatus::Idle) && self.idle_finalized_by_osc
     }
 
+    /// 距上次收到本终端 PTY 输出的毫秒数。
+    ///
+    /// 完成归属判据:上层 transcript 轮询报"某会话答完一轮"时,只有本终端 PTY 最近**确有产出**
+    /// 才算本终端的完成。否则那是同一个 `~/.claude/projects/<编码cwd>/` 目录下**另一个 claude
+    /// 进程**(同项目另一终端 / 另一个终端 app / 甚至 cwd 有损编码把不同项目映射进同一目录)写的
+    /// 会话被 `read_for_cwd` 选成 mtime 最新而已 —— 本终端没产出 = 不是本终端答的,不应据此发完成通知。
+    pub fn since_last_chunk_ms(&self) -> u128 {
+        self.last_chunk_at.elapsed().as_millis()
+    }
+
     /// 喂入一个 chunk,返回新状态(若变化)。
     pub fn feed(&mut self, chunk: &[u8]) -> Option<TaskStatus> {
         if chunk.is_empty() {
@@ -867,6 +877,27 @@ mod tests {
         assert_eq!(d.current(), TaskStatus::Running);
         std::thread::sleep(std::time::Duration::from_millis(IDLE_TIMEOUT_MS + 50));
         assert_eq!(d.tick(), Some(TaskStatus::Idle));
+    }
+
+    #[test]
+    fn since_last_chunk_resets_on_feed_grows_on_silence() {
+        // 完成归属窗口判据:刚收到 PTY 输出 → 距上次产出极小;静默后单调增长。
+        let mut d = StatusDetector::new("zsh");
+        let _ = d.feed(b"output");
+        assert!(
+            d.since_last_chunk_ms() < 500,
+            "刚 feed 应几乎为 0,实际 {}ms",
+            d.since_last_chunk_ms()
+        );
+        std::thread::sleep(std::time::Duration::from_millis(120));
+        assert!(
+            d.since_last_chunk_ms() >= 100,
+            "静默 120ms 后应 ≥100ms,实际 {}ms",
+            d.since_last_chunk_ms()
+        );
+        // 再来一拍输出 → 重新归零
+        let _ = d.feed(b"more");
+        assert!(d.since_last_chunk_ms() < 500, "再 feed 后应重置");
     }
 
     // Stalled 状态机

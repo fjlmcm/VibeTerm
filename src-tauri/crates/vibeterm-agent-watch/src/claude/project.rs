@@ -551,6 +551,19 @@ fn scan_file_tokens(fp: &Path, cutoff_ms: i64) -> u64 {
 /// **安全**: canonicalize 后必须仍在 `projects_root()` 内, 防止前端构造路径
 /// + symlink 把 watcher 引向 ~/.ssh 等敏感目录.
 pub fn read_for_cwd(cwd: &str) -> Option<ClaudeSession> {
+    let (canon_dir, project_dir_name) = project_dir_for_cwd(cwd)?;
+    // 完成检测:排除超限的巨型同 cwd 会话(典型即 Claude Code 自身几百 MB 的 transcript),
+    // 否则会掩盖本任务 agent 真正的小会话 → 漏判完成(见 newest_jsonl_under 文档)。
+    let path = newest_jsonl_under(&canon_dir, JSONL_MAX_BYTES)?;
+    // 传 cwd_hint 让 build_snapshot 查 ~/.claude.json 做 1M 确定性识别
+    build_snapshot(&path, &project_dir_name, Some(cwd))
+}
+
+/// 解析 cwd → (canonicalized project dir, project_dir_name),含 symlink 逃逸防护。
+///
+/// **安全**: canonicalize 后必须仍在 `projects_root()` 内, 防前端构造路径 + symlink
+/// 把 watcher 引向 ~/.ssh 等敏感目录(`read_for_cwd` / `read_for_session` 共用)。
+fn project_dir_for_cwd(cwd: &str) -> Option<(PathBuf, String)> {
     let root = projects_root()?;
     let project_dir_name = cwd_to_project_dir(cwd);
     let dir = root.join(&project_dir_name);
@@ -564,11 +577,41 @@ pub fn read_for_cwd(cwd: &str) -> Option<ClaudeSession> {
         );
         return None;
     }
-    // 完成检测:排除超限的巨型同 cwd 会话(典型即 Claude Code 自身几百 MB 的 transcript),
-    // 否则会掩盖本任务 agent 真正的小会话 → 漏判完成(见 newest_jsonl_under 文档)。
-    let path = newest_jsonl_under(&canon_dir, JSONL_MAX_BYTES)?;
-    // 传 cwd_hint 让 build_snapshot 查 ~/.claude.json 做 1M 确定性识别
+    Some((canon_dir, project_dir_name))
+}
+
+/// `<project dir>/<session_id>.jsonl` 的安全路径 —— session_id 必须是纯文件名(防 path 注入)。
+fn session_jsonl_path(canon_dir: &Path, session_id: &str) -> Option<PathBuf> {
+    if session_id.is_empty()
+        || session_id.contains('/')
+        || session_id.contains('\\')
+        || session_id.contains("..")
+    {
+        return None;
+    }
+    Some(canon_dir.join(format!("{session_id}.jsonl")))
+}
+
+/// 读**指定 session** 的快照(完成检测精确归属):本终端只看自己绑定的 `<sid>.jsonl`,
+/// 无视同 cwd 编码目录下别的 claude 会话(同项目多终端 / 不同终端 app / lossy 编码碰撞的别项目)。
+/// claude 约定 jsonl 文件名即 sessionId,故直接按名打开。超限巨型文件(Claude Code 自身)跳过。
+pub fn read_for_session(cwd: &str, session_id: &str) -> Option<ClaudeSession> {
+    let (canon_dir, project_dir_name) = project_dir_for_cwd(cwd)?;
+    let path = session_jsonl_path(&canon_dir, session_id)?;
+    let meta = std::fs::metadata(&path).ok()?;
+    if !meta.is_file() || meta.len() > JSONL_MAX_BYTES {
+        return None;
+    }
     build_snapshot(&path, &project_dir_name, Some(cwd))
+}
+
+/// 绑定会话距上次写入的毫秒数 —— 完成归属自愈判据:本终端在产出却发现绑定会话久不更新
+/// (claude 重启 / `/clear` 换了文件 / 早先误绑)→ 上层据此换绑到目录最新会话。
+pub fn session_age_ms(cwd: &str, session_id: &str) -> Option<u128> {
+    let (canon_dir, _) = project_dir_for_cwd(cwd)?;
+    let path = session_jsonl_path(&canon_dir, session_id)?;
+    let mtime = std::fs::metadata(&path).ok()?.modified().ok()?;
+    Some(mtime.elapsed().ok()?.as_millis())
 }
 
 /// 启动 watcher; 立即推一次初值, 之后变更触发重算.
@@ -697,6 +740,20 @@ mod tests {
         assert!(std::fs::metadata(&picked).unwrap().len() <= 1024);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn session_jsonl_path_rejects_traversal() {
+        let dir = std::env::temp_dir().join("vt-test-sid");
+        // 正常 session id → <dir>/<sid>.jsonl
+        let ok = session_jsonl_path(&dir, "abc-123-def").expect("正常 sid 应放行");
+        assert_eq!(ok, dir.join("abc-123-def.jsonl"));
+        // path 注入一律拒绝(防越目录读 ~/.ssh 等)
+        assert!(session_jsonl_path(&dir, "").is_none());
+        assert!(session_jsonl_path(&dir, "../secret").is_none());
+        assert!(session_jsonl_path(&dir, "a/b").is_none());
+        assert!(session_jsonl_path(&dir, "a\\b").is_none());
+        assert!(session_jsonl_path(&dir, "..").is_none());
     }
 
     #[test]
