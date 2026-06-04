@@ -189,6 +189,8 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
   });
 
   const onKey = (e: KeyboardEvent) => {
+    // 🔴 红线4:IME 组合态(中文/日文等候选)下,方向键/回车/Esc 交给输入法选词,不驱动面板。
+    if (e.isComposing || e.keyCode === 229) return;
     const items = filtered();
     if (e.key === "ArrowDown") {
       e.preventDefault();

@@ -454,6 +454,8 @@ export const TaskList: Component<TaskListProps> = (props) => {
                           onInput={(e) => setEditingName(e.currentTarget.value)}
                           onBlur={commitEdit}
                           onKeyDown={(e) => {
+                            // 🔴 红线4:IME 组合态下回车=确认候选、Esc=取消候选,不提交/取消重命名
+                            if (e.isComposing || e.keyCode === 229) return;
                             if (e.key === "Enter") commitEdit();
                             if (e.key === "Escape") cancelEdit();
                           }}

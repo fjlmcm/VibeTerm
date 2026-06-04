@@ -135,6 +135,9 @@ export const NewTaskDialog: Component<NewTaskDialogProps> = (props) => {
         data-testid="new-task-dialog"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
+          // 🔴 红线4:IME 组合态下,回车=确认候选词、Esc=取消候选,都不应触发对话框提交/关闭。
+          // 否则中文/日文等用户敲回车选词时会被误当"提交"而直接建任务。
+          if (e.isComposing || e.keyCode === 229) return;
           if (e.key === "Escape" && !submitting()) props.onClose();
           // L1:勾了 worktree 用 Cmd+Enter 提交,避免误触发
           if (e.key === "Enter") {

@@ -1648,6 +1648,8 @@ function App() {
               value={canvasBroadcast()}
               onInput={(e) => setCanvasBroadcast(e.currentTarget.value)}
               onKeyDown={(e) => {
+                // 🔴 红线4:IME 组合态回车=确认候选,不当广播发送
+                if (e.isComposing || e.keyCode === 229) return;
                 if (e.key === "Enter") {
                   e.preventDefault();
                   sendCanvasBroadcast();

@@ -629,6 +629,7 @@ const TimeInput: Component<{
         onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
         onBlur={commit}
         onKeyDown={(e) => {
+          if (e.isComposing || e.keyCode === 229) return; // 红线4:IME 组合态回车不触发 blur
           if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
         }}
         placeholder="HH:MM"

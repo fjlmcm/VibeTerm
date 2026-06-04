@@ -1075,6 +1075,7 @@ const ItemEditor: Component<{
             onInput={(e) => setNewKey(e.currentTarget.value)}
             placeholder="key"
             onKeyDown={(e) => {
+              if (e.isComposing || e.keyCode === 229) return; // 红线4:IME 组合态不提交
               if (e.key === "Enter") submitNewMetadata();
             }}
             style={{ ...inputStyle(), "min-width": "100px", flex: "0 0 100px" }}
@@ -1085,6 +1086,7 @@ const ItemEditor: Component<{
             onInput={(e) => setNewValue(e.currentTarget.value)}
             placeholder="value"
             onKeyDown={(e) => {
+              if (e.isComposing || e.keyCode === 229) return; // 红线4:IME 组合态不提交
               if (e.key === "Enter") submitNewMetadata();
             }}
             style={{ ...inputStyle(), flex: 1 }}
