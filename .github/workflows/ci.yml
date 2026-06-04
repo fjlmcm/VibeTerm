@@ -35,6 +35,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: TypeScript check
         run: pnpm typecheck
+      - name: i18n completeness(所有 locale 与 en 对齐,缺 key 即 fail)
+        run: node scripts/check-i18n.mjs
       - name: cargo fmt
         working-directory: src-tauri
         run: cargo fmt --all -- --check

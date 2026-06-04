@@ -5,7 +5,7 @@
 
 import { For, Show, createMemo, createSignal, onCleanup, onMount, type Component } from "solid-js";
 import { ipc, t } from "@vibeterm/ui-core";
-import type { ActionEntry, TaskDto, TerminalId } from "@vibeterm/ipc-types";
+import type { ActionEntry, LayoutTemplate, TaskDto, TerminalId } from "@vibeterm/ipc-types";
 
 export interface CommandPaletteProps {
   tasks: TaskDto[];
@@ -14,6 +14,12 @@ export interface CommandPaletteProps {
   onOpenSettings?: () => void;
   /** 打开使用统计面板 */
   onOpenStats?: () => void;
+  /** 打开当前任务的 diff 查看器 */
+  onOpenDiff?: () => void;
+  /** 应用布局模板(创建预设任务) */
+  onApplyLayout?: (template: LayoutTemplate) => void;
+  /** 恢复当前任务的 agent 会话(只读嗅探 session_id → 新 pane 跑 resume 命令) */
+  onResumeAgent?: () => void;
   /** 新建任务 → 交给上层弹 NewTaskDialog 模态(macOS WKWebView 禁用 prompt()) */
   onCreateTask?: () => void;
   /** A4:当前聚焦的 terminal,用于 current_terminal / insert 模式 action */
@@ -32,6 +38,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
   const [highlighted, setHighlighted] = createSignal(0);
   const [themes, setThemes] = createSignal<{ id: string; name: string }[]>([]);
   const [actions, setActions] = createSignal<ActionEntry[]>([]);
+  const [layouts, setLayouts] = createSignal<LayoutTemplate[]>([]);
 
   const refreshActions = async () => {
     try {
@@ -53,6 +60,13 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
       console.error(e);
     }
     await refreshActions();
+    if (props.onApplyLayout) {
+      try {
+        setLayouts(await ipc.listLayouts());
+      } catch (e) {
+        console.error("[palette] listLayouts failed", e);
+      }
+    }
     off = await ipc.onActionsChanged(refreshActions);
   });
   // onCleanup 在组件同步上下文注册;off 在 onMount 的 await 之后才被赋值,
@@ -92,6 +106,19 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
       });
     }
 
+    // 布局模板(任务预设)
+    for (const lay of layouts()) {
+      items.push({
+        id: `layout:${lay.name}`,
+        label: t("palette.cmd.apply_layout", { name: lay.name }),
+        hint: lay.keywords.join(" "),
+        action: () => {
+          props.onClose();
+          props.onApplyLayout?.(lay);
+        },
+      });
+    }
+
     // 主题切换
     for (const th of themes()) {
       items.push({
@@ -121,6 +148,25 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
         id: "cmd:open-stats",
         label: t("palette.cmd.open_stats"),
         action: () => props.onOpenStats?.(),
+      });
+    }
+
+    if (props.onOpenDiff) {
+      items.push({
+        id: "cmd:open-diff",
+        label: t("palette.cmd.open_diff"),
+        action: () => props.onOpenDiff?.(),
+      });
+    }
+
+    if (props.onResumeAgent) {
+      items.push({
+        id: "cmd:resume-agent",
+        label: t("palette.cmd.resume_agent"),
+        action: () => {
+          props.onClose();
+          props.onResumeAgent?.();
+        },
       });
     }
 

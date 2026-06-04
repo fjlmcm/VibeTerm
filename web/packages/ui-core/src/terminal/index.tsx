@@ -10,7 +10,9 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { FitAddon } from "@xterm/addon-fit";
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { SearchAddon } from "@xterm/addon-search";
+import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { takeScrollback, registerScrollbackSnapshot } from "../scrollback";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
@@ -133,6 +135,9 @@ export function Terminal(props: TerminalProps) {
   let webgl: WebglAddon | null = null;
   let fit: FitAddon | null = null;
   let search: SearchAddon | null = null;
+  let serialize: SerializeAddon | null = null;
+  // G5 scrollback 快照注销函数(组件卸载时注销序列化注册)
+  let unregisterSnapshot: (() => void) | null = null;
   let resizeObserver: ResizeObserver | null = null;
   let intersectionObserver: IntersectionObserver | null = null;
   let terminalId: number | null = null;
@@ -374,6 +379,9 @@ export function Terminal(props: TerminalProps) {
     // 搜索(浮层 UI 自渲,见 return)
     search = new SearchAddon();
     term.loadAddon(search);
+    // G5:序列化 addon(会话 scrollback 快照),纯读缓冲,不影响渲染 / CJK / fit。
+    serialize = new SerializeAddon();
+    term.loadAddon(serialize);
     // n / total 计数:addon 每次定位后 emit resultIndex / resultCount
     search.onDidChangeResults(({ resultIndex, resultCount }) => {
       setSearchCounter(resultCount > 0 ? { idx: resultIndex + 1, total: resultCount } : null);
@@ -508,6 +516,15 @@ export function Terminal(props: TerminalProps) {
         } else {
           // 捕获当前实例:new Channel() 等调用会重置 TS 对闭包 let 的 narrowing
           const xt = term;
+          // G5:重启后回放该 task/slot 的旧 scrollback(消费一次)。在新 PTY 输出前写,
+          // 旧历史在上、新 shell prompt 在下。旧 shell 进程已不在,纯展示。
+          if (props.taskId !== undefined && props.slotId !== undefined) {
+            const restored = takeScrollback(`${props.taskId}:${props.slotId}`);
+            if (restored) {
+              xt.write(restored);
+              xt.write("\r\n\x1b[2m──── session restored ────\x1b[0m\r\n");
+            }
+          }
           const opts = {
             rows: xt.rows,
             cols: xt.cols,
@@ -540,6 +557,15 @@ export function Terminal(props: TerminalProps) {
         unregisterFocus = registerTerminalFocus(terminalId, () => {
           term?.focus();
         });
+
+        // G5:注册 scrollback 序列化(仅 task 终端 + 非 attach 模式;浮窗共享 PTY 不重复存)。
+        if (!isAttachMode && props.taskId !== undefined && props.slotId !== undefined) {
+          const snapKey = `${props.taskId}:${props.slotId}`;
+          unregisterSnapshot = registerScrollbackSnapshot(
+            snapKey,
+            () => serialize?.serialize({ scrollback: 1000 }) ?? "",
+          );
+        }
 
         onDataDispose = xterm.onData((data: string) => {
           if (terminalId === null) return;
@@ -672,6 +698,7 @@ export function Terminal(props: TerminalProps) {
     onResizeDispose?.dispose();
     dragDropUnlisten?.();
     unregisterFocus?.();
+    unregisterSnapshot?.();
     window.removeEventListener("keydown", onWinKeydown, true);
     window.removeEventListener("paste", onWinPaste, true);
     hostEl?.removeEventListener("contextmenu", onHostContextMenu);

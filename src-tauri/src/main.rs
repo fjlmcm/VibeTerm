@@ -23,8 +23,8 @@ use vibeterm_config::actions::{ActionMode, ActionsFile};
 use vibeterm_config::{Config, EnvFile, KeybindingsFile, NotifyFile, PromptsFile, Theme};
 use vibeterm_core::{TaskRegistry, TerminalRegistry};
 use vibeterm_ipc::{
-    CreateTaskOpts, IpcError, IpcResult, SpawnPtyOpts, SpawnPtyResult, TaskDto, TaskLocation,
-    TerminalId,
+    CreateTaskOpts, IpcError, IpcResult, SpawnPtyOpts, SpawnPtyResult, TaskDto, TaskId,
+    TaskLocation, TerminalId,
 };
 use vibeterm_pty::{ChunkSink, ExitInfo, SpawnOpts};
 use vibeterm_status::StatusDetector;
@@ -1008,6 +1008,7 @@ fn poll_agent_turn_for_terminal(
             "agent_terminal_completed",
             serde_json::json!({ "task_id": task_id, "terminal_id": term_id }),
         );
+        record_event("agent_completed", task_id, Some(term_id), None);
         let last = tasks
             .task_dto(task_id)
             .ok()
@@ -1136,6 +1137,7 @@ fn notify_status_transition(
     app: &AppHandle,
     tasks: &TaskRegistry,
     task_id: vibeterm_ipc::TaskId,
+    terminal_id: TerminalId,
     prev: vibeterm_ipc::TaskStatus,
     new: vibeterm_ipc::TaskStatus,
     by_osc: bool,
@@ -1151,6 +1153,14 @@ fn notify_status_transition(
     // 非 800ms 超时误判). 授权等待会走 WaitingInput 分支而非 Idle, 不会误判完成.
     if matches!(new, TaskStatus::Idle) && matches!(prev, TaskStatus::Running) && by_osc {
         if let Some(agent) = tasks.agent_kind_of(task_id).ok().flatten() {
+            // 切回该 task 时自动把焦点定位到"刚完成的那个终端"。这是实时 OSC 完成路径
+            // (200ms tick / chunk-sink),与 poll_agent_turn_for_terminal 的兜底 emit 同一事件;
+            // 前端按 (task_id, terminal_id) 幂等记录,双发无害。终端级,故 task 多 agent 时精确。
+            let _ = app.emit(
+                "agent_terminal_completed",
+                serde_json::json!({ "task_id": task_id, "terminal_id": terminal_id }),
+            );
+            record_event("agent_completed", task_id, Some(terminal_id), None);
             let last = app
                 .try_state::<AppState>()
                 .and_then(|s| {
@@ -1829,6 +1839,185 @@ fn spawn_inner(
     Ok(SpawnPtyResult { terminal_id: id })
 }
 
+// ============================================================
+// G7: 事件流 —— task 状态变更 append-only JSONL + 内存游标
+// ============================================================
+// 🟢 零侵入:只 append 到 VibeTerm 自己的 config 目录(events.jsonl),外部脚本可 `tail -f` 订阅;
+// 内存 ring 保最近 EVENT_RING_CAP 条带单调 seq,IPC `read_events(after_seq)` 支持断线游标续传。
+const EVENT_RING_CAP: usize = 512;
+const EVENT_FILE_MAX_BYTES: u64 = 2_000_000;
+
+#[derive(Clone, serde::Serialize)]
+struct VtEvent {
+    seq: u64,
+    ts_ms: u64,
+    /// "status_changed" | "agent_completed"
+    kind: String,
+    task_id: TaskId,
+    terminal_id: Option<TerminalId>,
+    status: Option<serde_json::Value>,
+}
+
+struct EventLog {
+    seq: std::sync::atomic::AtomicU64,
+    ring: std::sync::Mutex<std::collections::VecDeque<VtEvent>>,
+    file: std::sync::Mutex<Option<std::fs::File>>,
+}
+
+static EVENT_LOG: std::sync::OnceLock<EventLog> = std::sync::OnceLock::new();
+
+impl EventLog {
+    fn global() -> &'static EventLog {
+        EVENT_LOG.get_or_init(EventLog::new)
+    }
+
+    fn new() -> Self {
+        let file = vibeterm_config::events_jsonl_path().ok().and_then(|path| {
+            // 启动时若文件过大 → 截尾保留最后 EVENT_RING_CAP 行,防无限增长.
+            if let Ok(meta) = std::fs::metadata(&path) {
+                if meta.len() > EVENT_FILE_MAX_BYTES {
+                    if let Ok(content) = std::fs::read_to_string(&path) {
+                        let mut tail: Vec<&str> =
+                            content.lines().rev().take(EVENT_RING_CAP).collect();
+                        tail.reverse();
+                        // 原子写(同目录临时文件 + rename),防崩溃中断留下 0 字节文件
+                        let _ = atomic_write(&path, format!("{}\n", tail.join("\n")).as_bytes());
+                    }
+                }
+            }
+            std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&path)
+                .ok()
+        });
+        EventLog {
+            seq: std::sync::atomic::AtomicU64::new(0),
+            ring: std::sync::Mutex::new(std::collections::VecDeque::with_capacity(EVENT_RING_CAP)),
+            file: std::sync::Mutex::new(file),
+        }
+    }
+
+    fn record(
+        &self,
+        kind: &str,
+        task_id: TaskId,
+        terminal_id: Option<TerminalId>,
+        status: Option<serde_json::Value>,
+    ) {
+        let seq = self.seq.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        let ts_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let ev = VtEvent {
+            seq,
+            ts_ms,
+            kind: kind.to_string(),
+            task_id,
+            terminal_id,
+            status,
+        };
+        if let Ok(mut g) = self.file.lock() {
+            if let Some(f) = g.as_mut() {
+                use std::io::Write as _;
+                if let Ok(line) = serde_json::to_string(&ev) {
+                    let _ = writeln!(f, "{line}");
+                }
+            }
+        }
+        if let Ok(mut r) = self.ring.lock() {
+            if r.len() >= EVENT_RING_CAP {
+                r.pop_front();
+            }
+            r.push_back(ev);
+        }
+    }
+
+    fn read_after(&self, after: u64) -> Vec<VtEvent> {
+        self.ring
+            .lock()
+            .map(|r| r.iter().filter(|e| e.seq > after).cloned().collect())
+            .unwrap_or_default()
+    }
+}
+
+/// 记录一条事件(供状态变更 / agent 完成 emit 点调用)。best-effort,失败不影响主流程。
+fn record_event(
+    kind: &str,
+    task_id: TaskId,
+    terminal_id: Option<TerminalId>,
+    status: Option<serde_json::Value>,
+) {
+    EventLog::global().record(kind, task_id, terminal_id, status);
+}
+
+/// 读取 seq > after_seq 的事件(断线游标续传)。after_seq 省略 = 从头(内存 ring 内)。
+#[tauri::command]
+async fn read_events(after_seq: Option<u64>) -> IpcResult<Vec<VtEvent>> {
+    Ok(EventLog::global().read_after(after_seq.unwrap_or(0)))
+}
+
+// ============================================================
+// G5: 会话 scrollback 快照(best-effort 恢复)
+// ============================================================
+// 🟢 零侵入:序列化的终端缓冲按 "taskId:slotId" 键落 VibeTerm 自己的 scrollback.json。
+// 重启后前端为每个 task/slot 重建终端时回放旧缓冲(纯展示;旧 shell 进程已不在)。
+// 布局/cwd 本就由 tasks.json 持久化,这里只补"看得见的历史"。
+
+/// 单条 scrollback:键 "taskId:slotId" + 序列化缓冲(SerializeAddon 输出)。
+#[derive(serde::Deserialize)]
+struct ScrollbackEntry {
+    key: String,
+    data: String,
+}
+
+/// 每条 scrollback 上限 ~256KB(char 边界安全截尾),防 scrollback.json 膨胀。
+const SCROLLBACK_MAX_BYTES: usize = 256 * 1024;
+
+/// 保存全部终端的 scrollback(覆盖式原子写)。前端定期 + pagehide 时调用。
+#[tauri::command]
+async fn save_scrollback(entries: Vec<ScrollbackEntry>) -> IpcResult<()> {
+    let path = match vibeterm_config::scrollback_json_path() {
+        Ok(p) => p,
+        Err(_) => return Ok(()),
+    };
+    let map: std::collections::HashMap<String, String> = entries
+        .into_iter()
+        .map(|e| {
+            let data = if e.data.len() > SCROLLBACK_MAX_BYTES {
+                // 保留尾部(最近内容)。向 0 方向找 char 边界:即使尾段非法 UTF-8,
+                // 最坏回退到 start=0,绝不越过 len 而 panic(0 永远是边界)。
+                let mut start = e.data.len() - SCROLLBACK_MAX_BYTES;
+                while start > 0 && !e.data.is_char_boundary(start) {
+                    start -= 1;
+                }
+                e.data[start..].to_string()
+            } else {
+                e.data
+            };
+            (e.key, data)
+        })
+        .collect();
+    let json = serde_json::to_vec(&map).unwrap_or_default();
+    let _ = atomic_write(&path, &json);
+    Ok(())
+}
+
+/// 启动时读 scrollback 快照(键 "taskId:slotId" → 序列化缓冲)。缺失 → 空 map。
+#[tauri::command]
+async fn load_scrollback() -> IpcResult<std::collections::HashMap<String, String>> {
+    let path = match vibeterm_config::scrollback_json_path() {
+        Ok(p) => p,
+        Err(_) => return Ok(Default::default()),
+    };
+    let map = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default();
+    Ok(map)
+}
+
 struct LazyChannelSink {
     channel: Channel<Vec<u8>>,
     terminal_id_holder: Arc<std::sync::Mutex<Option<TerminalId>>>,
@@ -1859,11 +2048,13 @@ impl ChunkSink for LazyChannelSink {
                     "task_status_changed",
                     serde_json::json!({"task_id": task_id, "status": s}),
                 );
+                record_event("status_changed", task_id, Some(id), serde_json::to_value(s).ok());
                 emit_tasks_changed(&self.app, &self.tasks);
                 notify_status_transition(
                     &self.app,
                     &self.tasks,
                     task_id,
+                    id,
                     prev_agg,
                     new_agg,
                     idle_by_osc,
@@ -2859,6 +3050,19 @@ async fn set_shell_integration(enabled: bool) -> IpcResult<()> {
     Ok(())
 }
 
+/// 启动时自动检查更新开关。关闭后开箱完全不主动联网。
+#[tauri::command]
+async fn set_auto_check_updates(enabled: bool) -> IpcResult<()> {
+    let mut cfg = Config::load().map_err(|e| IpcError::Unknown {
+        trace_id: format!("config:{e}"),
+    })?;
+    cfg.auto_check_updates = enabled;
+    cfg.save().map_err(|e| IpcError::Unknown {
+        trace_id: format!("save:{e}"),
+    })?;
+    Ok(())
+}
+
 #[tauri::command]
 async fn set_active_theme(id: String, app: AppHandle) -> IpcResult<Theme> {
     let mut cfg = Config::load().map_err(|e| IpcError::Unknown {
@@ -3043,6 +3247,12 @@ async fn get_active_task(
 #[tauri::command]
 async fn get_actions() -> IpcResult<ActionsFile> {
     Ok(ActionsFile::load())
+}
+
+/// 布局模板列表(命令面板任务预设)。每次读盘,编辑 layouts.toml 即时生效。
+#[tauri::command]
+async fn list_layouts() -> IpcResult<Vec<vibeterm_config::LayoutTemplate>> {
+    Ok(vibeterm_config::LayoutsFile::load().layouts)
 }
 
 #[tauri::command]
@@ -3607,6 +3817,69 @@ async fn get_codex_session_by_cwd(
     .unwrap_or(None))
 }
 
+/// agent 会话恢复命令(Y1–Y3 的零侵入版)。
+/// 🟢 只读嗅探 session_id(复用 read_for_cwd,不写任何 agent 配置、无 hook),据此构造 agent 原生
+/// resume 命令字符串返回给前端。**不自动执行** —— 由用户在命令面板手动点"恢复 agent",
+/// 前端再开一个新 pane 跑这条命令。无 cmux 那套签名审批信任模型(命令由 VibeTerm 内部构造 +
+/// 用户手动触发,非外部进程提议,无需防伪)。
+#[derive(serde::Serialize)]
+struct ResumeInfo {
+    agent: String,
+    session_id: String,
+    command: String,
+}
+
+/// 单引号包裹 + 转义,安全拼进发往 shell 的命令(session_id 为 UUID,防御性处理)。
+fn shell_single_quote(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// session_id 格式断言:仅允许 ASCII 字母数字 + `-` `_`(claude/codex 均为 UUID 形态)。
+/// 拒绝换行 / 控制字符 / shell 元字符 —— 命令注入纵深防御:不合格直接不构造 resume 命令。
+fn valid_session_id(s: &str) -> bool {
+    !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+#[tauri::command]
+async fn agent_resume_command(
+    cwd: String,
+    agent_kind: Option<String>,
+) -> IpcResult<Option<ResumeInfo>> {
+    let kind = agent_kind.unwrap_or_default();
+    Ok(tokio::task::spawn_blocking(move || -> Option<ResumeInfo> {
+        match kind.as_str() {
+            "claude" => {
+                let sid = vibeterm_agent_watch::claude::project::read_for_cwd(&cwd)?.session_id;
+                if !valid_session_id(&sid) {
+                    return None;
+                }
+                Some(ResumeInfo {
+                    command: format!("claude --resume {}", shell_single_quote(&sid)),
+                    agent: "claude".into(),
+                    session_id: sid,
+                })
+            }
+            "codex" => {
+                let sid = vibeterm_agent_watch::codex::session::read_for_cwd(&cwd)?.session_id;
+                if !valid_session_id(&sid) {
+                    return None;
+                }
+                Some(ResumeInfo {
+                    command: format!("codex resume {}", shell_single_quote(&sid)),
+                    agent: "codex".into(),
+                    session_id: sid,
+                })
+            }
+            _ => None,
+        }
+    })
+    .await
+    .unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "agent_resume_command blocking task panicked");
+        None
+    }))
+}
+
 /// 使用统计面板数据 — 全量扫 `~/.claude/projects` + `~/.codex/sessions`, 聚合最近 `days` 天
 /// 的按天 / 按模型 / 按项目 token + cost. 纯只读, 不联网 (离线定价表).
 /// 全量扫描可能慢, 走 spawn_blocking 不阻塞 tokio runtime; 失败降级为空统计.
@@ -4121,6 +4394,71 @@ async fn git_stash_count(cwd: String) -> IpcResult<u32> {
     Ok(vibeterm_git::stash_count(&path).await.unwrap_or(0))
 }
 
+/// 三源 diff 结果(借鉴 cmux diff-viewer 的 unstaged/staged/branch;**不含** agent-turn,那需 hook).
+#[derive(serde::Serialize)]
+struct GitDiffResult {
+    source: String,
+    /// VsRef 实际用的 base ref(自动推断时回填,供 UI 显示).
+    base: Option<String>,
+    /// unified diff 原文(--no-color),前端解析渲染.
+    raw: String,
+    /// 是否因超大被截断(防前端渲染卡死).
+    truncated: bool,
+}
+
+/// 生成某个 worktree 的 diff. source: "unstaged" / "staged" / "base".
+/// "base" 时 base 参数留空则自动推断(origin/HEAD → main → master → develop).
+/// 纯只读 `git diff`,零侵入。非 git / 无效路径 / 无法定 base → None.
+#[tauri::command]
+async fn git_diff(
+    cwd: String,
+    source: String,
+    base: Option<String>,
+) -> IpcResult<Option<GitDiffResult>> {
+    let Some(path) = safe_cwd(&cwd) else {
+        return Ok(None);
+    };
+    use vibeterm_git::DiffSource;
+    let (src, base_used) = match source.as_str() {
+        "unstaged" => (DiffSource::Unstaged, None),
+        "staged" => (DiffSource::Staged, None),
+        "base" => {
+            let base_ref = match base {
+                Some(b) if !b.trim().is_empty() => b,
+                _ => match vibeterm_git::default_base_ref(&path).await {
+                    Some(b) => b,
+                    None => return Ok(None),
+                },
+            };
+            (DiffSource::VsRef(base_ref.clone()), Some(base_ref))
+        }
+        _ => return Ok(None),
+    };
+    let raw = vibeterm_git::diff(&path, &src)
+        .await
+        .map_err(|e| IpcError::Unknown {
+            trace_id: format!("git_diff:{e}"),
+        })?;
+    // 限额 ~2MB,防超大 diff 卡死前端渲染(借鉴 cmux DiffViewerLimits).
+    const MAX: usize = 2_000_000;
+    let truncated = raw.len() > MAX;
+    let raw = if truncated {
+        let mut end = MAX;
+        while !raw.is_char_boundary(end) {
+            end -= 1;
+        }
+        raw[..end].to_string()
+    } else {
+        raw
+    };
+    Ok(Some(GitDiffResult {
+        source,
+        base: base_used,
+        raw,
+        truncated,
+    }))
+}
+
 /// 当前分支的 PR 状态 (用 gh CLI). 没装 gh / 没仓库 / 没 PR 都返回 None.
 /// 返回值: "open" / "draft" / "merged" / "closed" / None.
 ///
@@ -4412,6 +4750,10 @@ fn main() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        // 应用内自动更新 + 安装后重启. 🔴 零侵入: 插件只注册能力,实际 check()/install/restart
+        // 全部仅在用户于设置·更新页手动点击时由前端调用,无任何启动期或后台自动触发.
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             // Terminal
@@ -4459,6 +4801,7 @@ fn main() {
             // Theme / Config
             get_config,
             set_shell_integration,
+            set_auto_check_updates,
             set_active_theme,
             list_themes,
             get_theme,
@@ -4505,7 +4848,13 @@ fn main() {
             get_terminal_cwd,
             git_status_brief,
             git_stash_count,
+            git_diff,
             gh_pr_status,
+            read_events,
+            list_layouts,
+            agent_resume_command,
+            save_scrollback,
+            load_scrollback,
             // 状态栏自定义配置
             get_statusline_config,
             save_statusline_config,
@@ -4520,6 +4869,10 @@ fn main() {
         .setup(|app| {
             // agent 状态走纯嗅探(OSC 标题 spinner + 输出时序)+ 只读文件监听, 不再装/起任何
             // hook server, 零侵入: 默认不碰 ~/.claude / ~/.codex, 也不会被外部会话污染.
+
+            // G7 事件流:启动期预热 EventLog(在此同步线程做一次性文件截尾/打开),
+            // 避免首个 read_events IPC 在 tokio worker 线程上触发同步 I/O.
+            let _ = EventLog::global();
 
             // 启动加载已保存的模型价格覆盖(用户曾手动"更新模型价格"过). 纯读本地 config 文件, 不联网.
             if let Ok(path) = vibeterm_config::pricing_json_path() {
@@ -4802,11 +5155,18 @@ fn main() {
                                 "task_status_changed",
                                 serde_json::json!({"task_id": task_id, "status": s}),
                             );
+                            record_event(
+                                "status_changed",
+                                task_id,
+                                Some(tid),
+                                serde_json::to_value(s).ok(),
+                            );
                             emit_tasks_changed(&app_for_status_tick, &state.tasks);
                             notify_status_transition(
                                 &app_for_status_tick,
                                 &state.tasks,
                                 task_id,
+                                tid,
                                 prev_agg,
                                 new_agg,
                                 idle_by_osc,

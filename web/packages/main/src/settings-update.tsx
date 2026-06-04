@@ -5,6 +5,8 @@ import { type Component, Show, createSignal, onMount } from "solid-js";
 import { Package, DollarSign, RefreshCw, Download, RotateCcw, Check } from "lucide-solid";
 import { ipc, t } from "@vibeterm/ui-core";
 import { getVersion } from "@tauri-apps/api/app";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import type { AppUpdateInfo, PricingStatus } from "@vibeterm/ipc-types";
 
 const card = (): Record<string, string> => ({
@@ -65,6 +67,82 @@ export const UpdateTab: Component = () => {
     }
   };
 
+  // ---- 应用内下载并安装(Sparkle 等价物)----
+  // 🔴 零侵入:check()/downloadAndInstall() 仅在此函数(用户点按钮)里调用,无启动期/后台自动触发。
+  // updater 用 minisign 校验签名后原地更新;失败则回退到「打开下载页」。
+  const [installState, setInstallState] =
+    createSignal<"idle" | "downloading" | "installing" | "done" | "error">("idle");
+  const [downloadPct, setDownloadPct] = createSignal(0);
+
+  const downloadAndInstall = async () => {
+    setInstallState("downloading");
+    setDownloadPct(0);
+    try {
+      const update = await check();
+      if (!update) {
+        // latest.json 缺失 / 未签名 / 版本不更新 → 当作"应用内安装不可用",回退打开下载页
+        setInstallState("error");
+        return;
+      }
+      let total = 0;
+      let downloaded = 0;
+      await update.downloadAndInstall((event) => {
+        switch (event.event) {
+          case "Started":
+            total = event.data.contentLength ?? 0;
+            break;
+          case "Progress":
+            downloaded += event.data.chunkLength;
+            if (total > 0) setDownloadPct(Math.min(100, Math.round((downloaded / total) * 100)));
+            break;
+          case "Finished":
+            setInstallState("installing");
+            break;
+        }
+      });
+      setInstallState("done");
+      await relaunch();
+    } catch (e) {
+      console.error("[update] downloadAndInstall", e);
+      setInstallState("error");
+    }
+  };
+
+  // ---- 启动自动检查开关 + 安装前"运行中"护栏 ----
+  const [autoCheck, setAutoCheck] = createSignal(true);
+  const [confirmInstall, setConfirmInstall] = createSignal(false);
+  const [runningCount, setRunningCount] = createSignal(0);
+
+  const toggleAutoCheck = async (v: boolean) => {
+    setAutoCheck(v);
+    try {
+      await ipc.setAutoCheckUpdates(v);
+    } catch (e) {
+      console.error("[update] setAutoCheckUpdates", e);
+    }
+  };
+
+  // 点"下载并安装":若有终端正在运行(running / waiting_input),先确认再装,防打断 agent。
+  const requestInstall = async () => {
+    if (!confirmInstall()) {
+      try {
+        const tasks = await ipc.listTasks();
+        const n = tasks.filter(
+          (t) => t.status === "running" || t.status === "waiting_input",
+        ).length;
+        if (n > 0) {
+          setRunningCount(n);
+          setConfirmInstall(true);
+          return;
+        }
+      } catch (e) {
+        console.error("[update] listTasks", e);
+      }
+    }
+    setConfirmInstall(false);
+    await downloadAndInstall();
+  };
+
   // ---- 模型价格 ----
   const [pricing, setPricing] = createSignal<PricingStatus | null>(null);
   const [priceState, setPriceState] = createSignal<"idle" | "updating">("idle");
@@ -110,6 +188,14 @@ export const UpdateTab: Component = () => {
     } catch {
       /* ignore */
     }
+    // 读自动检查开关;若开,进页面主动查一次(展示当前状态)。
+    try {
+      const cfg = await ipc.getConfig();
+      setAutoCheck(cfg.auto_check_updates);
+      if (cfg.auto_check_updates) void checkApp();
+    } catch (e) {
+      console.error("[update] getConfig", e);
+    }
     await loadPricing();
   });
 
@@ -146,13 +232,51 @@ export const UpdateTab: Component = () => {
                   {appInfo()!.notes}
                 </pre>
               </Show>
-              <button
-                data-testid="update-open-download"
-                style={{ ...btn(true), "margin-top": "10px" }}
-                onClick={() => appInfo()!.release_url && ipc.openExternal(appInfo()!.release_url!).catch(console.error)}
-              >
-                <Download size={13} /> {t("update.app.open_download")}
-              </button>
+              <div style={{ display: "flex", gap: "8px", "align-items": "center", "flex-wrap": "wrap", "margin-top": "10px" }}>
+                <button
+                  data-testid="update-download-install"
+                  style={btn(true)}
+                  onClick={requestInstall}
+                  disabled={installState() === "downloading" || installState() === "installing" || installState() === "done"}
+                >
+                  <Download size={13} />{" "}
+                  {installState() === "downloading"
+                    ? t("update.app.downloading", { pct: String(downloadPct()) })
+                    : installState() === "installing"
+                      ? t("update.app.installing")
+                      : installState() === "done"
+                        ? t("update.app.install_done")
+                        : t("update.app.download_install")}
+                </button>
+                <button
+                  data-testid="update-open-download"
+                  style={btn(false)}
+                  onClick={() => appInfo()!.release_url && ipc.openExternal(appInfo()!.release_url!).catch(console.error)}
+                >
+                  {t("update.app.open_download")}
+                </button>
+              </div>
+              {/* 安装前护栏:有终端运行中 → 二次确认,防打断 agent(任务列表不丢,仅中断进程) */}
+              <Show when={confirmInstall()}>
+                <div style={{ "margin-top": "10px", padding: "10px 12px", background: "var(--color-surface)", border: "1px solid var(--color-status-waiting, #e5a23d)", "border-radius": "8px" }}>
+                  <div style={{ "font-size": "12px", color: "var(--color-text)", "line-height": 1.5 }}>
+                    {t("update.app.running_warn", { count: String(runningCount()) })}
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", "margin-top": "8px" }}>
+                    <button data-testid="update-install-anyway" style={btn(true)} onClick={requestInstall}>
+                      {t("update.app.install_anyway")}
+                    </button>
+                    <button style={btn(false)} onClick={() => setConfirmInstall(false)}>
+                      {t("dialog.cancel")}
+                    </button>
+                  </div>
+                </div>
+              </Show>
+              <Show when={installState() === "error"}>
+                <div style={{ "margin-top": "8px", "font-size": "12px", color: "var(--color-status-waiting, #e5a23d)" }}>
+                  {t("update.app.install_error")}
+                </div>
+              </Show>
             </div>
           </Show>
         </Show>
@@ -167,6 +291,23 @@ export const UpdateTab: Component = () => {
         </Show>
 
         <p style={note()}>{t("update.app.note")}</p>
+
+        {/* 启动自动检查开关(默认开;关闭后开箱完全不主动联网) */}
+        <label style={{ display: "flex", "align-items": "flex-start", gap: "8px", "margin-top": "12px", cursor: "pointer" }}>
+          <input
+            data-testid="update-auto-check"
+            type="checkbox"
+            checked={autoCheck()}
+            onChange={(e) => toggleAutoCheck(e.currentTarget.checked)}
+            style={{ "margin-top": "2px" }}
+          />
+          <span style={{ "font-size": "12px", color: "var(--color-text)" }}>
+            {t("update.app.auto_check")}
+            <span style={{ display: "block", "font-size": "11px", color: "var(--color-text-2)", "margin-top": "2px" }}>
+              {t("update.app.auto_check_hint")}
+            </span>
+          </span>
+        </label>
       </section>
 
       {/* ===== 模型价格 ===== */}

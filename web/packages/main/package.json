@@ -1,6 +1,6 @@
 {
   "name": "@vibeterm/main",
-  "version": "1.0.10",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,8 @@
   "dependencies": {
     "@tauri-apps/api": "^2.4.0",
     "@tauri-apps/plugin-dialog": "^2.4.0",
+    "@tauri-apps/plugin-process": "^2.2.0",
+    "@tauri-apps/plugin-updater": "^2.7.0",
     "@thisbeyond/solid-dnd": "^0.7.5",
     "@vibeterm/ipc-types": "workspace:*",
     "@vibeterm/ui-core": "workspace:*",

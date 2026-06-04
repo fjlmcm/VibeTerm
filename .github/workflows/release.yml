@@ -28,12 +28,14 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # --config tauri.updater.conf.json 仅在 CI 开启 createUpdaterArtifacts —— 本地无密钥
+          # 构建不受影响(基础 tauri.conf.json 不开,避免 pnpm build 因缺签名私钥报错)。
           - os: macos-latest
             target: universal-apple-darwin
-            args: --target universal-apple-darwin
+            args: --target universal-apple-darwin --config tauri.updater.conf.json
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            args: ""
+            args: --config tauri.updater.conf.json
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -67,6 +69,11 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # 应用内自动更新签名(minisign). 这两个 secret 在时, tauri-action 会签名 updater 产物
+          # 并生成 / 上传 latest.json 到 Release(updater 端点指向它). 缺失则只出普通 dmg/exe,
+          # 应用内"下载并安装"会失败回退到"打开下载页"——不影响常规分发.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # Windows 首发不签名(README SmartScreen 区块)
         with:
           projectPath: src-tauri

@@ -6,10 +6,11 @@
 import { For, Show, createEffect, createMemo, createSignal, onMount, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
 
-import { Terminal, TaskList, Titlebar, theme as themeMod, ipc, t, SplitView, singleLeaf, splitLeaf, removeLeaf, newSlotId, bumpSlotIdAtLeast, collectSlots, setRatiosAt, getTerminalFontSize, initKeybindings, createKeybindingDispatcher, focusTerminal, rightmostBottomSlot, leftmostBottomSlot, createCanvasViewport, StatusBar, playNotifySound, shouldConfirmCloseTask, type SplitNode } from "@vibeterm/ui-core";
+import { Terminal, TaskList, Titlebar, theme as themeMod, ipc, t, SplitView, singleLeaf, splitLeaf, removeLeaf, newSlotId, bumpSlotIdAtLeast, collectSlots, setRatiosAt, getTerminalFontSize, initKeybindings, createKeybindingDispatcher, focusTerminal, rightmostBottomSlot, leftmostBottomSlot, createCanvasViewport, StatusBar, playNotifySound, shouldConfirmCloseTask, loadSavedScrollback, startScrollbackAutosave, type SplitNode } from "@vibeterm/ui-core";
 import { Plus, X, Settings as SettingsIcon, SplitSquareHorizontal, SplitSquareVertical, LayoutGrid, Layers, BarChart3 } from "lucide-solid";
-import type { TaskDto, Theme } from "@vibeterm/ipc-types";
+import type { TaskDto, Theme, LayoutTemplate } from "@vibeterm/ipc-types";
 import { CommandPalette } from "./command-palette";
+import { DiffViewer } from "./diff-viewer";
 import { Settings } from "./settings";
 import { StatsPanel } from "./stats-panel";
 import { PromptPicker } from "./prompt-picker";
@@ -23,6 +24,9 @@ import { NewTaskDialog, ConfirmCloseDialog } from "./dialogs";
 if (import.meta.hot) {
   import.meta.hot.accept(() => location.reload());
 }
+
+// 复用单例 encoder(避免每次发布局/resume 命令都 new 一个,对齐 terminal 里的 ENCODER 约定)
+const PTY_ENCODER = new TextEncoder();
 
 function App() {
   const [tasks, setTasks] = createSignal<TaskDto[]>([]);
@@ -99,6 +103,18 @@ function App() {
   const [settingsInitialTab, setSettingsInitialTab] = createSignal<"about" | "update" | undefined>(undefined);
   const [statsOpen, setStatsOpen] = createSignal(false);
   const [promptPickerOpen, setPromptPickerOpen] = createSignal(false);
+  // Diff 查看器:打开时存目标 cwd(null = 关闭)
+  const [diffCwd, setDiffCwd] = createSignal<string | null>(null);
+  // 启动自动检查更新发现新版 → 设置按钮显示角标(仅提示,安装仍手动)
+  const [updateAvailable, setUpdateAvailable] = createSignal(false);
+  // G6 布局模板:slotKey → 待发送启动命令。终端首次 onReady 时消费一次。
+  const [pendingCommands, setPendingCommands] = createSignal<Map<string, string>>(new Map());
+  // 布局/resume 命令的延迟发送计时器 —— 卸载时统一清理,避免悬空回调。
+  const pendingTimers = new Set<ReturnType<typeof setTimeout>>();
+  onCleanup(() => {
+    for (const t of pendingTimers) clearTimeout(t);
+    pendingTimers.clear();
+  });
   const [activeTerminalId, setActiveTerminalId] = createSignal<number | null>(null);
 
   // "离开期间某 agent 终端刚完成" 的待消费记录:taskId → terminalId(最近一次完成覆盖)。
@@ -148,9 +164,12 @@ function App() {
     else setActiveTerminalId(null);
   });
 
-  // 切回某 task 时:若它在"离开期间"有 agent 终端刚完成(未消费),把焦点定位到那个终端。
-  // 一次性消费(无论是否解析到 slot 都清掉,避免悬挂);设 active slot 后上面的同步 effect
-  // 会把 activeTerminalId 跟到该终端,再 focus 其 xterm 让光标落在那里。
+  // 切回某 task 时:若它在"离开期间"有 agent 终端刚完成(未消费),把高亮外框 + 焦点
+  // 都定位到那个终端。一次性消费(无论是否解析到 slot 都清掉,避免悬挂)。
+  //   设 active slot + focus 都放到 rAF 里:切任务的 onActivate 会同步 setActiveSlot(null)
+  //   清空高亮,而 Solid 在每个顶层 setter 后就 flush 本 effect —— 同步设会被随后的清空
+  //   覆盖(光标走 rAF 不受影响,故曾出现"光标落了外框却没亮")。挪到下一帧既晚于那次
+  //   清空,又等 display:none→block 布局就绪。
   createEffect(() => {
     const tid = activeTaskId();
     if (tid === null) return;
@@ -163,8 +182,11 @@ function App() {
       return n;
     });
     if (slot === null) return; // 终端已关闭 / 映射未就绪 → 消费但不强切
-    setActiveSlotFor(tid, slot);
-    requestAnimationFrame(() => focusTerminal(termId));
+    requestAnimationFrame(() => {
+      if (activeTaskId() !== tid) return; // 这一帧内又切走了 → 放弃,别抢当前任务焦点
+      setActiveSlotFor(tid, slot);
+      focusTerminal(termId);
+    });
   });
 
   // B2 view mode:normal(左列表 + 右终端)/ canvas(全屏卡片画布)
@@ -525,11 +547,24 @@ function App() {
 
   // 启动:加载主题 + 任务 + 监听变化
   onMount(async () => {
+    // G5:先载入 scrollback 快照(必须早于任何终端 mount 调 takeScrollback),再起自动保存。
+    await loadSavedScrollback();
+    startScrollbackAutosave();
+
     try {
       const cfg = await ipc.getConfig();
       const th = await ipc.getTheme(cfg.active_theme);
       themeMod.applyShellTheme(th);
       setCurrentTheme(th);
+
+      // 自动检查更新(默认开,可在设置关闭)。仅比对版本号:只读、不上传、零遥测、不自动下载安装。
+      // 发现新版只在设置按钮显示角标;下载安装永远是用户手动点 + 运行中二次确认。
+      if (cfg.auto_check_updates) {
+        ipc
+          .checkAppUpdate()
+          .then((info) => setUpdateAvailable(!!info.has_update))
+          .catch((e) => console.error("[main] auto update check failed", e));
+      }
     } catch (e) {
       console.error("[main] config/theme load failed", e);
     }
@@ -783,6 +818,91 @@ function App() {
     }
   };
 
+  // G6:应用布局模板 —— 创建任务 + 按 panes 构建分屏树 + 登记各 pane 启动命令(onReady 消费)。
+  // 链式模型:pane[0]=根 leaf(slot 0,复用 create_task 默认),后续每个把上一个按其方向劈开。
+  const applyLayout = async (tpl: LayoutTemplate) => {
+    const buildCmd = (p: { command?: string | null; cwd?: string | null }): string | null => {
+      if (!p.command) return null;
+      // 单引号包裹 cwd 防空格/特殊字符;内部单引号转义
+      return p.cwd ? `cd '${p.cwd.replace(/'/g, "'\\''")}' && ${p.command}` : p.command;
+    };
+    try {
+      const task = await ipc.createTask({ name: tpl.name, cwd: tpl.cwd ?? null, worktree: null });
+      setActiveTaskId(task.id);
+      const panes = tpl.panes.length > 0 ? tpl.panes : [{ command: null }];
+      let tree: SplitNode = singleLeaf(0);
+      const cmdBySlot = new Map<string, string>();
+      let prevSlot = 0;
+      const c0 = buildCmd(panes[0]);
+      if (c0) cmdBySlot.set(slotKey(task.id, 0), c0);
+      for (let i = 1; i < panes.length; i++) {
+        const orient = panes[i].split === "v" ? "v" : "h";
+        const r = splitLeaf(tree, prevSlot, orient);
+        tree = r.root;
+        const c = buildCmd(panes[i]);
+        if (c) cmdBySlot.set(slotKey(task.id, r.newSlot), c);
+        prevSlot = r.newSlot;
+      }
+      setPendingCommands((m) => {
+        const nx = new Map(m);
+        for (const [k, v] of cmdBySlot) nx.set(k, v);
+        return nx;
+      });
+      writeSplitTree(task.id, tree);
+    } catch (e) {
+      console.error("[main] applyLayout failed", e);
+    }
+  };
+
+  // 在指定任务里劈一个新 pane 并登记其启动命令(onReady 时发送)。复用 G6 的 pendingCommands 机制。
+  const spawnPaneWithCommand = (taskId: number, command: string) => {
+    const tree = getSplitTree(taskId);
+    if (!tree) return;
+    const slot = resolveActiveSlot(taskId);
+    if (slot === null) return;
+    const { root, newSlot } = splitLeaf(tree, slot, "h");
+    setPendingCommands((m) => {
+      const nx = new Map(m);
+      nx.set(slotKey(taskId, newSlot), command);
+      return nx;
+    });
+    writeSplitTree(taskId, root);
+    setActiveSlotFor(taskId, newSlot);
+  };
+
+  // Y1–Y3:恢复当前任务的 agent 会话 —— 只读嗅探 session_id 构造 resume 命令,
+  // 开一个新 pane 跑它。用户手动触发,无 hook、无自动执行。
+  const resumeAgent = async () => {
+    const tk = activeTask();
+    if (!tk || !tk.cwd) return;
+    try {
+      const info = await ipc.agentResumeCommand(tk.cwd, tk.agent_kind ?? null);
+      if (info) spawnPaneWithCommand(tk.id, info.command);
+      else console.warn("[main] no resumable agent session for", tk.cwd);
+    } catch (e) {
+      console.error("[main] resumeAgent failed", e);
+    }
+  };
+
+  // 终端首次就绪时,若该 slot 有待发送的布局启动命令则发一次(150ms 让 shell rc 就位后再发)。
+  const consumePendingCommand = (taskId: number, slotId: number, termId: number) => {
+    const key = slotKey(taskId, slotId);
+    const cmd = pendingCommands().get(key);
+    if (cmd === undefined) return;
+    setPendingCommands((m) => {
+      const nx = new Map(m);
+      nx.delete(key);
+      return nx;
+    });
+    const timer = setTimeout(() => {
+      pendingTimers.delete(timer);
+      ipc.writePty(termId, PTY_ENCODER.encode(cmd + "\r")).catch((e) =>
+        console.error("[main] layout command send failed", e),
+      );
+    }, 150);
+    pendingTimers.add(timer);
+  };
+
   // 关闭确认 — 可选同时 git worktree remove(+ force 若 dirty)
   const confirmCloseTask = async (removeWorktree: boolean, force: boolean) => {
     const tgt = closeTarget();
@@ -940,9 +1060,27 @@ function App() {
                 cursor: "pointer",
                 display: "flex",
                 "align-items": "center",
+                position: "relative",
               }}
             >
               <SettingsIcon size={13} />
+              {/* 有新版可用 → 右上角 accent 小圆点(静默提示,点进设置·更新页查看) */}
+              <Show when={updateAvailable()}>
+                <span
+                  data-testid="update-badge"
+                  aria-label="update available"
+                  style={{
+                    position: "absolute",
+                    top: "1px",
+                    right: "2px",
+                    width: "6px",
+                    height: "6px",
+                    "border-radius": "50%",
+                    background: "var(--color-accent)",
+                    "box-shadow": "0 0 4px var(--color-accent)",
+                  }}
+                />
+              </Show>
             </button>
           </div>
         }
@@ -1365,6 +1503,8 @@ function App() {
                                   setActiveSlotFor(taskId, slotId);
                                   setActiveTerminalId(termId);
                                 }
+                                // G6:该 slot 有布局启动命令则发一次
+                                consumePendingCommand(taskId, slotId, termId);
                               }}
                             />
                             <div
@@ -1568,7 +1708,18 @@ function App() {
             setPaletteOpen(false);
             setStatsOpen(true);
           }}
+          onOpenDiff={() => {
+            const cwd = activeTask()?.cwd ?? null;
+            setPaletteOpen(false);
+            if (cwd) setDiffCwd(cwd);
+          }}
+          onApplyLayout={applyLayout}
+          onResumeAgent={resumeAgent}
         />
+      </Show>
+
+      <Show when={diffCwd()}>
+        <DiffViewer cwd={diffCwd()!} onClose={() => setDiffCwd(null)} />
       </Show>
 
       <Show when={settingsOpen()}>

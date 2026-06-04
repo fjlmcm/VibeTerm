@@ -15,12 +15,14 @@ use serde::{Deserialize, Serialize};
 pub mod actions;
 pub mod env;
 pub mod keybindings;
+pub mod layouts;
 pub mod notify_prefs;
 pub mod prompts;
 pub mod statusline;
 pub mod theme;
 
 pub use env::{ClipboardImagesSection, EnvFile, ProxySection};
+pub use layouts::{LayoutPane, LayoutTemplate, LayoutsFile};
 pub use keybindings::{KeybindingEntry, KeybindingsFile};
 pub use notify_prefs::{EventNotifyPrefs, EventsPrefs, NotifyFile, QuietHours};
 pub use prompts::{PromptEntry, PromptsFile};
@@ -109,6 +111,23 @@ pub fn notify_toml_path() -> Result<PathBuf, ConfigError> {
 /// 不存在 = 用编译进二进制的内置价格快照。仅 VibeTerm 自己的 config 目录,不碰 agent 配置。
 pub fn pricing_json_path() -> Result<PathBuf, ConfigError> {
     Ok(config_dir()?.join("pricing.json"))
+}
+
+/// 事件流日志(task 状态变更 append-only JSONL,供外部脚本 `tail -f` 订阅)。
+/// 仅 VibeTerm 自己的 config 目录,零侵入。
+pub fn events_jsonl_path() -> Result<PathBuf, ConfigError> {
+    Ok(config_dir()?.join("events.jsonl"))
+}
+
+/// 布局模板文件(命令面板的任务预设)。仅 VibeTerm 自己的 config 目录。
+pub fn layouts_toml_path() -> Result<PathBuf, ConfigError> {
+    Ok(config_dir()?.join("layouts.toml"))
+}
+
+/// scrollback 快照(会话恢复 best-effort,按 "taskId:slotId" 键存序列化终端缓冲)。
+/// 仅 VibeTerm 自己的 config 目录。
+pub fn scrollback_json_path() -> Result<PathBuf, ConfigError> {
+    Ok(config_dir()?.join("scrollback.json"))
 }
 
 /// 粘贴图片临时目录(自动创建)。
@@ -437,6 +456,10 @@ pub struct Config {
     /// 默认开;纯临时 env 注入,不写用户 dotfiles。
     #[serde(default = "Config::default_shell_integration")]
     pub shell_integration: bool,
+    /// 启动时自动检查软件更新(默认开)。仅 GET GitHub latest release 比对版本号 —— 只读、
+    /// 不上传、零遥测、不自动下载安装。可在设置·更新页关闭(关闭后开箱完全不主动联网)。
+    #[serde(default = "Config::default_auto_check_updates")]
+    pub auto_check_updates: bool,
 }
 
 impl Default for Config {
@@ -447,6 +470,7 @@ impl Default for Config {
             follow_system_theme: false,
             language: None,
             shell_integration: Self::default_shell_integration(),
+            auto_check_updates: Self::default_auto_check_updates(),
         }
     }
 }
@@ -459,6 +483,9 @@ impl Config {
         "gruvbox".into()
     }
     fn default_shell_integration() -> bool {
+        true
+    }
+    fn default_auto_check_updates() -> bool {
         true
     }
 

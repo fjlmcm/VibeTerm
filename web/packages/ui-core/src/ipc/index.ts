@@ -26,6 +26,9 @@ import type {
   ClaudeActiveBlock,
   CodexSnapshot,
   GitStatusBrief,
+  GitDiffResult,
+  LayoutTemplate,
+  ResumeInfo,
   StatusLineFile,
   NotifyFile,
   NotifyPermissionState,
@@ -196,6 +199,10 @@ export async function setTaskSplitTree(
 // ===== Theme / Config =====
 export async function getConfig(): Promise<Config> {
   return invoke<Config>("get_config");
+}
+
+export async function setAutoCheckUpdates(enabled: boolean): Promise<void> {
+  return invoke<void>("set_auto_check_updates", { enabled });
 }
 
 export async function setShellIntegration(enabled: boolean): Promise<void> {
@@ -375,6 +382,38 @@ export async function gitStashCount(cwd: string): Promise<number> {
 
 export async function ghPrStatus(cwd: string): Promise<string | null> {
   return invoke<string | null>("gh_pr_status", { cwd });
+}
+
+/** 保存全部终端 scrollback 快照(会话恢复用,覆盖式)。 */
+export async function saveScrollback(entries: { key: string; data: string }[]): Promise<void> {
+  return invoke<void>("save_scrollback", { entries });
+}
+
+/** 启动时读 scrollback 快照(键 "taskId:slotId" → 序列化缓冲)。 */
+export async function loadScrollback(): Promise<Record<string, string>> {
+  return invoke<Record<string, string>>("load_scrollback");
+}
+
+/** 布局模板列表(命令面板任务预设,读 layouts.toml)。 */
+export async function listLayouts(): Promise<LayoutTemplate[]> {
+  return invoke<LayoutTemplate[]>("list_layouts");
+}
+
+/** agent 会话恢复命令(只读嗅探 session_id;无可恢复会话 → null)。不自动执行。 */
+export async function agentResumeCommand(
+  cwd: string,
+  agentKind?: string | null,
+): Promise<ResumeInfo | null> {
+  return invoke<ResumeInfo | null>("agent_resume_command", { cwd, agentKind: agentKind ?? null });
+}
+
+/** 三源 diff(纯只读 git diff,零侵入)。source: "unstaged" | "staged" | "base"。 */
+export async function gitDiff(
+  cwd: string,
+  source: "unstaged" | "staged" | "base",
+  base?: string | null,
+): Promise<GitDiffResult | null> {
+  return invoke<GitDiffResult | null>("git_diff", { cwd, source, base: base ?? null });
 }
 
 export async function getStatusLineConfig(): Promise<StatusLineFile> {

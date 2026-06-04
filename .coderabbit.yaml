@@ -1,0 +1,48 @@
+# CodeRabbit 配置 —— 把 VibeTerm 红线落成机器审查项。
+# 规则唯一真相在 .github/review-bot-rules/,这里按路径作用域内联其要点。
+# 文档:https://docs.coderabbit.ai/guides/configure-coderabbit
+language: "zh-CN"
+early_access: false
+reviews:
+  profile: "assertive"
+  request_changes_workflow: true
+  high_level_summary: true
+  poem: false
+  review_status: true
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+  path_filters:
+    - "!**/*.lock"
+    - "!**/Cargo.lock"
+    - "!**/pnpm-lock.yaml"
+    - "!**/dist/**"
+    - "!**/target/**"
+    - "!**/*.min.js"
+  path_instructions:
+    - path: "src-tauri/**/*.rs"
+      instructions: |
+        遵守 .github/review-bot-rules/。重点(CRITICAL=阻止合并):
+        - 零侵入:严禁写 ~/.claude / ~/.codex / ~/.gemini / ~/.cursor 等 agent 配置;严禁安装 agent hook
+          (install_hook / settings.json 写 / PATH 前置 wrapper / hooks setup);严禁新增常驻监听 server;
+          严禁启动期或 interval 里自动联网。只读监听这些目录、仅用户手动点击时联网 = 合法,勿误报。
+        - 配置隔离:凡用 TaskRegistry::new() 的测试,首行必须 `let _cfg = isolated_config();`,否则 CRITICAL;
+          VIBETERM_CONFIG_DIR 必须仅 debug 生效(勿移除 #[cfg(debug_assertions)] 门),否则 CRITICAL。
+        - tasks.json 是 last-writer-wins,勿起未隔离并存实例。
+        - 主题/ANSI 映射擅改且无理由 → MEDIUM,先怀疑数据。
+        - unsafe 块必须有 // SAFETY: 注释;production 代码勿 unwrap()。
+    - path: "web/**/*.{ts,tsx}"
+      instructions: |
+        遵守 .github/review-bot-rules/。重点:
+        - CJK 一等公民(HIGH):终端文本/复制/输入路径必须用 Intl.Segmenter 处理字素(勿按 .length / UTF-16
+          切分,会撕裂代理对/ZWJ);列宽按东亚宽度;键盘必须拦截 IME 组合态(event.isComposing 或 keyCode===229)。
+        - i18n 完整性(HIGH):新增 i18n key 必须补齐全部 14 个 locale(en 权威),占位符集合须与 en 一致;
+          新增语言要同步前端 LANG_META + Rust MenuLang + Rust LBL 三处。
+        - 避免 any;不可变更新(用展开运算符,勿原地 mutate);production 无 console.log。
+    - path: "**/{tests,test,__tests__,examples}/**"
+      instructions: |
+        测试/示例不得硬编码真实路径或真实用户名(HIGH,隐私):一律用 /Users/example、/tmp/vt-test 等合成占位。
+chat:
+  auto_reply: true

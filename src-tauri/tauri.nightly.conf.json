@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "VibeTerm Nightly",
+  "identifier": "com.vibeterm.desktop.nightly",
+  "bundle": {
+    "createUpdaterArtifacts": false,
+    "shortDescription": "VibeTerm Nightly — 每日 main 构建",
+    "longDescription": "VibeTerm 的 nightly 通道:独立 bundle id(com.vibeterm.desktop.nightly),与稳定版并存。每日从最新 main 自动构建,仅供尝鲜与回归排查。无应用内自更新——新版从 GitHub nightly prerelease 下载。"
+  }
+}

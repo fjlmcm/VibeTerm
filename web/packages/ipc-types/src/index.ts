@@ -175,6 +175,8 @@ export interface Config {
   language: string | null;
   /** zsh shell 集成自动注入(默认 true);下次开终端生效 */
   shell_integration: boolean;
+  /** 启动时自动检查更新(默认 true);仅比对版本号,只读不上传 */
+  auto_check_updates: boolean;
 }
 
 // ---- Status events ----
@@ -355,6 +357,40 @@ export interface ClaudeUsageCache {
   seven_day_opus: ClaudeQuotaWindow | null;
   seven_day_oauth_apps: ClaudeQuotaWindow | null;
   extra_usage: ClaudeExtraUsage | null;
+}
+
+/** 布局模板的一个 pane(layouts.toml)。 */
+export interface LayoutPane {
+  command?: string | null;
+  /** 相对上一个 pane 的分屏方向:"h"(右)| "v"(下)。第一个 pane 忽略。 */
+  split?: string | null;
+  cwd?: string | null;
+}
+
+/** 布局模板 = 任务预设(命令面板一键创建带预设分屏 + 自动跑命令的任务)。 */
+export interface LayoutTemplate {
+  name: string;
+  keywords: string[];
+  cwd?: string | null;
+  panes: LayoutPane[];
+}
+
+/** agent 会话恢复信息(agent_resume_command IPC,只读嗅探 session_id 构造的 resume 命令)。 */
+export interface ResumeInfo {
+  agent: string;
+  session_id: string;
+  command: string;
+}
+
+/** 三源 diff 结果(git_diff IPC)。 */
+export interface GitDiffResult {
+  source: "unstaged" | "staged" | "base";
+  /** VsRef 实际用的 base ref(自动推断时回填)。 */
+  base: string | null;
+  /** unified diff 原文(--no-color)。 */
+  raw: string;
+  /** 是否因超大被截断。 */
+  truncated: boolean;
 }
 
 // ===== 设置·更新页:软件版本检查 + 模型价格(手动, 仅点按钮时联网)=====

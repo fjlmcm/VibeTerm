@@ -1,6 +1,6 @@
 {
   "name": "@vibeterm/ui-core",
-  "version": "1.0.10",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -20,6 +20,7 @@
     "@vibeterm/ipc-types": "workspace:*",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.16.0",
+    "@xterm/addon-serialize": "^0.13.0",
     "@xterm/addon-unicode-graphemes": "^0.4.0",
     "@xterm/addon-web-links": "^0.12.0",
     "@xterm/addon-webgl": "^0.18.0",

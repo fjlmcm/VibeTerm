@@ -1,0 +1,90 @@
+# Nightly — 每日从最新 main 自动构建 macOS universal(签名+公证)→ `nightly` prerelease
+#
+# 设计要点(借鉴 cmux nightly.yml):
+# - 独立 bundle id `com.vibeterm.desktop.nightly`(tauri.nightly.conf.json),与稳定版并存。
+# - decide job:无新提交则跳过(避免重复构建同一 commit);workflow_dispatch 强制构建。
+# - 仅 macOS universal、无应用内自更新(createUpdaterArtifacts:false)—— 保持轻量,nightly 靠手动下载。
+# - 复用稳定版的 6 个 APPLE_* secret 做签名+公证。
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 8 * * *" # 每日 08:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # 无新提交则跳过:对比当前 HEAD 与上一个 nightly prerelease 的 target commit。
+  decide:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head_sha="$(git rev-parse HEAD)"
+          prev_sha="$(gh release view nightly --repo "$GITHUB_REPOSITORY" \
+            --json targetCommitish -q .targetCommitish 2>/dev/null || echo '')"
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] && [ "$head_sha" = "$prev_sha" ]; then
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+            echo "No new commits since last nightly ($head_sha) — skip."
+          else
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    needs: decide
+    if: needs.decide.outputs.should_build == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: pnpm }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Add macOS targets
+        run: |
+          rustup target add aarch64-apple-darwin
+          rustup target add x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with: { workspaces: src-tauri }
+      - run: pnpm install --frozen-lockfile
+
+      # 先删旧 nightly release(连同其旧资产),避免同名资产堆积 / 版本号不变导致的混淆。
+      - name: Delete previous nightly release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete nightly --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+
+      - name: Tauri build (nightly config)
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          projectPath: src-tauri
+          # 合并 nightly 配置覆盖(独立 identifier / productName / 不出 updater 产物)
+          args: --target universal-apple-darwin --config tauri.nightly.conf.json
+          tagName: nightly
+          releaseName: "VibeTerm Nightly"
+          releaseBody: |
+            VibeTerm Nightly — 最新 `main` 自动构建(commit ${{ github.sha }})。
+            独立 bundle id,与稳定版并存。仅供尝鲜 / 回归排查,可能不稳定。
+            稳定版在 [Releases](https://github.com/fjlmcm/VibeTerm/releases/latest)。
+          releaseDraft: false
+          prerelease: true

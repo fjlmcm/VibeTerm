@@ -1,0 +1,80 @@
+# Update Homebrew Cask — 稳定版 Release 完成后,自动更新独立 tap 仓的 cask
+#
+# 借鉴 cmux update-homebrew.yml:用 `workflow_run`(等 Release workflow 真正成功完成)而非
+# `release: published` —— 后者在资产尚未全部上传完时就触发,会导致 sha256 对不上。
+#
+# 前置(用户一次性配置):
+#   1. 创建 tap 仓 `fjlmcm/homebrew-vibeterm`(必须 homebrew- 前缀)。
+#   2. 加 repo secret `HOMEBREW_TAP_TOKEN` = 对该 tap 仓有 push 权限的 PAT(或 fine-grained token)。
+#   3. cask 模板在本仓 homebrew/Casks/vibeterm.rb,本 workflow 据此 sed 出版本+sha 推送。
+name: Update Homebrew Cask
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号(如 1.0.11),留空 = 最新稳定 release"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  update-cask:
+    # 仅当 Release 成功完成,或手动触发
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version + sha256
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # 经 env 传入,不直接把用户输入插值进 shell(防模板注入)
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          ver="$INPUT_VERSION"
+          if [ -z "$ver" ]; then
+            ver="$(gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases -L 1 --json tagName -q '.[0].tagName' | sed 's/^v//')"
+          fi
+          if [ -z "$ver" ]; then echo "no stable release found"; exit 1; fi
+          asset="VibeTerm_${ver}_universal.dmg"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/v${ver}/${asset}"
+          echo "Downloading $url"
+          curl -fsSL -o "$asset" "$url"
+          sha="$(shasum -a 256 "$asset" | awk '{print $1}')"
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tap repo
+        uses: actions/checkout@v4
+        with:
+          repository: fjlmcm/homebrew-vibeterm
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Render cask from template
+        env:
+          VER: ${{ steps.meta.outputs.version }}
+          SHA: ${{ steps.meta.outputs.sha256 }}
+        run: |
+          mkdir -p tap/Casks
+          sed -e "s/__VERSION__/${VER}/g" -e "s/__SHA256__/${SHA}/g" \
+              homebrew/Casks/vibeterm.rb > tap/Casks/vibeterm.rb
+          echo "--- rendered cask ---"
+          cat tap/Casks/vibeterm.rb
+
+      - name: Commit & push
+        env:
+          VER: ${{ steps.meta.outputs.version }}
+        run: |
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/vibeterm.rb
+          git commit -m "vibeterm ${VER}" || { echo "no changes"; exit 0; }
+          git push

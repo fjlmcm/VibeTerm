@@ -309,6 +309,83 @@ pub async fn list_local_branches(repo_path: &Path) -> Result<Vec<String>, GitErr
         .collect())
 }
 
+/// 极速读当前分支名:直接读 `.git/HEAD`(含 worktree gitdir 文件解析),**不 spawn git**。
+/// detached / 读失败 → None。用于热路径(侧栏分支显示),比 spawn `git status` 轻量得多。
+/// 借鉴 cmux `TabManager.gitBranchName`(直读 .git/HEAD 而非 spawn)。
+pub fn branch_fast(worktree_path: &Path) -> Option<String> {
+    let dot_git = worktree_path.join(".git");
+    let head_path = match std::fs::metadata(&dot_git) {
+        Ok(m) if m.is_dir() => dot_git.join("HEAD"),
+        Ok(_) => {
+            // worktree:.git 是文件,内容 "gitdir: <abs path to .git/worktrees/<name>>"
+            let content = std::fs::read_to_string(&dot_git).ok()?;
+            let gitdir = content.lines().next()?.strip_prefix("gitdir:")?.trim();
+            Path::new(gitdir).join("HEAD")
+        }
+        Err(_) => return None,
+    };
+    let head = std::fs::read_to_string(&head_path).ok()?;
+    // "ref: refs/heads/<name>" → name;否则 detached(裸 sha)→ None
+    head.trim()
+        .strip_prefix("ref: refs/heads/")
+        .map(str::to_string)
+}
+
+/// diff 的三个来源(对照 cmux diff-viewer 的 unstaged/staged/branch;**不含** agent-turn,那需 hook)。
+#[derive(Debug, Clone)]
+pub enum DiffSource {
+    /// 工作树 vs 暂存区(`git diff`)
+    Unstaged,
+    /// 暂存区 vs HEAD(`git diff --cached`)
+    Staged,
+    /// 工作树 vs 某个基准 ref(`git diff <ref>`)—— 看相对 base 分支的全部分歧(含未提交)
+    VsRef(String),
+}
+
+/// 生成 unified diff 文本(`--no-color`,前端自行解析渲染)。纯只读,零侵入。
+pub async fn diff(worktree_path: &Path, source: &DiffSource) -> Result<String, GitError> {
+    let mut args: Vec<String> = vec!["diff".into(), "--no-color".into()];
+    match source {
+        DiffSource::Unstaged => {}
+        DiffSource::Staged => args.push("--cached".into()),
+        DiffSource::VsRef(r) => {
+            reject_dash_prefix("ref", r)?;
+            args.push(r.clone());
+        }
+    }
+    // "--" 隔开,避免任何后续被当选项
+    args.push("--".into());
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    run_git(worktree_path, &arg_refs).await
+}
+
+/// 推断默认基准分支:依次试 `origin/HEAD` 指向、`main`、`master`、`develop`。找不到返回 None。
+/// 给 VsRef diff 当默认 base。
+pub async fn default_base_ref(worktree_path: &Path) -> Option<String> {
+    // origin/HEAD → 形如 "refs/remotes/origin/main"
+    if let Ok(s) = run_git(
+        worktree_path,
+        &["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"],
+    )
+    .await
+    {
+        if let Some(name) = s.trim().strip_prefix("refs/remotes/origin/") {
+            if !name.is_empty() {
+                return Some(format!("origin/{name}"));
+            }
+        }
+    }
+    for cand in ["main", "master", "develop"] {
+        if run_git(worktree_path, &["rev-parse", "--verify", "--quiet", cand])
+            .await
+            .is_ok()
+        {
+            return Some(cand.to_string());
+        }
+    }
+    None
+}
+
 // ---- 内部 ----
 
 async fn run_git(cwd: &Path, args: &[&str]) -> Result<String, GitError> {
@@ -429,5 +506,52 @@ bare
         assert_eq!(st.branch, None);
         assert_eq!(st.head, "abc123def");
         assert!(!st.is_dirty);
+    }
+}
+
+#[cfg(test)]
+mod branch_fast_tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn reads_branch_from_plain_git_dir() {
+        let tmp = tempfile::tempdir().unwrap();
+        let git = tmp.path().join(".git");
+        fs::create_dir(&git).unwrap();
+        fs::write(git.join("HEAD"), "ref: refs/heads/feature-x\n").unwrap();
+        assert_eq!(branch_fast(tmp.path()).as_deref(), Some("feature-x"));
+    }
+
+    #[test]
+    fn detached_head_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        let git = tmp.path().join(".git");
+        fs::create_dir(&git).unwrap();
+        fs::write(git.join("HEAD"), "0123456789abcdef0123456789abcdef01234567\n").unwrap();
+        assert_eq!(branch_fast(tmp.path()), None);
+    }
+
+    #[test]
+    fn resolves_worktree_gitdir_file() {
+        // worktree:工作树根的 .git 是文件 "gitdir: <主仓 .git/worktrees/<name>>"
+        let tmp = tempfile::tempdir().unwrap();
+        let real_gitdir = tmp.path().join("main/.git/worktrees/feat");
+        fs::create_dir_all(&real_gitdir).unwrap();
+        fs::write(real_gitdir.join("HEAD"), "ref: refs/heads/feat\n").unwrap();
+        let wt = tmp.path().join("wt-feat");
+        fs::create_dir(&wt).unwrap();
+        fs::write(
+            wt.join(".git"),
+            format!("gitdir: {}\n", real_gitdir.display()),
+        )
+        .unwrap();
+        assert_eq!(branch_fast(&wt).as_deref(), Some("feat"));
+    }
+
+    #[test]
+    fn missing_git_returns_none() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(branch_fast(tmp.path()), None);
     }
 }
