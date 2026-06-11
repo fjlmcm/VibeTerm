@@ -17,7 +17,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 11 种 agent — 与 Prowl 对齐
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentKind {
     Pi,
@@ -26,6 +26,9 @@ pub enum AgentKind {
     Gemini,
     Cursor,
     Cline,
+    // snake_case 会导出 "open_code",但运行时值(as_str()/tasks.json/前端比较)
+    // 一律是 "opencode" —— rename 对齐,否则 TS 镜像类型与实际 wire 值漂移。
+    #[serde(rename = "opencode")]
     OpenCode,
     Copilot,
     Kimi,
@@ -53,23 +56,177 @@ impl AgentKind {
     }
 }
 
-/// 进程名 → AgentKind(小写比对)
-fn classify(name: &str) -> Option<AgentKind> {
-    match name.to_lowercase().as_str() {
-        "pi" => Some(AgentKind::Pi),
-        "claude" | "claude-code" => Some(AgentKind::Claude),
-        "codex" => Some(AgentKind::Codex),
-        "gemini" => Some(AgentKind::Gemini),
-        "cursor" | "cursor-agent" => Some(AgentKind::Cursor),
-        "cline" => Some(AgentKind::Cline),
-        "opencode" | "open-code" => Some(AgentKind::OpenCode),
-        "copilot" | "github-copilot" | "ghcs" => Some(AgentKind::Copilot),
-        "kimi" => Some(AgentKind::Kimi),
-        "droid" => Some(AgentKind::Droid),
-        "amp" | "amp-local" => Some(AgentKind::Amp),
-        "aider" => Some(AgentKind::Aider),
-        _ => None,
+/// 单个 agent 的完整定义 —— **全项目唯一的 agent 数据源**。
+/// 此前 classify / cmdline 关键字表 / pick_rules / AgentKind::ALL 四处平行维护,
+/// 加一个 agent 要改四处且无机制保证同步;现在全部从本表派生。
+pub struct AgentDef {
+    pub kind: AgentKind,
+    /// 进程/命令 basename 别名(classify 与 pick_rules 精确匹配,小写)
+    pub aliases: &'static [&'static str],
+    /// cmdline 关键字扫描用(wrapper 进程如 `node /path/claude` 的兜底识别)。
+    /// **只列假阳性风险低的独特关键字**:pi/amp/cursor 这类泛词留空,
+    /// 否则普通命令行(`pip`/`ampere`/编辑器路径)会让终端被误判成 agent。
+    pub cmdline_keywords: &'static [&'static str],
+    /// 授权框正则(strip ANSI 后在 16KB ring 上匹配 → WaitingInput)。
+    /// 校准原则(2026-05-30,带血):必须用**菜单独有措辞**,agent 正文里
+    /// 自然出现的泛词("do you want to proceed"/"(y/n)" 在 claude 叙述中常见)会闪假黄灯。
+    pub waiting_patterns: &'static [&'static str],
+    /// 编译后的 regex 缓存(OnceLock 只 build 一次)
+    pub compiled: std::sync::OnceLock<Vec<regex::Regex>>,
+}
+
+impl AgentDef {
+    pub fn compiled_patterns(&self) -> &[regex::Regex] {
+        self.compiled.get_or_init(|| {
+            self.waiting_patterns
+                .iter()
+                .filter_map(|p| regex::Regex::new(p).ok())
+                .collect()
+        })
     }
+}
+
+macro_rules! agent_def {
+    ($kind:expr, $aliases:expr, $kws:expr, $patterns:expr) => {
+        AgentDef {
+            kind: $kind,
+            aliases: $aliases,
+            cmdline_keywords: $kws,
+            waiting_patterns: $patterns,
+            compiled: std::sync::OnceLock::new(),
+        }
+    };
+}
+
+/// 12 个 agent 的唯一数据源。新增 agent 只改这里(TS 镜像测试会提醒同步 ipc-types)。
+pub static AGENT_DEFS: [AgentDef; 12] = [
+    // claude 真实授权 UI(2.x, 实测): 带框编号菜单
+    //   "Do you want to proceed?  ❯ 1. Yes / 2. Yes, and don't ask again / 3. No, and tell Claude…"
+    // 信任框(实测): "❯ 1. Yes, I trust this folder / 2. No, exit"。
+    //   - claude 2.x 菜单根本不用 (y/n);
+    //   - "No, and tell Claude" 是授权菜单选项 3, 必与每个授权框同现 → 留它即可全覆盖。
+    agent_def!(
+        AgentKind::Claude,
+        &["claude", "claude-code"],
+        &["claude"],
+        &[
+            r"(?i)no, and tell claude",           // 授权菜单选项 3, 菜单独有, 最稳
+            r"(?i)don't ask again",               // 授权菜单选项 2
+            r"(?i)trust (the files|this folder)", // 首次进目录"信任此文件夹"(实测)
+            r"(?i)continue with this plan\?",     // plan 模式确认
+        ]
+    ),
+    // codex 命令审批 UI 未能实测(本机 codex 配置为自动放行命令, 抓不到审批框)。
+    // 保守:只认低误报的字面 y/n 形态; codex 菜单式审批的独有措辞待拿到真实样本再校准。
+    agent_def!(
+        AgentKind::Codex,
+        &["codex"],
+        &["codex"],
+        &[r"\(y/n\)", r"\[y/n\]"]
+    ),
+    agent_def!(
+        AgentKind::Aider,
+        &["aider"],
+        &["aider"],
+        &[
+            r"(?i)yes/no",
+            r"\(y\)",
+            r"(?i)add .* to the chat\?",
+            r"(?i)edit the files",
+        ]
+    ),
+    // Gemini CLI — Google 官方, 多用 ? 结尾的英文确认 + y/n
+    agent_def!(
+        AgentKind::Gemini,
+        &["gemini"],
+        &["gemini"],
+        &[
+            r"\(y/n\)",
+            r"\[y/n\]",
+            r"(?i)proceed\?",
+            r"(?i)apply changes\?",
+        ]
+    ),
+    // Cursor CLI / cursor-agent — 关键字只认 cursor-agent(裸 "cursor" 误报高:编辑器路径)
+    agent_def!(
+        AgentKind::Cursor,
+        &["cursor", "cursor-agent"],
+        &["cursor-agent"],
+        &[
+            r"\(y/n\)",
+            r"\[y/n\]",
+            r"(?i)accept\?",
+            r"(?i)keep changes\?",
+        ]
+    ),
+    // Cline — VSCode 插件 + 独立 CLI 形态
+    agent_def!(
+        AgentKind::Cline,
+        &["cline"],
+        &["cline"],
+        &[
+            r"\(y/n\)",
+            r"\[y/n\]",
+            r"(?i)approve\?",
+            r"(?i)proceed with",
+        ]
+    ),
+    // OpenCode — 开源 Claude Code-like
+    agent_def!(
+        AgentKind::OpenCode,
+        &["opencode", "open-code"],
+        &["opencode"],
+        &[r"\(y/n\)", r"\[y/n\]", r"(?i)yes/no", r"(?i)confirm"]
+    ),
+    // GitHub Copilot CLI / ghcs
+    agent_def!(
+        AgentKind::Copilot,
+        &["copilot", "github-copilot", "ghcs"],
+        &["copilot", "ghcs"],
+        &[
+            r"\(y/n\)",
+            r"\[y/n\]",
+            r"(?i)select an option",
+            r"(?i)allow this command",
+        ]
+    ),
+    // Kimi / Moonshot CLI
+    agent_def!(
+        AgentKind::Kimi,
+        &["kimi"],
+        &["kimi"],
+        &[r"\(y/n\)", r"\[y/n\]", r"是否继续", r"是否同意"]
+    ),
+    // Droid (Factory.ai)
+    agent_def!(
+        AgentKind::Droid,
+        &["droid"],
+        &["droid"],
+        &[
+            r"\(y/n\)",
+            r"\[y/n\]",
+            r"(?i)approve plan",
+            r"(?i)continue\?",
+        ]
+    ),
+    // Amp (Sourcegraph) — "amp" 太泛, 不参与 cmdline 关键字扫描
+    agent_def!(
+        AgentKind::Amp,
+        &["amp", "amp-local"],
+        &[],
+        &[r"\(y/n\)", r"\[y/n\]", r"(?i)approve", r"(?i)proceed"]
+    ),
+    // Pi — "pi" 太泛(pip/pipx…), 不参与 cmdline 关键字扫描
+    agent_def!(AgentKind::Pi, &["pi"], &[], &[r"\(y/n\)", r"\[y/n\]"]),
+];
+
+/// 进程名 → AgentKind(小写比对;从 AGENT_DEFS 派生)
+fn classify(name: &str) -> Option<AgentKind> {
+    let lower = name.to_lowercase();
+    AGENT_DEFS
+        .iter()
+        .find(|d| d.aliases.contains(&lower.as_str()))
+        .map(|d| d.kind)
 }
 
 /// Wrapped runtime — 这些 binary 本身不是 agent,但其参数往往包含真正的 agent 命令。
@@ -166,23 +323,13 @@ pub fn detect_agent_with_diagnostics(shell_pid: u32) -> (Option<AgentKind>, Diag
         if detected.is_none() {
             for cmd in &cmdlines {
                 let lower = cmd.to_lowercase();
-                // 只列假阳性风险低的独特关键字, 与 classify() 对齐.
-                for &(kw, kind) in &[
-                    ("claude", AgentKind::Claude),
-                    ("codex", AgentKind::Codex),
-                    ("aider", AgentKind::Aider),
-                    ("gemini", AgentKind::Gemini),
-                    ("cursor-agent", AgentKind::Cursor),
-                    ("cline", AgentKind::Cline),
-                    ("opencode", AgentKind::OpenCode),
-                    ("copilot", AgentKind::Copilot),
-                    ("ghcs", AgentKind::Copilot),
-                    ("kimi", AgentKind::Kimi),
-                    ("droid", AgentKind::Droid),
-                ] {
-                    if mentions_binary(&lower, kw) {
-                        detected = Some(kind);
-                        break;
+                // 关键字从 AGENT_DEFS 派生(cmdline_keywords 只含低假阳性的独特词)
+                'outer: for def in &AGENT_DEFS {
+                    for kw in def.cmdline_keywords {
+                        if mentions_binary(&lower, kw) {
+                            detected = Some(def.kind);
+                            break 'outer;
+                        }
                     }
                 }
                 if detected.is_some() {
@@ -215,7 +362,7 @@ pub fn detect_agent_with_diagnostics(shell_pid: u32) -> (Option<AgentKind>, Diag
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct Diagnostics {
     pub shell_pid: u32,
     pub pgid: Option<u32>,
@@ -349,5 +496,27 @@ mod tests {
         assert!(is_wrapper("node"));
         assert!(is_wrapper("python3"));
         assert!(!is_wrapper("claude"));
+    }
+}
+
+#[cfg(test)]
+mod ts_mirror_sync_tests {
+    use super::*;
+
+    /// AgentKind 全集必须出现在 TS 镜像(ipc-types)里——后端加第 N 个 agent 忘改 TS 时
+    /// `TaskDto.agent_kind` 会是 TS 类型里不存在的字符串且编译期零报错,此测试让它在 CI 红掉。
+    #[test]
+    fn agent_kinds_present_in_ts_mirror() {
+        let p = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../web/packages/ipc-types/src/generated.ts");
+        let ts = std::fs::read_to_string(&p)
+            .unwrap_or_else(|e| panic!("读 TS 镜像失败 {}: {e}", p.display()));
+        for def in &AGENT_DEFS {
+            let lit = format!("\"{}\"", def.kind.as_str());
+            assert!(
+                ts.contains(&lit),
+                "AgentKind {lit} 不在 ipc-types/index.ts 的 AgentKind union —— Rust/TS 镜像漂移"
+            );
+        }
     }
 }

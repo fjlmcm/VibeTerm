@@ -21,8 +21,14 @@ import type {
   StatusLineItemDetail,
   TaskDto,
 } from "@vibeterm/ipc-types";
+import { formatRemainMs } from "./popover/anchor";
 
 // ---- 公共 helpers ----
+
+// burn rate 数值格式化:≥1000 → "N.Nk",否则取整(claude/codex 两个 burn-rate widget 共用)。
+function formatBurnRate(value: number): string {
+  return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : Math.round(value).toString();
+}
 
 export function pctColor(pct: number): string {
   if (pct >= 80) return "var(--color-status-stalled, #d97757)";
@@ -405,8 +411,8 @@ const claudeCtxWidget: WidgetRenderer = (item, ctx) => {
   const pct = (s.context_tokens / s.context_window) * 100;
   const mode = styleMode(item);
   const title = `context: ${s.context_tokens} / ${s.context_window}`;
-  if (mode === "bar") return <span title={title}><MiniBar pct={pct} color={item.color} label="ctx" /></span>;
-  if (mode === "gauge") return <span title={title}><Gauge pct={pct} color={item.color} label="ctx" /></span>;
+  if (mode === "bar") return <span title={title}><MiniBar pct={pct} color={item.color ?? undefined} label="ctx" /></span>;
+  if (mode === "gauge") return <span title={title}><Gauge pct={pct} color={item.color ?? undefined} label="ctx" /></span>;
   return (
     <span
       title={title}
@@ -430,8 +436,8 @@ const claudeQuotaPill = (label: string, w: ClaudeQuotaWindow | null, item: Statu
   const showReset = item.metadata?.showReset !== "false";
   const mode = styleMode(item);
   const title = `${label}: ${pct}% used${reset ? ` · resets in ${reset}` : ""}`;
-  if (mode === "bar") return <span title={title}><MiniBar pct={w.utilization} color={item.color} label={label} /></span>;
-  if (mode === "gauge") return <span title={title}><Gauge pct={w.utilization} color={item.color} label={label} /></span>;
+  if (mode === "bar") return <span title={title}><MiniBar pct={w.utilization} color={item.color ?? undefined} label={label} /></span>;
+  if (mode === "gauge") return <span title={title}><Gauge pct={w.utilization} color={item.color ?? undefined} label={label} /></span>;
   return (
     <span
       title={title}
@@ -474,15 +480,7 @@ const claude7dOpusWidget: WidgetRenderer = (item, ctx) => {
 };
 
 // ---- Claude 5h block (移植 ccusage `blocks.rs`) ----
-
-function formatRemainMs(ms: number): string {
-  if (ms <= 0) return "expired";
-  const mins = Math.round(ms / 60000);
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.floor(mins / 60);
-  const rem = mins % 60;
-  return rem > 0 ? `${hours}h ${rem}m` : `${hours}h`;
-}
+// formatRemainMs 从 ./popover/anchor 引入(同一实现,去重)。
 
 const claudeBlockPctWidget: WidgetRenderer = (item, ctx) => {
   if (ctx.agentKind() !== "claude") return null;
@@ -493,8 +491,8 @@ const claudeBlockPctWidget: WidgetRenderer = (item, ctx) => {
   const showReset = item.metadata?.showReset !== "false";
   const mode = styleMode(item);
   const title = `5h block: ${Math.round(pct)}% elapsed · ${reset} left · ${b.tokens_used} tokens`;
-  if (mode === "bar") return <span title={title}><MiniBar pct={pct} color={item.color} label="block" /></span>;
-  if (mode === "gauge") return <span title={title}><Gauge pct={pct} color={item.color} label="block" /></span>;
+  if (mode === "bar") return <span title={title}><MiniBar pct={pct} color={item.color ?? undefined} label="block" /></span>;
+  if (mode === "gauge") return <span title={title}><Gauge pct={pct} color={item.color ?? undefined} label="block" /></span>;
   return (
     <span
       title={title}
@@ -608,7 +606,7 @@ const claudeBurnRateWidget: WidgetRenderer = (item, ctx) => {
   if (!b || b.tokens_per_min_recent <= 0) return null;
   const showAvg = item.metadata?.showAvg === "true";
   const value = showAvg ? b.tokens_per_min_avg : b.tokens_per_min_recent;
-  const formatted = value >= 1000 ? `${(value / 1000).toFixed(1)}k` : Math.round(value).toString();
+  const formatted = formatBurnRate(value);
   return (
     <span
       title={`burn rate: recent ${Math.round(b.tokens_per_min_recent)} tok/min · ${b.burn_rate_level}`}
@@ -658,8 +656,8 @@ const codexCtxWidget: WidgetRenderer = (item, ctx) => {
       : (c.context_tokens / c.context_window) * 100;
   const mode = styleMode(item);
   const title = `context: ${c.context_tokens} / ${c.context_window} (${Math.round(pct)}%)`;
-  if (mode === "bar") return <span title={title}><MiniBar pct={pct} color={item.color} label="ctx" /></span>;
-  if (mode === "gauge") return <span title={title}><Gauge pct={pct} color={item.color} label="ctx" /></span>;
+  if (mode === "bar") return <span title={title}><MiniBar pct={pct} color={item.color ?? undefined} label="ctx" /></span>;
+  if (mode === "gauge") return <span title={title}><Gauge pct={pct} color={item.color ?? undefined} label="ctx" /></span>;
   return (
     <span
       title={title}
@@ -678,13 +676,13 @@ const codexLimitPill = (label: string | null, l: CodexRateLimit | null, item: St
   const pct = Math.round(l.used_percent);
   const threshold = parseInt(item.metadata?.hideUnderThreshold ?? "0", 10);
   if (Number.isFinite(threshold) && pct < threshold) return null;
-  const win = label ?? formatCodexWindow(l.window_minutes);
-  const reset = formatResetUnix(l.resets_at);
+  const win = label ?? formatCodexWindow(l.window_minutes ?? null);
+  const reset = formatResetUnix(l.resets_at ?? null);
   const showReset = item.metadata?.showReset !== "false";
   const mode = styleMode(item);
   const title = `${win} window · ${pct}% used · resets in ${reset}`;
-  if (mode === "bar") return <span title={title}><MiniBar pct={l.used_percent} color={item.color} label={win} /></span>;
-  if (mode === "gauge") return <span title={title}><Gauge pct={l.used_percent} color={item.color} label={win} /></span>;
+  if (mode === "bar") return <span title={title}><MiniBar pct={l.used_percent} color={item.color ?? undefined} label={win} /></span>;
+  if (mode === "gauge") return <span title={title}><Gauge pct={l.used_percent} color={item.color ?? undefined} label={win} /></span>;
   return (
     <span
       title={title}
@@ -821,7 +819,7 @@ const codexBurnRateWidget: WidgetRenderer = (item, ctx) => {
   const c = ctx.codexSnap();
   if (!c || c.tokens_per_min_recent <= 0) return null;
   const value = c.tokens_per_min_recent;
-  const formatted = value >= 1000 ? `${(value / 1000).toFixed(1)}k` : Math.round(value).toString();
+  const formatted = formatBurnRate(value);
   return (
     <span
       title={`burn rate: ${Math.round(c.tokens_per_min_recent)} tok/min · ${c.burn_rate_level}`}
@@ -866,7 +864,7 @@ const codexPlanWidget: WidgetRenderer = (item, ctx) => {
   const c = ctx.codexSnap();
   if (!c?.plan_type) return null;
   return (
-    <span style={{ opacity: 0.6, "font-size": "10px", color: item.color }}>
+    <span style={{ opacity: 0.6, "font-size": "10px", color: item.color ?? undefined }}>
       {c.plan_type}
     </span>
   );
@@ -972,7 +970,7 @@ const worktreeNameWidget: WidgetRenderer = (item, ctx) => {
 };
 
 const separatorWidget: WidgetRenderer = (item, _ctx) => (
-  <span style={{ opacity: 0.3, "font-size": "10px", color: item.color }}>
+  <span style={{ opacity: 0.3, "font-size": "10px", color: item.color ?? undefined }}>
     {item.metadata?.char ?? "│"}
   </span>
 );
@@ -1005,7 +1003,7 @@ const gaugeCtxWidget: WidgetRenderer = (item, ctx) => {
     }
   }
   if (pct == null) return null;
-  return <span title={title}><Gauge pct={pct} color={item.color} label="ctx" /></span>;
+  return <span title={title}><Gauge pct={pct} color={item.color ?? undefined} label="ctx" /></span>;
 };
 
 const customTextWidget: WidgetRenderer = (item, _ctx) => {

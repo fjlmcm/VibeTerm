@@ -4,7 +4,7 @@
 // 模糊搜索:简化版 substring(引入 fuzzysort + pinyin-pro)
 
 import { For, Show, createMemo, createSignal, onCleanup, onMount, type Component } from "solid-js";
-import { ipc, t } from "@vibeterm/ui-core";
+import { ipc, requestRenderRepair, t } from "@vibeterm/ui-core";
 import type { ActionEntry, LayoutTemplate, TaskDto, TerminalId } from "@vibeterm/ipc-types";
 
 export interface CommandPaletteProps {
@@ -169,6 +169,17 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
         },
       });
     }
+
+    // WebGL 纹理图集偶发损坏(睡眠唤醒/GPU 波动)会让字形画错 —— 让所有
+    // Terminal 实例 clearTextureAtlas 立即重绘,详见 ui-core terminal 顶部注释。
+    items.push({
+      id: "cmd:repair-render",
+      label: t("palette.cmd.repair_render"),
+      action: () => {
+        props.onClose();
+        requestRenderRepair();
+      },
+    });
 
     if (props.onOpenSettings) {
       items.push({

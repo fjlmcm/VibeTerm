@@ -36,7 +36,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 单个事件的通知偏好。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct EventNotifyPrefs {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -55,7 +55,7 @@ impl EventNotifyPrefs {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct EventsPrefs {
     #[serde(default = "EventsPrefs::default_waiting_input")]
     pub waiting_input: EventNotifyPrefs,
@@ -84,7 +84,7 @@ impl EventsPrefs {
 }
 
 /// 免打扰时段。start/end 为 24h "HH:MM";start > end 表示跨夜。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct QuietHours {
     #[serde(default)]
     pub enabled: bool,
@@ -155,7 +155,7 @@ fn default_persistent_remind_secs() -> u64 {
     30
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct NotifyFile {
     #[serde(default = "NotifyFile::default_schema_version")]
     pub schema_version: u32,

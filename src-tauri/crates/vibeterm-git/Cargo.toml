@@ -5,6 +5,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+specta = { workspace = true }
 serde      = { workspace = true }
 thiserror  = { workspace = true }
 tokio      = { workspace = true, features = ["process", "io-util"] }

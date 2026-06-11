@@ -6,7 +6,7 @@ export * as i18n from "./i18n";
 export * as split from "./split";
 export { t, tOr, promptDisplayName, promptDisplayContent, setLang, currentLang, LANGS, LANG_NAMES } from "./i18n";
 export type { Lang } from "./i18n";
-export { Terminal, getTerminalFontSize, setTerminalFontSize } from "./terminal";
+export { Terminal, getTerminalFontSize, setTerminalFontSize, requestRenderRepair } from "./terminal";
 export { loadSavedScrollback, startScrollbackAutosave } from "./scrollback";
 export {
   terminalFontFamily,

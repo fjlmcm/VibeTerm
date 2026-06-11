@@ -87,6 +87,7 @@ impl TerminalRegistry {
         Ok(())
     }
 
+    /// 调整终端尺寸(幂等:同尺寸 no-op,见 `Terminal::resize`)。
     pub fn resize(
         &self,
         id: TerminalId,
@@ -172,6 +173,18 @@ impl TerminalRegistry {
             t.remove_sink(sink_id);
         }
         Ok(())
+    }
+
+    /// 读取 terminal 当前生效的 (rows, cols)(最近一次 resize 下发值;纯查询)。
+    /// 返回 (0, 0) 表示 spawn 后尚未 resize。视图变可见时用它判断 PTY 是否已被
+    /// 别的视图(浮窗)改成别的尺寸 → 不一致则本视图 buffer 已被污染,需清屏重绘。
+    pub fn size(&self, id: TerminalId) -> Result<(u16, u16), TerminalRegistryError> {
+        let map = self
+            .terminals
+            .lock()
+            .map_err(|_| TerminalRegistryError::Poisoned)?;
+        let t = map.get(&id).ok_or(TerminalRegistryError::NotFound(id))?;
+        Ok(t.size())
     }
 
     /// 读取 terminal 的 scrollback 快照(不订阅,纯查询)

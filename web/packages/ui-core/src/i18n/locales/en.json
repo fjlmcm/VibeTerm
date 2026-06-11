@@ -520,6 +520,7 @@
   "palette.cmd.open_diff": "View diff (current task)",
   "palette.cmd.apply_layout": "Layout: {name}",
   "palette.cmd.resume_agent": "Resume agent (current task)",
+  "palette.cmd.repair_render": "Repair text rendering (garbled glyphs)",
   "update.app.auto_check": "Auto-check for updates on launch",
   "update.app.auto_check_hint": "Only a read-only version compare against GitHub; uploads nothing, no telemetry. Turn off to stay fully offline.",
   "update.app.running_warn": "{count} terminal(s) running. Installing will restart and interrupt them (your task list is kept). Continue?",

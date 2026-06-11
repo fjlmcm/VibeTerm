@@ -520,6 +520,7 @@
   "palette.cmd.open_diff": "Diff を表示(現在のタスク)",
   "palette.cmd.apply_layout": "レイアウト:{name}",
   "palette.cmd.resume_agent": "agent を再開(現在のタスク)",
+  "palette.cmd.repair_render": "文字描画を修復(文字化け)",
   "update.app.auto_check": "起動時に更新を自動チェック",
   "update.app.auto_check_hint": "GitHub にバージョン番号を照合するだけ。アップロードなし・テレメトリなし。オフにすれば一切通信しません。",
   "update.app.running_warn": "{count} 個のターミナルが実行中です。インストールすると再起動して中断します(タスク一覧は保持)。続行しますか?",

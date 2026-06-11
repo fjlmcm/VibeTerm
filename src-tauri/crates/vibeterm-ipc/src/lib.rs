@@ -8,10 +8,9 @@ use serde::{Deserialize, Serialize};
 // ---- IDs ----
 pub type TerminalId = u32;
 pub type TaskId = u32;
-pub type WindowId = String;
 
 // ---- Tasks ----
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct TaskDto {
     pub id: TaskId,
     pub name: String,
@@ -50,7 +49,7 @@ pub struct TaskDto {
 
 /// 任务挂载的 git worktree 信息(L1)。
 /// `head/is_dirty/ahead/behind/status_updated_at` 由后台轮询刷新。
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 pub struct WorktreeRef {
     /// 主仓库 toplevel(用于 `git worktree` 命令的 cwd)
     pub repo_path: String,
@@ -77,7 +76,7 @@ fn default_split_tree() -> SplitNode {
 }
 
 /// 分屏树 mirror(前端 ui-core/src/split TS 类型 1:1 对应)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, specta::Type)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum SplitNode {
     Leaf {
@@ -91,14 +90,14 @@ pub enum SplitNode {
     },
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum Orientation {
     H,
     V,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
     Idle,
@@ -115,7 +114,7 @@ pub enum TaskStatus {
     Stalled,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "kind", content = "label")]
 pub enum TaskLocation {
     Nowhere,
@@ -123,7 +122,7 @@ pub enum TaskLocation {
     Floating(String),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct CreateTaskOpts {
     pub name: String,
     pub cwd: Option<String>,
@@ -133,7 +132,7 @@ pub struct CreateTaskOpts {
 }
 
 /// `git worktree add` 的分支策略(IPC 层 mirror,与 vibeterm-git::BranchSpec 对齐)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 #[serde(tag = "mode", rename_all = "snake_case")]
 pub enum BranchSpecDto {
     Existing { branch: String },
@@ -142,7 +141,7 @@ pub enum BranchSpecDto {
 }
 
 // ---- Spawn ----
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct SpawnPtyOpts {
     pub rows: u16,
     pub cols: u16,
@@ -152,15 +151,19 @@ pub struct SpawnPtyOpts {
     pub env: Option<Vec<(String, String)>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct SpawnPtyResult {
     pub terminal_id: TerminalId,
+    /// slot 幂等命中、attach 共享 PTY 时为 Some(订阅 id):前端组件卸载时据此 detach,
+    /// 否则浮窗每次开关都给共享 PTY 永久多挂一个 sink。全新 spawn 为 None(初始
+    /// sink 是状态嗅探主 sink,随 PTY 生命周期存续,不可 detach)。
+    pub sink_id: Option<u64>,
 }
 
 // ---- Statistics 等(暂不用,留 schema) ----
 
 // ---- 统一错误模型 ----
-#[derive(Debug, thiserror::Error, Serialize, Deserialize, Clone)]
+#[derive(Debug, thiserror::Error, Serialize, Deserialize, Clone, specta::Type)]
 #[serde(tag = "kind", content = "detail")]
 pub enum IpcError {
     #[error("not found: {resource} ({id})")]

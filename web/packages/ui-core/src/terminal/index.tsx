@@ -6,13 +6,22 @@
 import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
 
 import { Terminal as XTerm } from "@xterm/xterm";
+// xterm 自带样式随依赖图打包(此前 index.html/floating.html 用
+// `/node_modules/@xterm/xterm/css/xterm.css` 裸链接,生产构建解析不到该路径时
+// 原样保留 → 运行时 404 → 终端无样式渲染成空白)。
+import "@xterm/xterm/css/xterm.css";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { FitAddon } from "@xterm/addon-fit";
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { SearchAddon } from "@xterm/addon-search";
 import { SerializeAddon } from "@xterm/addon-serialize";
 import { WebLinksAddon } from "@xterm/addon-web-links";
-import { takeScrollback, registerScrollbackSnapshot } from "../scrollback";
+import {
+  commitScrollback,
+  peekScrollback,
+  registerScrollbackSnapshot,
+  RESTORE_SEPARATOR,
+} from "../scrollback";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
@@ -23,10 +32,10 @@ import {
   Channel,
   closePty,
   resizePty,
+  terminalSize,
   spawnTerminalInTask,
   startPty,
   writePty,
-  attachTerminal,
   detachTerminal,
   pasteClipboard,
   openExternal,
@@ -113,14 +122,36 @@ export function setTerminalFontSize(n: number) {
 const FILE_PATH_REGEX =
   /(?:^|[\s'"`(])((?:~|\.{1,2})?\/[\p{L}\p{N}._\-/]+(?::\d+(?::\d+)?)?)/gu;
 
+// WebGL 纹理图集偶发损坏自愈。
+// 现象:字形突然画错(CJK 半截/错误字形,连 ASCII 都错位)但底层数据无损——选中
+// 复制出的文本是对的。典型触发:OS 睡眠唤醒 / GPU 进程波动;CJK 大字符集填图集
+// 远快于拉丁文,概率更高。GPU 侧纹理损坏对 JS 不可见、无法检测,只能在可疑时点
+// 重建图集 —— xterm 官方为此提供 clearTextureAtlas()(其 API 注释即举例
+// "texture gets messed up when resuming the OS from sleep")。
+// 触发源收敛到一个 module 级 signal(同 fontSize 模式),各 Terminal 实例
+// createEffect 订阅,随组件自动释放:
+//   1. 窗口聚焦 / 文档恢复可见(下方 module 级监听,覆盖最常见的唤醒/切回场景);
+//   2. 命令面板「修复文字渲染」调用 requestRenderRepair() —— 乱码在眼前时一键重绘。
+// 成本仅为可见区字形重栅格化一帧,无闪烁;DOM 渲染器 fallback 时为 no-op。
+const [repairTick, setRepairTick] = createSignal(0);
+
+/** 让所有 Terminal 实例清 WebGL 纹理图集重绘(修复偶发字形乱码) */
+export function requestRenderRepair() {
+  setRepairTick((n) => n + 1);
+}
+
+// app 生命周期常驻,只挂一次;浮窗是独立 webview,各自实例化本 module 同样生效。
+window.addEventListener("focus", requestRenderRepair);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") requestRenderRepair();
+});
+
 export interface TerminalProps {
   /** 在指定 task 下 spawn;不给则用 start_pty(独立) */
   taskId?: TaskId;
   /** (task, slot) 幂等键:后端按它判断 spawn vs attach,前端无需自己判断
    *  Normal 和 Canvas 视图都传同一 slotId,后端保证只 spawn 一个 PTY,另一次自动 attach */
   slotId?: number;
-  /** attach 模式 — 给定 terminal_id 时不 spawn,而是订阅已有 PTY 的流 */
-  attachTerminalId?: number;
   /** 字号覆盖(per-instance):Canvas 卡片缩放时用,不影响全局 Cmd+= 设置 */
   fontSizeOverride?: number;
   /** 主题(改变时立即重新 apply xterm.options.theme) */
@@ -141,8 +172,9 @@ export function Terminal(props: TerminalProps) {
   let resizeObserver: ResizeObserver | null = null;
   let intersectionObserver: IntersectionObserver | null = null;
   let terminalId: number | null = null;
-  let sinkId: number | null = null; // attach 模式下的订阅 id
-  let isAttachMode = false;
+  // slot 幂等命中(本视图 attach 到共享 PTY)时后端返回的订阅 id;卸载时据此 detach,
+  // 否则浮窗每次开关都给共享 PTY 永久多挂一个 sink。全新 spawn 为 null(主嗅探 sink 不可摘)。
+  let sinkId: number | null = null;
   let onDataDispose: { dispose(): void } | null = null;
   let onResizeDispose: { dispose(): void } | null = null;
   let dragDropUnlisten: UnlistenFn | null = null;
@@ -205,6 +237,77 @@ export function Terminal(props: TerminalProps) {
     if (wasAtBottom) term.scrollToBottom();
   };
 
+  // 返回终端(display:none → block)时强制 xterm 重新同步滚动区。
+  // 根因:后台 agent 的输出会写进隐藏(display:none)的本终端(多 sink 共享 PTY)。隐藏期间
+  // xterm Viewport 缓存的滚动高度会失真;返回后若窗口尺寸未变,fit() 是 no-op、不重算缓存,
+  // 导致滚轮往下"触底差一截"(需按方向键走 scrollToBottom 才回到底)。这里发一次"真实滚动
+  // 往返"触发 Viewport.syncScrollArea 校正缓存——同帧内完成、还原原位置,无可见闪烁。
+  const resyncScroll = () => {
+    if (!term) return;
+    const buf = term.buffer.active;
+    if (buf.baseY <= 0) return; // 无 scrollback → 不存在触底问题
+    const y = buf.viewportY;
+    if (y >= buf.baseY) {
+      // 贴底:上滚 1 行(必触发 scroll 事件 → 校正)再回到底部
+      term.scrollLines(-1);
+      term.scrollToBottom();
+    } else {
+      // 非贴底:滚到底部触发校正,再还原用户原本所在行
+      term.scrollToBottom();
+      term.scrollToLine(y);
+    }
+  };
+
+  // 把 PTY 尺寸断言为本视图(xterm)的当前尺寸。视图变可见时调用:
+  // 浮窗在它生命周期里把共享 PTY 改成了浮窗尺寸,而本主窗视图隐藏期 fit 是 no-op、
+  // onResize 不触发 → PTY 不会自己回到主窗尺寸,app 继续按浮窗宽度绘制 → 主窗顶部错乱。
+  // 这里无条件下发本视图尺寸(后端 last_size 幂等:真没变则 no-op,不会多余 SIGWINCH)。
+  const assertPtySize = () => {
+    if (disposed || terminalId === null || !term) return;
+    resizePty(terminalId, term.rows, term.cols).catch((err) => {
+      console.error("[terminal] resizePty(assert) failed", err);
+      props.onError?.(err);
+    });
+  };
+
+  // 视图从 display:none → 可见时的重排 + 反污染处理。
+  //
+  // 根因:一个 PTY 多 sink(主窗 + 浮窗)共享同一字节流,但各自是独立、可不同尺寸的 xterm。
+  // 浮窗调尺寸会把共享 PTY 改成浮窗宽度,Claude Code 等全屏 TUI 据此发出「光标上移 N 行 +
+  // 清行 + 重绘」序列;这些序列也写进隐藏的本主窗模拟器,而它 grid 还停在主窗宽度 → 行数
+  // 计算错位,把 banner 等内容重叠进 buffer。返回可见时 fit 是 no-op、app 又按浮窗宽度残留 →
+  // 主窗顶部出现重复 banner。
+  //
+  // 修法(不碰 reflow —— 用户确认拉伸窗口本身重排是正确的):变可见时先比对 PTY 当前尺寸与本
+  // 视图尺寸;若不一致(= 隐藏期被别的视图改过、buffer 已污染)则清当前屏(ESC[2J + 光标归位,
+  // 保留 scrollback、不 reset 以免丢 app 的 cursor-keys / bracketed-paste 等模式),再 assertPtySize
+  // 把 PTY 断言回本视图尺寸 → app 收 SIGWINCH 在干净屏上重绘,消除重叠。尺寸一致(普通切任务)
+  // 则跳过清屏,零副作用。
+  // 已知竞态(可接受):隐藏期主窗被拉伸时,tryFit() 触发 xterm onResize → 异步 resizePty,
+  // 与下面的 terminalSize() 读取无顺序保证;读到旧尺寸会误判污染、多清一次屏。后果只是
+  // TUI 多重绘一帧(普通 shell 可能丢可见区几行),概率低且收 SIGWINCH 后即恢复,不加锁串行化。
+  const onBecameVisible = async () => {
+    const xt = term;
+    if (!xt || terminalId === null) return;
+    tryFit();
+    try {
+      const [ptyRows, ptyCols] = await terminalSize(terminalId);
+      const contaminated =
+        ptyRows > 0 &&
+        ptyCols > 0 &&
+        (ptyRows !== xt.rows || ptyCols !== xt.cols);
+      if (!disposed && term === xt && contaminated) {
+        // 清可见屏 + 光标归位;不动 scrollback、不 reset 模式
+        xt.write("\x1b[2J\x1b[H");
+      }
+    } catch (e) {
+      console.warn("[terminal] visible-resync size check failed", e);
+    }
+    if (disposed || term !== xt) return;
+    assertPtySize();
+    resyncScroll();
+  };
+
   const findNext = () => {
     const q = searchTerm();
     if (q && search) search.findNext(q, SEARCH_OPTS);
@@ -233,11 +336,14 @@ export function Terminal(props: TerminalProps) {
     const t0 = performance.now();
     try {
       const r = await pasteClipboard();
+      // await 期间组件可能已卸载(onCleanup 置 term=null、关 PTY)——
+      // 不守门会向已关闭的 PTY 写入 / 在 null 上调 paste。
+      if (disposed || !term || terminalId === null) return;
       const ms = (performance.now() - t0).toFixed(1);
       console.debug(`[terminal:${source}] paste_clipboard →`, r.kind, `${ms}ms`);
       if (r.kind === "files") {
         await writePty(
-          terminalId!,
+          terminalId,
           ENCODER.encode(shellQuotePaths(r.paths) + " "),
         );
       } else if (r.kind === "image") {
@@ -245,10 +351,13 @@ export function Terminal(props: TerminalProps) {
         // 当普通文本;且路径【加引号会阻止转图片】。故走 term.paste 注入【裸路径】—— xterm 会按
         // PTY 的 bracketed paste 模式自动包 ESC[200~/201~(claude/codex/shell 都会开启),
         // 等价于"拖拽文件入终端"。见 anthropics/claude-code#4705 / #27904 / #62208。
-        term!.paste(r.path);
+        term.paste(r.path);
       } else if (r.kind === "text") {
-        term!.paste(r.text);
+        term.paste(r.text);
       }
+      // 粘贴后把键盘焦点交回 xterm —— 右键菜单粘贴会让 activeElement 漂到菜单,
+      // 窗口刚激活时 textarea 也可能没焦点;不回焦用户得再点一次终端才能继续输入。
+      term?.focus();
     } catch (err) {
       console.error(`[terminal:${source}] paste failed`, err);
     }
@@ -317,6 +426,14 @@ export function Terminal(props: TerminalProps) {
     void doPaste("paste");
   };
 
+  // Cmd+C / 浏览器原生复制路径的 grapheme 守门(右键菜单 Copy 已单独走 normalizeGraphemes)
+  const onHostCopy = (e: ClipboardEvent) => {
+    const sel = term?.getSelection() ?? "";
+    if (!sel || !e.clipboardData) return;
+    e.preventDefault();
+    e.clipboardData.setData("text/plain", normalizeGraphemes(sel));
+  };
+
   // 终端区右键 — 阻止系统默认菜单(macOS Cut/Copy/Spelling 等),弹自定义菜单
   const onHostContextMenu = (e: MouseEvent) => {
     e.preventDefault();
@@ -330,11 +447,7 @@ export function Terminal(props: TerminalProps) {
       if (id !== null) hostEl.setAttribute("data-terminal-id", String(id));
       hostEl.setAttribute(
         "data-mode",
-        props.attachTerminalId !== undefined
-          ? "attach"
-          : props.taskId !== undefined
-            ? "task-spawn"
-            : "standalone",
+        props.taskId !== undefined ? "task-spawn" : "standalone",
       );
       // E2E 直读 xterm buffer(WebglAddon 渲染到 canvas,DOM 不带文本)
       (hostEl as unknown as { __vibeterm_term__: XTerm | null }).__vibeterm_term__ = term;
@@ -342,15 +455,15 @@ export function Terminal(props: TerminalProps) {
   };
 
   // 三态 PTY 清理 — onCleanup 与异步 spawn 续体(竞态发现已卸载时)共用:
-  //   1. attach 模式 → 有 sinkId,只 detach 不杀 PTY
-  //   2. slot 幂等模式(taskId+slotId)→ 不动 PTY(另一视图可能还在用)
+  //   1. slot attach 命中(sinkId 非 null)→ 只 detach 本视图的订阅,不杀 PTY(主视图还在用)
+  //   2. slot 全新 spawn → 不动 PTY(任务切走只是 display:none;关 pane 走 closeActiveSlot)
   //   3. 独立 spawn → 杀 PTY
   const teardownPty = () => {
     if (terminalId === null) return;
-    if (isAttachMode && sinkId !== null) {
+    if (sinkId !== null) {
       detachTerminal(terminalId, sinkId).catch(console.error);
     } else if (props.slotId !== undefined && props.taskId !== undefined) {
-      // slot 幂等模式:不调任何 close/detach,PTY 保留
+      // slot 全新 spawn:不调任何 close/detach,PTY 保留
     } else {
       closePty(terminalId).catch(console.error);
     }
@@ -505,39 +618,45 @@ export function Terminal(props: TerminalProps) {
       };
 
       try {
-        // 三种模式
-        //   1. attachTerminalId 给定 → attach 现有 PTY(浮窗 reparent)
-        //   2. taskId 给定 → spawn 新 terminal 关联到该 task
-        //   3. 都不给 → start_pty(独立)
-        if (props.attachTerminalId !== undefined) {
-          isAttachMode = true;
-          terminalId = props.attachTerminalId;
-          sinkId = await attachTerminal(terminalId, channel);
-        } else {
-          // 捕获当前实例:new Channel() 等调用会重置 TS 对闭包 let 的 narrowing
-          const xt = term;
-          // G5:重启后回放该 task/slot 的旧 scrollback(消费一次)。在新 PTY 输出前写,
-          // 旧历史在上、新 shell prompt 在下。旧 shell 进程已不在,纯展示。
-          if (props.taskId !== undefined && props.slotId !== undefined) {
-            const restored = takeScrollback(`${props.taskId}:${props.slotId}`);
-            if (restored) {
-              xt.write(restored);
-              xt.write("\r\n\x1b[2m──── session restored ────\x1b[0m\r\n");
-            }
-          }
-          const opts = {
-            rows: xt.rows,
-            cols: xt.cols,
-            cwd: null,
-            command: null,
-            args: null,
-            env: null,
-          };
-          const { terminal_id } =
-            props.taskId !== undefined
-              ? await spawnTerminalInTask(props.taskId, props.slotId ?? null, opts, channel)
-              : await startPty(opts, channel);
-          terminalId = terminal_id;
+        // 两种模式
+        //   1. taskId 给定 → spawn 新 terminal 关联到该 task(slot 幂等:后端已绑则 attach)
+        //   2. 不给 → start_pty(独立)
+        // 捕获当前实例:new Channel() 等调用会重置 TS 对闭包 let 的 narrowing
+        const xt = term;
+        // G5:重启后回放该 task/slot 的旧 scrollback。peek 不消费——spawn 成功且组件
+        // 仍存活后才 commit,避免「spawn await 期间被卸载 → 内容已消费却没人看到」永久丢失。
+        // 在新 PTY 输出前写:旧历史在上、新 shell prompt 在下。
+        const snapKey =
+          props.taskId !== undefined && props.slotId !== undefined
+            ? `${props.taskId}:${props.slotId}`
+            : null;
+        const restored = snapKey ? peekScrollback(snapKey) : null;
+        if (restored) {
+          xt.write(restored);
+          xt.write(RESTORE_SEPARATOR);
+        }
+        const opts = {
+          rows: xt.rows,
+          cols: xt.cols,
+          cwd: null,
+          command: null,
+          args: null,
+          env: null,
+        };
+        const r =
+          props.taskId !== undefined
+            ? await spawnTerminalInTask(props.taskId, props.slotId ?? null, opts, channel)
+            : await startPty(opts, channel);
+        terminalId = r.terminal_id;
+        sinkId = r.sink_id ?? null;
+        if (sinkId !== null) {
+          // slot 幂等命中 = PTY 已存活(webview reload / 浮窗同 slot 挂载),后端 attach 会
+          // 经 channel 回放整段 scrollback ring。清掉刚写的本地磁盘快照(内容重复且更旧),
+          // 否则同一段历史出现两遍、分隔线错插中间。ring 回放 chunk 在本续体之后到达,不受影响。
+          xt.reset();
+        } else if (restored && snapKey && !disposed) {
+          // 真·全新 spawn 且本组件存活:本地快照已成功展示,此时才消费
+          commitScrollback(snapKey);
         }
         // spawn/attach await 期间组件可能已卸载:onCleanup 此前以 terminalId===null
         // 退出,清理不到刚分配的 PTY/sink — 这里补做 teardown 并停止注册监听器。
@@ -558,11 +677,10 @@ export function Terminal(props: TerminalProps) {
           term?.focus();
         });
 
-        // G5:注册 scrollback 序列化(仅 task 终端 + 非 attach 模式;浮窗共享 PTY 不重复存)。
-        if (!isAttachMode && props.taskId !== undefined && props.slotId !== undefined) {
-          const snapKey = `${props.taskId}:${props.slotId}`;
+        // G5:注册 scrollback 序列化(仅 task 终端 + 主 spawn 视图;attach 副本不重复存)。
+        if (sinkId === null && props.taskId !== undefined && props.slotId !== undefined) {
           unregisterSnapshot = registerScrollbackSnapshot(
-            snapKey,
+            `${props.taskId}:${props.slotId}`,
             () => serialize?.serialize({ scrollback: 1000 }) ?? "",
           );
         }
@@ -595,6 +713,12 @@ export function Terminal(props: TerminalProps) {
             const r = hostEl.getBoundingClientRect();
             const { x, y } = event.payload.position;
             if (x < r.left || x > r.right || y < r.top || y > r.bottom) return;
+            // 命中点最顶层的 terminal host 才接收:canvas 模式卡片可重叠,纯几何过滤会让
+            // 上下两个终端同时收到 drop,被遮住的终端被误注入路径文本。
+            const topHost = document
+              .elementsFromPoint(x, y)
+              .find((el) => el.hasAttribute("data-terminal-id"));
+            if (topHost && topHost !== hostEl) return;
             const text = shellQuotePaths(paths);
             writePty(terminalId, ENCODER.encode(text)).catch(console.error);
           });
@@ -615,6 +739,9 @@ export function Terminal(props: TerminalProps) {
         // 拦截 WKWebView 默认右键(Cut/Copy/Paste/Spelling/AutoFill…),
         // 改用自定义 i18n ContextMenu(仅终端区生效)
         hostEl.addEventListener("contextmenu", onHostContextMenu);
+        // Cmd+C / 自动复制与右键菜单 Copy 走同一 grapheme 守门:xterm 选区可能切在宽字符
+        // /代理对/ZWJ 中间,normalizeGraphemes 防撕裂(CJK 一等公民红线)。
+        hostEl.addEventListener("copy", onHostCopy, true);
       } catch (e) {
         props.onError?.(e);
         console.error("[terminal] spawn failed", e);
@@ -639,7 +766,17 @@ export function Terminal(props: TerminalProps) {
     const io = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
-          if (e.isIntersecting) requestAnimationFrame(tryFit);
+          if (e.isIntersecting) {
+            // 变可见:fit + 反污染(尺寸不一致则清屏重绘)+ 重同步滚动区,详见 onBecameVisible。
+            requestAnimationFrame(() => {
+              void onBecameVisible();
+            });
+            // 首帧 hostEl 可能 0 高度致 syncScrollArea 读到错尺寸,稍后再校正一次兜底。
+            setTimeout(() => {
+              if (disposed) return;
+              requestAnimationFrame(resyncScroll);
+            }, 120);
+          }
         }
       },
       { threshold: 0 },
@@ -690,6 +827,13 @@ export function Terminal(props: TerminalProps) {
     term.options.cursorBlink = blink;
   });
 
+  // 纹理图集自愈:订阅 module 级 repairTick(触发源见文件顶部注释)。
+  // 首次运行(mount 后图集尚空)与 DOM 渲染器 fallback 时均为无害 no-op。
+  createEffect(() => {
+    repairTick();
+    term?.clearTextureAtlas();
+  });
+
   onCleanup(() => {
     // 卸载守卫:让仍在排队/await 中的异步 spawn 续体知道组件已销毁,
     // 续体会自行 teardownPty 并跳过 window 监听器注册。
@@ -702,6 +846,7 @@ export function Terminal(props: TerminalProps) {
     window.removeEventListener("keydown", onWinKeydown, true);
     window.removeEventListener("paste", onWinPaste, true);
     hostEl?.removeEventListener("contextmenu", onHostContextMenu);
+    hostEl?.removeEventListener("copy", onHostCopy, true);
     term?.textarea?.removeEventListener("compositionstart", onCompositionStart);
     term?.textarea?.removeEventListener("compositionend", onCompositionEnd);
     resizeObserver?.disconnect();

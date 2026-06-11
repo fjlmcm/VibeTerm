@@ -17,7 +17,7 @@ use tokio::sync::mpsc;
 use crate::UsageCache;
 
 /// 解析的事件 — None 表示文件不存在或读取失败 (前端应显示 "—").
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, specta::Type)]
 pub struct UsageCacheUpdate {
     pub cache: Option<UsageCache>,
     pub mtime_ms: i64,

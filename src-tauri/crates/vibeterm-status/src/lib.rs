@@ -11,7 +11,6 @@
 //!         输出:StatusChange { new_status }(由上层 emit IPC event)。
 //! 不依赖 tauri / channel,纯算法。
 
-use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use vibeterm_ipc::TaskStatus;
@@ -29,10 +28,12 @@ const DEFAULT_STALL_THRESHOLD_MS: u64 = 5 * 60 * 1000;
 pub struct StatusDetector {
     current: TaskStatus,
     last_chunk_at: Instant,
+    /// 最近一次标题 braille spinner 帧时间(= agent 生成期信号;归属强判据)
+    last_spinner_at: Option<Instant>,
     ring: Vec<u8>,
     osc_recent_count: u32,
     osc_window_start: Instant,
-    agent_rules: Option<&'static AgentRules>,
+    agent_rules: Option<&'static agent::AgentDef>,
     /// 跨 chunk OSC 序列缓存(上次 chunk 末尾的不完整 `\x1b]<id>;<kind>;<payload>` 片段)
     /// 上限 OSC_CARRY_MAX 字节,足够承载 cwd / commandline 等长 payload
     osc_carry: Vec<u8>,
@@ -72,162 +73,15 @@ pub struct StatusDetector {
 /// 大多数 payload < 256B;> 4KB 视为异常并丢弃。
 const OSC_CARRY_MAX: usize = 4 * 1024;
 
-/// 一组 stdout 模式(strip ANSI 后匹配)
-struct AgentRules {
-    waiting_input_patterns: &'static [&'static str],
-    /// 编译后的 regex(OnceLock 保证只 build 一次)
-    compiled: OnceLock<Vec<regex::Regex>>,
-}
-
-impl AgentRules {
-    fn compiled_patterns(&self) -> &[regex::Regex] {
-        self.compiled.get_or_init(|| {
-            self.waiting_input_patterns
-                .iter()
-                .filter_map(|p| regex::Regex::new(p).ok())
-                .collect()
-        })
-    }
-}
-
-// claude 真实授权 UI(2.x, 实测): 带框编号菜单
-//   "Do you want to proceed?  ❯ 1. Yes / 2. Yes, and don't ask again / 3. No, and tell Claude…"
-// 信任框(实测): "❯ 1. Yes, I trust this folder / 2. No, exit"。
-//
-// 校准(2026-05-30): 这些正则跑在 agent 终端的输出 ring 上, agent 正文很长, 必须用
-// **菜单独有措辞**避免误命中(否则 claude 叙述里写 "do you want to proceed"/"(y/n)"
-// 就会闪假黄灯)。故去掉泛词 "(y/n)"/"[y/n]"/"do you want to proceed":
-//   - claude 2.x 菜单根本不用 (y/n);
-//   - "No, and tell Claude" 是授权菜单选项 3, 必与每个授权框同现 → 留它即可全覆盖,
-//     不需要再留会误命中的 "do you want to proceed"。
-static CLAUDE_RULES: AgentRules = AgentRules {
-    waiting_input_patterns: &[
-        r"(?i)no, and tell claude",           // 授权菜单选项 3, 菜单独有, 最稳
-        r"(?i)don't ask again",               // 授权菜单选项 2
-        r"(?i)trust (the files|this folder)", // 首次进目录"信任此文件夹"(实测)
-        r"(?i)continue with this plan\?",     // plan 模式确认
-    ],
-    compiled: OnceLock::new(),
-};
-
-// codex 命令审批 UI 未能实测(本机 codex 配置为自动放行命令, 抓不到审批框)。
-// 保守:只认低误报的字面 y/n 形态; 去掉 "approve this"/"apply.*patch"(会在 codex
-// 正文里误命中)。codex 菜单式审批的独有措辞待拿到真实样本再校准。
-static CODEX_RULES: AgentRules = AgentRules {
-    waiting_input_patterns: &[r"\(y/n\)", r"\[y/n\]"],
-    compiled: OnceLock::new(),
-};
-
-static AIDER_RULES: AgentRules = AgentRules {
-    waiting_input_patterns: &[
-        r"(?i)yes/no",
-        r"\(y\)",
-        r"(?i)add .* to the chat\?",
-        r"(?i)edit the files",
-    ],
-    compiled: OnceLock::new(),
-};
-
-// Gemini CLI — Google 官方, 多用 ? 结尾的英文确认 + y/n
-static GEMINI_RULES: AgentRules = AgentRules {
-    waiting_input_patterns: &[
-        r"\(y/n\)",
-        r"\[y/n\]",
-        r"(?i)proceed\?",
-        r"(?i)apply changes\?",
-    ],
-    compiled: OnceLock::new(),
-};
-
-// Cursor CLI / cursor-agent — Cursor 桌面端的 agent 模式
-static CURSOR_RULES: AgentRules = AgentRules {
-    waiting_input_patterns: &[
-        r"\(y/n\)",
-        r"\[y/n\]",
-        r"(?i)accept\?",
-        r"(?i)keep changes\?",
-    ],
-    compiled: OnceLock::new(),
-};
-
-// Cline — VSCode 插件 + 独立 CLI 形态
-static CLINE_RULES: AgentRules = AgentRules {
-    waiting_input_patterns: &[
-        r"\(y/n\)",
-        r"\[y/n\]",
-        r"(?i)approve\?",
-        r"(?i)proceed with",
-    ],
-    compiled: OnceLock::new(),
-};
-
-// OpenCode — 开源 Claude Code-like
-static OPENCODE_RULES: AgentRules = AgentRules {
-    waiting_input_patterns: &[r"\(y/n\)", r"\[y/n\]", r"(?i)yes/no", r"(?i)confirm"],
-    compiled: OnceLock::new(),
-};
-
-// GitHub Copilot CLI / ghcs
-static COPILOT_RULES: AgentRules = AgentRules {
-    waiting_input_patterns: &[
-        r"\(y/n\)",
-        r"\[y/n\]",
-        r"(?i)select an option",
-        r"(?i)allow this command",
-    ],
-    compiled: OnceLock::new(),
-};
-
-// Kimi / Moonshot CLI
-static KIMI_RULES: AgentRules = AgentRules {
-    waiting_input_patterns: &[r"\(y/n\)", r"\[y/n\]", r"是否继续", r"是否同意"],
-    compiled: OnceLock::new(),
-};
-
-// Droid (Factory.ai)
-static DROID_RULES: AgentRules = AgentRules {
-    waiting_input_patterns: &[
-        r"\(y/n\)",
-        r"\[y/n\]",
-        r"(?i)approve plan",
-        r"(?i)continue\?",
-    ],
-    compiled: OnceLock::new(),
-};
-
-// Amp (Sourcegraph)
-static AMP_RULES: AgentRules = AgentRules {
-    waiting_input_patterns: &[r"\(y/n\)", r"\[y/n\]", r"(?i)approve", r"(?i)proceed"],
-    compiled: OnceLock::new(),
-};
-
-// Pi
-static PI_RULES: AgentRules = AgentRules {
-    waiting_input_patterns: &[r"\(y/n\)", r"\[y/n\]"],
-    compiled: OnceLock::new(),
-};
-
-fn pick_rules(command: &str) -> Option<&'static AgentRules> {
+fn pick_rules(command: &str) -> Option<&'static agent::AgentDef> {
     let basename = command
         .rsplit(['/', '\\'])
         .next()
         .unwrap_or(command)
         .to_lowercase();
-    match basename.as_str() {
-        "claude" | "claude-code" => Some(&CLAUDE_RULES),
-        "codex" => Some(&CODEX_RULES),
-        "aider" => Some(&AIDER_RULES),
-        "gemini" => Some(&GEMINI_RULES),
-        "cursor" | "cursor-agent" => Some(&CURSOR_RULES),
-        "cline" => Some(&CLINE_RULES),
-        "opencode" | "open-code" => Some(&OPENCODE_RULES),
-        "copilot" | "github-copilot" | "ghcs" => Some(&COPILOT_RULES),
-        "kimi" => Some(&KIMI_RULES),
-        "droid" => Some(&DROID_RULES),
-        "amp" | "amp-local" => Some(&AMP_RULES),
-        "pi" => Some(&PI_RULES),
-        _ => None,
-    }
+    agent::AGENT_DEFS
+        .iter()
+        .find(|d| d.aliases.contains(&basename.as_str()))
 }
 
 impl StatusDetector {
@@ -235,6 +89,7 @@ impl StatusDetector {
         Self {
             current: TaskStatus::Idle,
             last_chunk_at: Instant::now(),
+            last_spinner_at: None,
             ring: Vec::with_capacity(RING_SIZE),
             osc_recent_count: 0,
             osc_window_start: Instant::now(),
@@ -255,8 +110,21 @@ impl StatusDetector {
 
     /// 上层在 write_pty (用户键入 → PTY) 时调用. 标记用户当前正在等响应.
     /// 触发 Stalled 的必要条件之一: 此时间 > last_chunk_at.
-    pub fn mark_user_input(&mut self) {
+    ///
+    /// 同时解除 WaitingInput:用户已应答(键入)→ 转 Running 并清 ring(防旧授权文案再命中)。
+    /// 这是非 spinner/非 OSC agent(aider/gemini 等)离开 WaitingInput 的**唯一**路径——
+    /// feed 的守卫让普通输出不能拉回 Running,否则一次 (y/n) 之后整个会话恒黄灯、
+    /// Stalled 检测被旁路。返回 Some(Running) 表示状态翻转(上层据此回写 registry)。
+    pub fn mark_user_input(&mut self) -> Option<TaskStatus> {
         self.last_user_input_at = Some(Instant::now());
+        if self.current == TaskStatus::WaitingInput {
+            self.current = TaskStatus::Running;
+            self.idle_finalized_by_osc = false;
+            self.has_been_running = true;
+            self.ring.clear();
+            return Some(TaskStatus::Running);
+        }
+        None
     }
 
     /// 打开 Stalled 检测. 通常由 main.rs 的 agent 嗅探线程
@@ -329,6 +197,16 @@ impl StatusDetector {
     /// 会话被 `read_for_cwd` 选成 mtime 最新而已 —— 本终端没产出 = 不是本终端答的,不应据此发完成通知。
     pub fn since_last_chunk_ms(&self) -> u128 {
         self.last_chunk_at.elapsed().as_millis()
+    }
+
+    /// 距上次看到标题 braille spinner 帧(= agent 真在生成)的毫秒数;从未见过返回 None。
+    ///
+    /// 比 `since_last_chunk_ms` 强的归属判据:PTY 输出包含键入回显和 codex 空闲状态栏重绘,
+    /// "近期有输出"不等于"agent 在生成"。完成归属的换绑/首绑用本判据,堵住
+    /// 「同 cwd 外部 agent 答完 → 误归属到本终端(它只是有回显/重绘)」的洞。
+    /// 代价:标题不透传的环境(tmux 默认)拿不到 spinner → 换绑/首绑保守跳过。
+    pub fn since_last_spinner_ms(&self) -> Option<u128> {
+        self.last_spinner_at.map(|t| t.elapsed().as_millis())
     }
 
     /// 喂入一个 chunk,返回新状态(若变化)。
@@ -426,7 +304,7 @@ impl StatusDetector {
         }
     }
 
-    fn match_waiting(&self, rules: &AgentRules) -> bool {
+    fn match_waiting(&self, rules: &agent::AgentDef) -> bool {
         let text = String::from_utf8_lossy(&self.ring);
         let regs = rules.compiled_patterns();
         for re in regs {
@@ -527,10 +405,23 @@ impl StatusDetector {
                 i += 1;
                 continue;
             }
-            // 限速:超过窗口阈值 → 停止本次解析(已识别的不撤销)
+            // 限速:超额的 133/633 丢弃(找到终结符后跳过,不计数、不应用),但**继续扫描
+            // 后续标题 OSC**——若一刀切 break,同 chunk 里排在后面的 spinner→静态标题帧会
+            // 一并丢掉,title_spinner 残留 true,下次任意静态标题变更会伪造 turn-done。
             if self.osc_recent_count >= OSC_RATE_LIMIT {
                 rate_limited = true;
-                break;
+                match find_osc_terminator(&buf[i + 6..]) {
+                    None => {
+                        // 超额且不完整:彻底丢弃,不入 carry(防逃逸限速到下一窗口)
+                        last_consumed = buf.len();
+                        break;
+                    }
+                    Some((_, rel_after)) => {
+                        last_consumed = i + 6 + rel_after;
+                        i = last_consumed;
+                        continue;
+                    }
+                }
             }
 
             let kind_idx = i + 6;
@@ -654,6 +545,7 @@ impl StatusDetector {
             self.idle_finalized_by_osc = false;
             self.has_been_running = true;
             self.title_spinner = true;
+            self.last_spinner_at = Some(Instant::now());
             self.ring.clear();
         } else if self.title_spinner {
             self.current = TaskStatus::Idle;
@@ -1125,8 +1017,8 @@ mod tests {
     #[test]
     fn osc_633_p_cwd_captured() {
         let mut d = StatusDetector::new("zsh");
-        let _ = d.feed(b"\x1b]633;P;Cwd=/Users/mt/dev2/VibeTerm\x1b\\");
-        assert_eq!(d.current_cwd(), Some("/Users/mt/dev2/VibeTerm"));
+        let _ = d.feed(b"\x1b]633;P;Cwd=/Users/demo/dev/VibeTerm\x1b\\");
+        assert_eq!(d.current_cwd(), Some("/Users/demo/dev/VibeTerm"));
     }
 
     /// OSC 633;E 捕获命令行
@@ -1150,10 +1042,10 @@ mod tests {
     #[test]
     fn osc_633_cwd_split_across_chunks() {
         let mut d = StatusDetector::new("zsh");
-        let _ = d.feed(b"\x1b]633;P;Cwd=/Users/mt/");
+        let _ = d.feed(b"\x1b]633;P;Cwd=/Users/demo/");
         assert_eq!(d.current_cwd(), None, "未见 ST,不应过早 commit");
         let _ = d.feed(b"workspace\x1b\\");
-        assert_eq!(d.current_cwd(), Some("/Users/mt/workspace"));
+        assert_eq!(d.current_cwd(), Some("/Users/demo/workspace"));
     }
 
     /// 正常输出后跟 OSC,exit_code 仅被 D kind 触发
@@ -1277,5 +1169,64 @@ mod tests {
         let _ = d.feed(b"\x1b]133;C\x1b\\");
         assert_eq!(d.current(), TaskStatus::Running);
         assert_eq!(d.osc_recent_count, 1);
+    }
+}
+
+#[cfg(test)]
+mod logic_fix_tests {
+    use super::*;
+
+    /// 用户应答(键入)解除 WaitingInput → Running。
+    /// 非 spinner/非 OSC 的 agent(aider 等)没有其它路径离开黄灯——
+    /// 没有这条,一次 (y/n) 之后整个会话恒黄、Stalled 检测被旁路。
+    #[test]
+    fn user_input_releases_waiting_input() {
+        let mut d = StatusDetector::new("aider");
+        let _ = d.feed(b"Apply edits? (y)\n");
+        assert_eq!(d.current(), TaskStatus::WaitingInput);
+        // 普通输出不能离开 WaitingInput(feed 守卫,防 agent 正文回写冲掉黄灯)
+        let _ = d.feed(b"some more output\n");
+        assert_eq!(d.current(), TaskStatus::WaitingInput);
+        // 用户键入 → 解除
+        assert_eq!(d.mark_user_input(), Some(TaskStatus::Running));
+        assert_eq!(d.current(), TaskStatus::Running);
+        // ring 已清:旧授权文案不会在下一个 chunk 再次命中
+        let _ = d.feed(b"continuing...\n");
+        assert_eq!(d.current(), TaskStatus::Running);
+        // 非 WaitingInput 时 mark_user_input 不翻状态
+        assert_eq!(d.mark_user_input(), None);
+    }
+
+    /// OSC 限速超额时,同 chunk 里排在后面的标题 OSC 不能陪葬——
+    /// 否则 spinner→静态帧丢失,title_spinner 残留,下次标题变更伪造 turn-done。
+    #[test]
+    fn rate_limited_chunk_still_applies_trailing_title() {
+        let mut d = StatusDetector::new("zsh");
+        // 1) 先用 braille 标题置 spinner 态
+        let _ = d.feed(b"\x1b]0;\xe2\xa0\x8b working\x07");
+        assert_eq!(d.current(), TaskStatus::Running);
+        // 2) 一个 chunk 内塞 11 条 133;C(超 10/s 限速),**末尾**跟一条静态标题
+        let mut chunk = Vec::new();
+        for _ in 0..11 {
+            chunk.extend_from_slice(b"\x1b]133;C\x07");
+        }
+        chunk.extend_from_slice(b"\x1b]0;done\x07");
+        let _ = d.feed(&chunk);
+        // 静态标题必须被看到:spinner→静态 = turn done → Idle(by_osc)
+        assert_eq!(d.current(), TaskStatus::Idle);
+        assert!(d.idle_by_osc(), "spinner 停帧不能被限速 break 丢弃");
+    }
+
+    /// since_last_spinner_ms:见过 braille 帧后给出毫秒数;从未见过为 None。
+    #[test]
+    fn spinner_recency_tracking() {
+        let mut d = StatusDetector::new("zsh");
+        assert!(d.since_last_spinner_ms().is_none());
+        let _ = d.feed(b"\x1b]0;\xe2\xa0\x99 thinking\x07");
+        let ms = d.since_last_spinner_ms().expect("spinner seen");
+        assert!(ms < 1000);
+        // 静态标题不更新 spinner 时间
+        let _ = d.feed(b"\x1b]0;idle\x07");
+        assert!(d.since_last_spinner_ms().is_some());
     }
 }

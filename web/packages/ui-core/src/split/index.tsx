@@ -10,13 +10,12 @@
 // 借鉴 tabby `splitTab.component.ts` 的 n-ary 递归;normalize / removeLeaf /
 // splitLeaf 树操作与之前版本兼容,API 不变。
 
-import { For, Show, type Component, type JSX } from "solid-js";
+import { For, Show, createSignal, type Component, type JSX } from "solid-js";
 
-export type Orientation = "h" | "v"; // h: 水平拆 = 左右;v: 垂直拆 = 上下
-
-export type SplitNode =
-  | { kind: "leaf"; slot_id: number }
-  | { kind: "split"; orientation: Orientation; children: SplitNode[]; ratios?: number[] };
+// SplitNode/Orientation 直接复用 ipc-types(Rust 生成的单一来源)——
+// 此前前端平行定义一份,与后端 schema 漂移无人发现(specta 接入后统一)。
+import type { Orientation, SplitNode } from "@vibeterm/ipc-types";
+export type { Orientation, SplitNode };
 
 let nextSlotId = 0;
 export function newSlotId(): number {
@@ -236,7 +235,18 @@ export interface SplitViewProps {
 
 export const SplitView: Component<SplitViewProps> = (props) => {
   let containerEl!: HTMLDivElement;
-  const layout = () => layoutTree(props.node);
+  // 拖动期间的本地 ratios 覆盖:onMove 只更新本地布局,mouseup 才经 onRatiosChange 落盘——
+  // 否则拖 1 秒 ≈ 几十次 IPC + tasks.json 原子写 + 双窗全量 tasks_changed 重渲,
+  // 且手感被整条 round-trip 拖慢。
+  const [dragOverride, setDragOverride] = createSignal<{
+    path: number[];
+    ratios: number[];
+  } | null>(null);
+  const effectiveNode = () => {
+    const d = dragOverride();
+    return d ? setRatiosAt(props.node, d.path, d.ratios) : props.node;
+  };
+  const layout = () => layoutTree(effectiveNode());
   const slotIds = () => collectSlots(props.node);
 
   const startDrag = (s: SplitterInfo, e: MouseEvent) => {
@@ -258,6 +268,7 @@ export const SplitView: Component<SplitViewProps> = (props) => {
     const i = s.childIdx;
     const sumLR = normalized[i] + normalized[i + 1];
 
+    let lastRatios: number[] | null = null;
     const onMove = (mv: MouseEvent) => {
       const cur = s.orientation === "h" ? mv.clientX : mv.clientY;
       const deltaFrac = (cur - startPos) / totalPx;
@@ -268,11 +279,15 @@ export const SplitView: Component<SplitViewProps> = (props) => {
       const updated = [...normalized];
       updated[i] = newLeft;
       updated[i + 1] = newRight;
-      props.onRatiosChange?.(s.nodePath, updated);
+      lastRatios = updated;
+      setDragOverride({ path: s.nodePath, ratios: updated });
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      // 仅 mouseup 落盘一次;清掉本地覆盖,改由父组件写回的树驱动布局
+      if (lastRatios) props.onRatiosChange?.(s.nodePath, lastRatios);
+      setDragOverride(null);
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);

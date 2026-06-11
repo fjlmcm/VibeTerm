@@ -347,8 +347,8 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 
   // 渲染当前 profile 的 items, 过滤掉返回 null 的 (条件隐藏靠 widget 自己).
   const renderedItems = createMemo(() => {
-    return activeProfile()
-      .items.map((raw) => {
+    return (activeProfile().items ?? [])
+      .map((raw) => {
         const item = statusLineItemDetail(raw);
         if (item.hide) return null;
         const renderer = WIDGETS[item.type];

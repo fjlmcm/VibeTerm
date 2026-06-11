@@ -9,3 +9,6 @@ interface ImportMeta {
     options: { readonly eager: true; readonly import: "default" },
   ) => Record<string, T>;
 }
+
+// 副作用 css import(terminal/index.tsx 引 @xterm/xterm/css/xterm.css)的最小类型。
+declare module "*.css";

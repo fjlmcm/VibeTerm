@@ -159,7 +159,7 @@ export function collectCodexData(ctx: RenderContext): AgentPanelData {
           ? formatCodexWindow(longFromLimits.window_minutes)
           : t("statusbar.popover.7d_window"),
       pct: longFromLimits?.used_percent ?? null,
-      resetLabel: longFromLimits ? formatResetUnix(longFromLimits.resets_at) : null,
+      resetLabel: longFromLimits ? formatResetUnix(longFromLimits.resets_at ?? null) : null,
       resetAt:
         longFromLimits && longFromLimits.resets_at != null
           ? formatLocalDateHM(longFromLimits.resets_at * 1000)

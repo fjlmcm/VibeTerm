@@ -17,7 +17,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct EnvFile {
     #[serde(default = "EnvFile::default_version")]
     pub schema_version: u32,
@@ -30,7 +30,7 @@ pub struct EnvFile {
     pub clipboard_images: Option<ClipboardImagesSection>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct ProxySection {
     #[serde(default)]
     pub enabled: bool,
@@ -49,7 +49,7 @@ pub struct ProxySection {
 /// - `max_mb`:总字节上限(MB),留空 → 200
 ///
 /// 全字段都不填等价于不写本 section,行为完全等同上一版本。
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct ClipboardImagesSection {
     #[serde(default)]
     pub dir: Option<String>,

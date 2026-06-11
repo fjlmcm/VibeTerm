@@ -25,6 +25,9 @@ publish = false
 license = "MIT"
 
 [workspace.dependencies]
+# TS 镜像自动生成(ipc-types 由 Rust 类型导出;镜像同步测试兜底)
+specta = { version = "=2.0.0-rc.22", features = ["derive", "serde_json"] }
+specta-typescript = "=0.0.9"
 # Workspace 内部 crate(其它 crate 通过 workspace dep 引用)
 vibeterm-core   = { path = "crates/vibeterm-core" }
 vibeterm-pty    = { path = "crates/vibeterm-pty" }
@@ -71,6 +74,8 @@ tracing            = { workspace = true }
 tracing-subscriber = { workspace = true }
 serde              = { workspace = true }
 serde_json         = { workspace = true }
+specta             = { workspace = true }
+specta-typescript  = { workspace = true }
 
 [dependencies.which]
 version = "6"
@@ -136,25 +141,13 @@ features = ["clock", "std"]
 [dependencies.base64]
 version = "0.22"
 
-# agent hook 本地 HTTP server (claude/codex Stop hook 转发):
-# 选 tiny_http 而非 hyper/axum — 我们只接 2 个 POST 端点 + bearer 校验,
-# 几 KB body, 频率 < 1 Hz, 大型 async runtime 全是过度工程.
-# tiny_http 同步 API + 单线程 + ~3K LOC, 极小依赖树.
-[dependencies.tiny_http]
-version = "0.12"
-
-# 32 字节 token 随机生成. rand 间接被 tauri 拉了, 显式声明.
-[dependencies.rand]
-version = "0.8"
-
 # 手动更新检查(软件版本 / 模型价格)—— 仅用户点按钮时 GET 两个固定 HTTPS 端点,
 # 纯读取、无上传、绝不后台轮询(零侵入红线). 选 ureq(同步 + rustls, 依赖树极小)
 # 而非 reqwest(async + 重). 默认 features 已含 rustls tls.
 [dependencies.ureq]
 version = "2"
 
-# hook 安装:atomic write 到 ~/.claude/settings.json. tempfile 已被
-# vibeterm-config 拉入, 主 crate 显式声明便于 hook_install.rs 直接用.
+# 通用原子写(events.jsonl / pricing.json / scrollback.json 的 atomic_write).
 [dependencies.tempfile]
 version = "3"
 
@@ -163,6 +156,10 @@ version = "3"
 # cocoa 0.26 全面 deprecate 但 API 仍工作;模块内用 #[allow(deprecated)] 局部豁免
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"
+
+[dev-dependencies]
+# ts_export 生成器的可选字段后处理
+regex = "1"
 
 [profile.release]
 panic = "abort"

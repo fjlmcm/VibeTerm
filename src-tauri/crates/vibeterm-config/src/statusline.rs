@@ -11,14 +11,14 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// 一个状态栏 widget 项 (同 v1).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 #[serde(untagged)]
 pub enum StatusLineItem {
     Bare(String),
     Detailed(StatusLineItemDetail),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 pub struct StatusLineItemDetail {
     #[serde(rename = "type")]
     pub kind: String,
@@ -46,7 +46,7 @@ impl StatusLineItem {
 /// 一个 profile = 一个终端模式的状态栏.
 /// key 在 file 层是 HashMap 的 key (例如 `default` / `claude` / `codex`),
 /// display_name 是 UI 显示用的中文标签 (可选).
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, specta::Type)]
 pub struct ProfileConfig {
     /// UI 显示名 (例如 "终端" / "Claude" / "Codex"). 缺省用 key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -56,7 +56,7 @@ pub struct ProfileConfig {
     pub items: Vec<StatusLineItem>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct StatusLineFile {
     #[serde(default = "default_version")]
     pub schema_version: u32,

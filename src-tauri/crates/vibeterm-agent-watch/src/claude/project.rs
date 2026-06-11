@@ -37,12 +37,12 @@ pub fn projects_root() -> Option<PathBuf> {
 
 /// 把 cwd 编码为 project dir 名,须与 Claude Code 完全一致:**每个非 ASCII 字母数字字符
 /// (`/` `.` `_`、空格、CJK 等)都逐字符替换为 `-`**,大小写保留,连续分隔符不合并。
-/// 例:`/Users/mt/dev/VibeTerm` → `-Users-mt-dev-VibeTerm`;`/x/jj_upload` → `-x-jj-upload`;
+/// 例:`/Users/demo/dev/VibeTerm` → `-Users-demo-dev-VibeTerm`;`/x/jj_upload` → `-x-jj-upload`;
 /// `/x/.claude` → `-x--claude`;`/Users/u/短剧多agent` → `-Users-u----agent`(`短剧多`→`---`)。
 ///
 /// 旧实现只 `replace('/', "-")`,在含 `.`/`_`/空格/CJK 的路径上算出错误目录名 →
 /// [`read_for_cwd`] 落空(None)→ 完成检测拿不到 → 圆点恒 Running、完成通知不触发。
-/// 纯 ASCII 字母数字路径两种规则碰巧一致,故 `/Users/mt/dev/VibeTerm` 开发机一直未暴露。
+/// 纯 ASCII 字母数字路径两种规则碰巧一致,故 `/Users/demo/dev/VibeTerm` 开发机一直未暴露。
 pub fn cwd_to_project_dir(cwd: &str) -> String {
     cwd.chars()
         .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
@@ -383,7 +383,7 @@ pub fn context_window_for(model: &str, _cwd: Option<&str>, observed_ctx: u64) ->
     200_000
 }
 
-/// 解析 project dir 名 (`-Users-mt-dev2-VibeTerm`) → 原 cwd (`/Users/mt/dev2/VibeTerm`).
+/// 解析 project dir 名 (`-Users-demo-dev-VibeTerm`) → 原 cwd (`/Users/demo/dev/VibeTerm`).
 /// 简单恢复 (`-` → `/`); 注意路径里如果原本含 `-` 字符会被破坏, 接受不完美.
 pub fn project_dir_to_cwd(dir_name: &str) -> String {
     dir_name.replace('-', "/")
@@ -545,7 +545,7 @@ fn scan_file_tokens(fp: &Path, cutoff_ms: i64) -> u64 {
 }
 
 /// 按 cwd 查 Claude session — 用于状态栏的"当前终端"语义.
-/// cwd 编码后即 project dir 名 (`/Users/mt/dev2/VibeTerm` → `-Users-mt-dev2-VibeTerm`).
+/// cwd 编码后即 project dir 名 (`/Users/demo/dev/VibeTerm` → `-Users-demo-dev-VibeTerm`).
 /// 取该 dir 下 mtime 最新的 jsonl, 解析最后 assistant 行.
 ///
 /// **安全**: canonicalize 后必须仍在 `projects_root()` 内, 防止前端构造路径

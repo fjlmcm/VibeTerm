@@ -87,7 +87,31 @@ pub fn load() -> Result<TasksFile, TasksError> {
         return Ok(TasksFile::default());
     }
     let bytes = std::fs::read(&p)?;
-    Ok(serde_json::from_slice(&bytes)?)
+    match serde_json::from_slice::<TasksFile>(&bytes) {
+        Ok(f) if f.schema_version <= 1 => Ok(f),
+        // 解析失败(损坏)或来自更新版本的 schema:把原文件改名保留后空启动。
+        // 直接空启动会在下次保存时**覆盖**用户全部任务——损坏极罕见(原子写),
+        // 但代价灾难性,留 .corrupt-<ts> 给人工恢复的余地。
+        other => {
+            let reason = match other {
+                Ok(f) => format!("schema_version {} 高于本版本支持的 1", f.schema_version),
+                Err(e) => format!("解析失败: {e}"),
+            };
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let backup = p.with_extension(format!("json.corrupt-{ts}"));
+            match std::fs::rename(&p, &backup) {
+                Ok(()) => tracing::warn!(
+                    ?backup, %reason,
+                    "tasks.json 不可用,已改名保留并空启动"
+                ),
+                Err(e) => tracing::warn!(%reason, err = %e, "tasks.json 不可用且备份失败,空启动"),
+            }
+            Ok(TasksFile::default())
+        }
+    }
 }
 
 pub fn save(file: &TasksFile) -> Result<(), TasksError> {

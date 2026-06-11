@@ -12,7 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct KeybindingEntry {
     pub command: String,
     pub keys: String,
@@ -20,7 +20,7 @@ pub struct KeybindingEntry {
     pub when: Option<String>, // 上下文限制
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct KeybindingsFile {
     #[serde(default = "default_schema_version")]
     pub schema_version: u32,

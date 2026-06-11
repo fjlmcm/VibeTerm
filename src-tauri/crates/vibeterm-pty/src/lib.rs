@@ -12,7 +12,6 @@
 
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 
@@ -88,6 +87,13 @@ pub struct Terminal {
     /// shell 进程 pid。用于扫前台进程识别 agent。
     /// portable-pty 的 process_id() 在 unix 返回 Some(pid)。
     child_pid: Option<u32>,
+    /// 子进程是否已被读线程 wait() 收尸。Drop 的 kill 链以此守卫:已收尸的 pid 可能
+    /// 已被系统复用,再补刀会误杀无关进程。
+    reaped: Arc<std::sync::atomic::AtomicBool>,
+    /// 最近一次实际下发的 (rows, cols)。resize 幂等守卫:尺寸没变就跳过 TIOCSWINSZ,
+    /// 避免普通切任务/返回可见时多余的 SIGWINCH 让 TUI agent 白白重绘。
+    /// 初始 (0,0) 保证 spawn 后首次 resize 必定生效。
+    last_size: Arc<Mutex<(u16, u16)>>,
 }
 
 impl Terminal {
@@ -130,6 +136,8 @@ impl Terminal {
             .map_err(|e| PtyError::Spawn(format!("take_writer: {e}")))?;
         let killer = child.clone_killer();
         let child_pid = child.process_id();
+        let reaped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let reaped_for_read = reaped.clone();
 
         // 多 sink:初始 sink 进 vec
         let sinks: SinkList = Arc::new(Mutex::new(vec![(0, Box::new(initial_sink))]));
@@ -186,6 +194,8 @@ impl Terminal {
                 }
                 let info = match child.wait() {
                     Ok(status) => {
+                        // 已收尸:Drop 的 kill 链据此跳过(pid 此后可能被复用)
+                        reaped_for_read.store(true, std::sync::atomic::Ordering::SeqCst);
                         let raw_code = status.exit_code();
                         // u32→i32:unix 上恒为 0-255,绝不溢出;仅 Windows 异常退出码
                         // (如 0xC0000005)可能 >= 2^31,此时记录警告而非静默丢失。
@@ -231,6 +241,8 @@ impl Terminal {
             next_sink_id: Arc::new(Mutex::new(1)), // 0 = initial
             scrollback,
             child_pid,
+            reaped,
+            last_size: Arc::new(Mutex::new((0, 0))),
         })
     }
 
@@ -247,14 +259,16 @@ impl Terminal {
     ///   - 快照与注册之间不会有 chunk 漏给新 sink(读线程被 sinks 锁阻塞);
     ///   - 回放在注册后、释放锁前完成,保证历史先于后续实时 chunk 到达,顺序不乱。
     pub fn add_sink<S: ChunkSink>(&self, sink: S) -> SinkId {
+        // 锁中毒恢复而非 panic:计数器/Vec 在持锁者 panic 后结构仍完整,
+        // attach 是生产路径(浮窗),不应因别处线程 panic 而连环崩溃。
         let id = {
-            let mut n = self.next_sink_id.lock().expect("next_sink_id poisoned");
+            let mut n = self.next_sink_id.lock().unwrap_or_else(|p| p.into_inner());
             let id = *n;
             *n += 1;
             id
         };
 
-        let mut sinks = self.sinks.lock().expect("sinks poisoned");
+        let mut sinks = self.sinks.lock().unwrap_or_else(|p| p.into_inner());
         // 读历史快照(此时读线程被 sinks 锁挡在外,无法插入新 chunk)
         let history: Vec<u8> = match self.scrollback.lock() {
             Ok(sb) => sb.iter().copied().collect(),
@@ -307,7 +321,26 @@ impl Terminal {
         Ok(())
     }
 
+    /// 调整 PTY 尺寸(下发 TIOCSWINSZ → 子进程收 SIGWINCH)。
+    ///
+    /// 幂等:同尺寸跳过(TIOCSWINSZ 即便同尺寸也会发 SIGWINCH → TUI agent 白白重绘)。
+    /// 此幂等也让上层可以"无条件断言尺寸"——视图变可见时直接下发本视图尺寸,真没变则 no-op
+    /// (修浮窗调尺寸后返回主窗:主窗隐藏期 fit 是 no-op、PTY 停在浮窗尺寸,回主窗须强制断言回来)。
     pub fn resize(&self, rows: u16, cols: u16) -> Result<(), PtyError> {
+        if rows == 0 || cols == 0 {
+            return Ok(()); // 无效尺寸(0×0 容器),忽略
+        }
+        // 持 last_size 锁跨越整个下发(锁序 last_size → master,无他处反序,不死锁):
+        // - TIOCSWINSZ 成功后才记录新值——失败不留脏值,否则同尺寸重试被幂等挡掉,
+        //   且 size() 会报告一个 PTY 从未生效的尺寸,误导前端的污染检测;
+        // - 并发 resize 串行化,保证 last_size 与 PTY 实际尺寸一致。
+        let mut last = self
+            .last_size
+            .lock()
+            .map_err(|_| PtyError::Lock("last_size".into()))?;
+        if *last == (rows, cols) {
+            return Ok(()); // 尺寸未变 → 跳过,避免多余 SIGWINCH
+        }
         let m = self
             .master
             .lock()
@@ -318,18 +351,42 @@ impl Terminal {
             pixel_width: 0,
             pixel_height: 0,
         })
-        .map_err(|e| PtyError::Resize(e.to_string()))
+        .map_err(|e| PtyError::Resize(e.to_string()))?;
+        *last = (rows, cols);
+        Ok(())
+    }
+
+    /// 最近一次实际下发的 (rows, cols)。spawn 后首次 resize 前为 (0, 0)。
+    /// 供上层判断「本视图变可见时 PTY 是否已被别的视图(浮窗)改成了别的尺寸」——
+    /// 若不一致说明隐藏期消费过别的宽度的重绘,buffer 已被污染,需清屏后重绘。
+    pub fn size(&self) -> (u16, u16) {
+        self.last_size.lock().map(|s| *s).unwrap_or((0, 0))
     }
 }
 
 impl Drop for Terminal {
-    /// SIGHUP → 等 500ms → SIGKILL。
-    /// 实际上 portable-pty `ChildKiller::kill` 在 unix 是 SIGKILL,
-    /// 优雅 SIGHUP 暂不实现;后续通过 master.send_signal 或 fork helper 实现。
+    /// 关闭顺序:SIGHUP → 500ms → SIGKILL。
+    /// 子进程已被读线程 wait() 收尸则全程跳过 —— pid 可能已被系统复用,补刀会误杀无关进程
+    /// (portable-pty clone_killer 的 kill 在 unix 只发一次 SIGHUP,无升级;升级在此实现)。
     fn drop(&mut self) {
-        // 简化:直接 kill。
+        if self.reaped.load(std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
         if let Ok(mut k) = self.killer.lock() {
-            let _ = k.kill();
+            let _ = k.kill(); // SIGHUP(unix)
+        }
+        // SIGHUP 免疫进程(nohup/自定义 handler)500ms 后仍未退出 → SIGKILL。
+        // 分离线程执行,不阻塞 Drop 调用方(close_pty IPC 持 registry 锁)。
+        #[cfg(unix)]
+        if let Some(pid) = self.child_pid {
+            let reaped = self.reaped.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                if !reaped.load(std::sync::atomic::Ordering::SeqCst) {
+                    // SAFETY: 纯 FFI 调用,pid 未被收尸(reaped=false)故仍属本进程子进程。
+                    unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+                }
+            });
         }
     }
 }
@@ -596,6 +653,3 @@ const _: fn() = || {
     fn is_send_sync<T: Send + Sync>() {}
     is_send_sync::<Terminal>();
 };
-
-pub const DEFAULT_BUF_SIZE: usize = 8192;
-pub const DRAIN_TIMEOUT: Duration = Duration::from_millis(500);

@@ -520,6 +520,7 @@
   "palette.cmd.open_diff": "Diff anzeigen (aktuelle Aufgabe)",
   "palette.cmd.apply_layout": "Layout: {name}",
   "palette.cmd.resume_agent": "Agent fortsetzen (aktuelle Aufgabe)",
+  "palette.cmd.repair_render": "Textdarstellung reparieren (fehlerhafte Zeichen)",
   "update.app.auto_check": "Beim Start automatisch auf Updates prüfen",
   "update.app.auto_check_hint": "Nur ein Lese-Versionsvergleich mit GitHub; lädt nichts hoch, keine Telemetrie. Ausschalten = komplett offline.",
   "update.app.running_warn": "{count} Terminal(s) laufen. Die Installation startet neu und unterbricht sie (deine Aufgabenliste bleibt erhalten). Fortfahren?",

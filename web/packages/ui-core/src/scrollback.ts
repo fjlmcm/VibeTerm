@@ -23,13 +23,53 @@ export async function loadSavedScrollback(): Promise<void> {
   }
 }
 
-/** 取出并消费 key 对应的 scrollback(只回放一次)。 */
-export function takeScrollback(key: string): string | null {
+/** 回放分隔线:写在恢复的历史与新会话首个 prompt 之间(dim 样式)。 */
+export const RESTORE_SEPARATOR = "\r\n\x1b[2m──── session restored ────\x1b[0m\r\n";
+
+const RESTORE_MARKER_TEXT = "──── session restored ────";
+
+// 仅用于"可见文本"比较:剥 SGR/CSI 与 OSC 序列(不改写回放数据本身)。
+// eslint-disable-next-line no-control-regex
+const ESC_SEQ = /\x1b(?:\[[0-9;:?]*[A-Za-z]|\][^\x07\x1b]*(?:\x07|\x1b\\))/g;
+const visibleText = (line: string) => line.replace(ESC_SEQ, "");
+
+// 剥掉历史快照里上次重启留下的回放痕迹,防止逐次重启无限累积:
+//   1. 分隔线整行移除(SerializeAddon 往返后 SGR 前后缀不固定,按可见文本匹配);
+//   2. 紧跟分隔线的一行若与上一保留行可见文本相同(= 上次"重启即关闭"会话只留下
+//      一条裸 prompt),去重——只看分隔线后第一行,真实历史里的重复输出不受影响。
+// 被丢弃行上的 SGR(\x1b[2m / \x1b[0m)成对消失,样式状态不残破。
+function stripRestoreArtifacts(raw: string): string {
+  const lines = raw.split("\r\n");
+  const out: string[] = [];
+  let afterMarker = false;
+  for (const line of lines) {
+    if (visibleText(line).includes(RESTORE_MARKER_TEXT)) {
+      afterMarker = true;
+      continue;
+    }
+    const isDupPrompt =
+      afterMarker &&
+      out.length > 0 &&
+      visibleText(line) === visibleText(out[out.length - 1]);
+    afterMarker = false;
+    if (!isDupPrompt) out.push(line);
+  }
+  return out.join("\r\n");
+}
+
+/** 读取 key 对应的 scrollback,**不消费**。配合 commitScrollback 用:
+ * spawn 成功且组件仍存活后才 commit——若在 peek 与 spawn 之间组件被卸载,
+ * 内容保留给下次挂载,不会"消费了却没人看到"地永久丢失。
+ * 返回前剥掉历史里的旧分隔线与重启残留(新分隔线由调用方在回放后追加一条)。 */
+export function peekScrollback(key: string): string | null {
   if (!saved) return null;
-  const v = saved[key];
-  if (v === undefined) return null;
-  delete saved[key];
-  return v;
+  const raw = saved[key];
+  return raw ? stripRestoreArtifacts(raw) : null;
+}
+
+/** 消费 key 对应的 scrollback(防同一会话内 re-mount 重复回放)。 */
+export function commitScrollback(key: string): void {
+  if (saved) delete saved[key];
 }
 
 /** 注册一个终端的序列化函数(返回注销函数)。 */

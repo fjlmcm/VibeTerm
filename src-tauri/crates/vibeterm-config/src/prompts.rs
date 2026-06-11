@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 ///   - Terminal: 给 shell (zsh / bash) 的命令片段, 通常含 cursor 占位让用户调参
 ///
 /// Picker 根据当前 task 的 agent_kind 自动过滤显示哪一类.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, specta::Type)]
 #[serde(rename_all = "lowercase")]
 pub enum PromptKind {
     #[default]
@@ -23,7 +23,7 @@ pub enum PromptKind {
     Terminal,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct PromptEntry {
     pub id: String,
     /// 显示名. 内置预设的 i18n key 是 `prompts.preset.<id>.name`, 前端先查 i18n,
@@ -37,7 +37,7 @@ pub struct PromptEntry {
     pub shortcut: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct PromptsFile {
     #[serde(default = "default_version")]
     pub schema_version: u32,

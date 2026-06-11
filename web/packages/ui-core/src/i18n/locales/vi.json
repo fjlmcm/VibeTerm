@@ -520,6 +520,7 @@
   "palette.cmd.open_diff": "Xem diff (tác vụ hiện tại)",
   "palette.cmd.apply_layout": "Bố cục: {name}",
   "palette.cmd.resume_agent": "Tiếp tục agent (tác vụ hiện tại)",
+  "palette.cmd.repair_render": "Sửa hiển thị chữ (chữ bị lỗi)",
   "update.app.auto_check": "Tự động kiểm tra cập nhật khi khởi động",
   "update.app.auto_check_hint": "Chỉ so sánh phiên bản với GitHub (chỉ đọc); không tải lên gì, không telemetry. Tắt để hoàn toàn ngoại tuyến.",
   "update.app.running_warn": "{count} terminal đang chạy. Cài đặt sẽ khởi động lại và làm gián đoạn chúng (danh sách tác vụ được giữ). Tiếp tục?",

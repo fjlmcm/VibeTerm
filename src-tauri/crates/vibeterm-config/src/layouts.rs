@@ -12,7 +12,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 一个 pane:可选启动命令 + 相对上一个 pane 的分屏方向 + 可选 cwd。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct LayoutPane {
     /// 终端就绪后自动发送的命令(末尾自动补换行)。空 = 纯终端不发命令。
     #[serde(default)]
@@ -26,7 +26,7 @@ pub struct LayoutPane {
 }
 
 /// 一个布局模板。
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct LayoutTemplate {
     pub name: String,
     /// 命令面板模糊搜索关键词。
@@ -39,7 +39,7 @@ pub struct LayoutTemplate {
     pub panes: Vec<LayoutPane>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct LayoutsFile {
     #[serde(default)]
     pub layouts: Vec<LayoutTemplate>,

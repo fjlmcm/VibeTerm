@@ -9,8 +9,9 @@
 
 use serde::Serialize;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, specta::Type)]
 #[serde(rename_all = "lowercase")]
+#[specta(rename = "ProviderAgentKind")] // 与 vibeterm-status::AgentKind(12 变体全集)区分,TS 全局名唯一
 pub enum AgentKind {
     Claude,
     Codex,
@@ -26,7 +27,8 @@ impl AgentKind {
 }
 
 /// 会话 context 占用(统一)。`window` 拿不到时 `used_pct` 为 None → 前端显 "—"(不臆造)。
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, specta::Type)]
+#[specta(rename = "ProviderContextUsage")]
 pub struct ContextUsage {
     pub used_tokens: Option<u64>,
     pub window: Option<u64>,
@@ -36,7 +38,8 @@ pub struct ContextUsage {
 }
 
 /// 额度窗口(统一; 角色靠 `window_minutes` 判, 不靠 primary/secondary 位置)。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
+#[specta(rename = "ProviderQuotaWindow")]
 pub struct QuotaWindow {
     /// "5h" / "7d" / "weekly" 等
     pub label: String,
@@ -59,7 +62,7 @@ fn codex_window_label(window_minutes: Option<u64>) -> String {
 }
 
 /// 降级链单步诊断 —— 接 /doctor, 让"走了哪个源 / 为何降级"可见。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct SourceAttempt {
     /// "transcript" / "usage_cache.json" / "rollout" / "model-table" 等
     pub source: String,
@@ -68,7 +71,7 @@ pub struct SourceAttempt {
 }
 
 /// 统一的 agent 用量快照(provider 抽象输出)。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct AgentUsage {
     pub kind: AgentKind,
     pub model: Option<String>,

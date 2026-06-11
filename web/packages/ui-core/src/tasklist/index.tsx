@@ -516,10 +516,10 @@ export const TaskList: Component<TaskListProps> = (props) => {
                                   }}
                                 />
                               </Show>
-                              <Show when={wt().ahead > 0}>
+                              <Show when={(wt().ahead ?? 0) > 0}>
                                 <span data-testid={`task-wt-ahead-${task().id}`}>↑{wt().ahead}</span>
                               </Show>
-                              <Show when={wt().behind > 0}>
+                              <Show when={(wt().behind ?? 0) > 0}>
                                 <span data-testid={`task-wt-behind-${task().id}`}>↓{wt().behind}</span>
                               </Show>
                             </span>

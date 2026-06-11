@@ -520,6 +520,7 @@
   "palette.cmd.open_diff": "Ver diff (tarea actual)",
   "palette.cmd.apply_layout": "Diseño: {name}",
   "palette.cmd.resume_agent": "Reanudar agente (tarea actual)",
+  "palette.cmd.repair_render": "Reparar renderizado de texto (caracteres corruptos)",
   "update.app.auto_check": "Buscar actualizaciones al iniciar",
   "update.app.auto_check_hint": "Solo compara versiones con GitHub (solo lectura); no sube nada, sin telemetría. Desactívalo para estar sin conexión.",
   "update.app.running_warn": "{count} terminal(es) en ejecución. Instalar reiniciará e interrumpirá (tu lista de tareas se conserva). ¿Continuar?",

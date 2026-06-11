@@ -21,7 +21,7 @@
 use serde::{Deserialize, Serialize};
 
 /// 执行模式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, specta::Type)]
 #[serde(rename_all = "snake_case")]
 pub enum ActionMode {
     /// 把 command 当作输入送到当前终端(自动追加 \n)
@@ -36,7 +36,7 @@ fn default_mode() -> ActionMode {
     ActionMode::CurrentTerminal
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ActionEntry {
     pub id: String,
     pub title: String,
@@ -51,7 +51,7 @@ pub struct ActionEntry {
     pub close_on_success: bool,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
 pub struct ActionsFile {
     #[serde(default = "default_version")]
     pub schema_version: u32,

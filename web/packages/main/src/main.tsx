@@ -624,6 +624,36 @@ function App() {
     const offTasks = await ipc.onTasksChanged((list) => {
       const prev = tasks();
       setTasks(list);
+      // slot 计数器跟随后端树:浮窗里分屏产生的新 slot 写回后,主窗计数器若不同步,
+      // 主窗再分屏会撞 id —— 两个 pane 叠同一矩形、绑同一 PTY、删一个连删俩。
+      let maxSlot = 0;
+      for (const tk of list) {
+        for (const s of collectSlots(tk.split_tree)) {
+          if (s > maxSlot) maxSlot = s;
+        }
+      }
+      bumpSlotIdAtLeast(maxSlot);
+      // 清扫已关闭任务的本地 Map 残留(task id 不复用,残留无错误表现但缓慢泄漏)
+      const aliveIds = new Set(list.map((t) => t.id));
+      const sweepByTaskId = <V,>(m: Map<number, V>): Map<number, V> => {
+        if (![...m.keys()].some((k) => !aliveIds.has(k))) return m;
+        const nx = new Map(m);
+        for (const k of nx.keys()) if (!aliveIds.has(k)) nx.delete(k);
+        return nx;
+      };
+      const sweepByTaskKey = <V,>(m: Map<string, V>): Map<string, V> => {
+        const dead = [...m.keys()].filter(
+          (k) => !aliveIds.has(parseInt(k.split(":")[0], 10)),
+        );
+        if (dead.length === 0) return m;
+        const nx = new Map(m);
+        for (const k of dead) nx.delete(k);
+        return nx;
+      };
+      setActiveSlotByTask(sweepByTaskId);
+      setPendingFocusTermByTask(sweepByTaskId);
+      setSlotToTerm(sweepByTaskKey);
+      setPendingCommands(sweepByTaskKey);
       // 用户反馈:关闭浮窗后该任务应回到主右侧 — 探测任意 task
       // 由 Floating 转出(关浮窗)→ 自动 setActive 那个 task。
       // (与 "工作区保持原状" 微妙冲突,以用户需求为准)
@@ -742,9 +772,20 @@ function App() {
     });
 
     const onKey = (e: KeyboardEvent) => {
-      // 先看是否命中 custom action (A4 自定义快捷键, 优先级最高)
+      // 🔴 红线4:IME 组合态(中文/日文候选)下任何按键交给输入法,不驱动全局快捷键——
+      // 子组件(palette 等)各自守门后事件仍会冒泡到 window,Esc 取消候选若不在这拦,
+      // 会把整个面板关掉、输入全丢(7daf710 修的症状漏了这条冒泡路径)。
+      if (e.isComposing || e.keyCode === 229) return;
+      // custom action (A4 自定义快捷键):焦点在可编辑控件(任务重命名/对话框输入)时跳过,
+      // 防止 Shift+字母 这类宽松 shortcut 把用户正常打字劫持成命令注入终端。
+      const target = e.target as HTMLElement | null;
+      const inEditable =
+        !!target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable);
       const norm = normalizeShortcut(e);
-      if (norm) {
+      if (norm && !inEditable) {
         const a = actionsList().find((x) => x.shortcut && normalizeShortcutStr(x.shortcut) === norm);
         if (a) {
           e.preventDefault();
@@ -792,6 +833,11 @@ function App() {
   const getSplitTree = (taskId: number): SplitNode | undefined =>
     tasks().find((t) => t.id === taskId)?.split_tree;
   const writeSplitTree = (taskId: number, tree: SplitNode) => {
+    // 乐观更新本地树:快速连续分屏/关屏不再基于陈旧快照互相覆盖
+    // (第二次操作读到第一次的结果;后端 tasks_changed 到达后仍以后端为准)。
+    setTasks((prev) =>
+      prev.map((t) => (t.id === taskId ? { ...t, split_tree: tree } : t)),
+    );
     ipc.setTaskSplitTree(taskId, tree).catch((e) =>
       console.error("[main] setTaskSplitTree failed", e),
     );
@@ -943,6 +989,9 @@ function App() {
   const splitActive = (orientation: "h" | "v") => {
     const tid = activeTaskId();
     if (tid === null) return;
+    // 任务在浮窗中:主窗只是占位,分屏会凭空往浮窗里塞 pane
+    // (工具栏按钮已隐藏,但快捷键/菜单仍路由到这里)
+    if (isActiveTaskInFloating()) return;
     const tree = getSplitTree(tid);
     if (!tree) return;
     const slot = resolveActiveSlot(tid);
@@ -955,6 +1004,9 @@ function App() {
   const closeActiveSlot = () => {
     const tid = activeTaskId();
     if (tid === null) return;
+    // 任务在浮窗中:resolveActiveSlot 会 fallback 到 slots[0],在主窗按
+    // close_terminal 会静默杀掉浮窗里正在用的第一个 pane 连同 PTY
+    if (isActiveTaskInFloating()) return;
     const tree = getSplitTree(tid);
     if (!tree) return;
     const slot = resolveActiveSlot(tid);

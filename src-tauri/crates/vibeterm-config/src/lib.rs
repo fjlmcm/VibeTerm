@@ -22,8 +22,8 @@ pub mod statusline;
 pub mod theme;
 
 pub use env::{ClipboardImagesSection, EnvFile, ProxySection};
-pub use layouts::{LayoutPane, LayoutTemplate, LayoutsFile};
 pub use keybindings::{KeybindingEntry, KeybindingsFile};
+pub use layouts::{LayoutPane, LayoutTemplate, LayoutsFile};
 pub use notify_prefs::{EventNotifyPrefs, EventsPrefs, NotifyFile, QuietHours};
 pub use prompts::{PromptEntry, PromptsFile};
 pub use statusline::{ProfileConfig, StatusLineFile, StatusLineItem, StatusLineItemDetail};
@@ -255,7 +255,7 @@ pub fn clipboard_images_caps() -> (usize, u64) {
 /// 保存粘贴的图片到 clipboard_images_dir,自动 FIFO 清理。
 ///
 /// 用代码默认上限。函数可以注入 `dir` 与 `now_ms`,方便单测;
-/// 生产入口见 [`save_clipboard_image_default`]。
+/// 生产路径(paste_clipboard)走 [`save_clipboard_image_at`] + [`enforce_clipboard_images_caps`]。
 pub fn save_clipboard_image_in(
     dir: &Path,
     bytes: &[u8],
@@ -321,18 +321,6 @@ pub fn save_clipboard_image_in_with_caps(
     let target = dir.join(format!("{now_ms}.png"));
     std::fs::write(&target, bytes)?;
     Ok(target)
-}
-
-/// 生产入口:目录与上限都从 env.toml 解析(缺省走常量)。
-pub fn save_clipboard_image_default(bytes: &[u8]) -> Result<PathBuf, ConfigError> {
-    let dir = clipboard_images_dir()?;
-    let now_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        // 时钟早于 Unix 纪元时取偏移绝对值,避免退化为固定 0.png 造成覆盖。
-        .unwrap_or_else(|e| e.duration())
-        .as_millis();
-    let (max_count, max_bytes) = clipboard_images_caps();
-    save_clipboard_image_in_with_caps(&dir, bytes, now_ms, max_count, max_bytes)
 }
 
 /// 直接写到指定路径(命名由调用方决定,例如内容 hash);
@@ -442,7 +430,7 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), ConfigError> {
 }
 
 // ---- config.toml ----
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct Config {
     #[serde(default = "Config::default_schema_version")]
     pub schema_version: u32,

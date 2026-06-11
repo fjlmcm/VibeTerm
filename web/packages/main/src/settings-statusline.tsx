@@ -88,6 +88,8 @@ const MOCK_GIT: GitStatusBrief = {
 };
 const MOCK_CLAUDE_SESSION: ClaudeSession = {
   session_id: "preview",
+  stop_reason: null,
+  last_turn_id: null,
   project_path: "/Users/example/dev",
   model: "claude-opus-4-7",
   context_tokens: 142000,
@@ -120,6 +122,8 @@ const MOCK_CLAUDE_BLOCK: ClaudeActiveBlock = {
 };
 const MOCK_CODEX: CodexSnapshot = {
   session_id: "preview",
+  task_completed: false,
+  last_turn_id: null,
   cwd: "/Users/example/dev",
   model: "gpt-5.5",
   model_provider: "openai",
@@ -143,6 +147,7 @@ type MockCtx = Parameters<(typeof WIDGETS)[string]>[1];
 const MOCK_TASK: TaskDto = {
   id: 1,
   name: "Example",
+  notify_muted: false,
   cwd: "/Users/example/dev",
   pinned: false,
   status: "running",
@@ -268,7 +273,10 @@ export const StatuslineTab: Component<StatuslineTabProps> = (props) => {
       if (cfg.profiles[k]) entries.push([k, cfg.profiles[k]]);
     }
     const custom = Object.keys(cfg.profiles).filter((k) => !known.has(k)).sort();
-    for (const k of custom) entries.push([k, cfg.profiles[k]]);
+    for (const k of custom) {
+      const p = cfg.profiles[k];
+      if (p) entries.push([k, p]);
+    }
     return entries;
   });
 
@@ -976,7 +984,7 @@ const ItemEditor: Component<{
           <div style={{ display: "flex", gap: "4px", "align-items": "center", flex: 1 }}>
             <input
               type="color"
-              value={hexFor(props.item.color)}
+              value={hexFor(props.item.color ?? undefined)}
               onInput={(e) => props.onChange({ color: e.currentTarget.value })}
               style={{
                 width: "26px",

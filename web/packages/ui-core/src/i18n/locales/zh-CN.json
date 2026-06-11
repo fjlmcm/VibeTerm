@@ -520,6 +520,7 @@
   "palette.cmd.open_diff": "查看 Diff(当前任务)",
   "palette.cmd.apply_layout": "布局:{name}",
   "palette.cmd.resume_agent": "恢复 agent 会话(当前任务)",
+  "palette.cmd.repair_render": "修复文字渲染(乱码)",
   "update.app.auto_check": "启动时自动检查更新",
   "update.app.auto_check_hint": "仅向 GitHub 比对版本号,只读不上传、零遥测;关闭后开箱完全不主动联网。",
   "update.app.running_warn": "{count} 个终端正在运行,安装更新会重启并中断它们(任务列表会保留)。仍要继续?",

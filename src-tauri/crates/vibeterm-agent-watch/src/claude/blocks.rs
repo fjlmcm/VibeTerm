@@ -17,7 +17,7 @@ use super::project::projects_root;
 
 const FIVE_HOURS_MS: i64 = 5 * 60 * 60 * 1000;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct ActiveBlock {
     /// block 起点 (unix ms), 向下取整到整点
     pub start_at_ms: i64,

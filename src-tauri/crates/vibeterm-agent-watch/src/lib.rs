@@ -23,7 +23,7 @@ pub mod provider;
 pub mod stats;
 
 /// 上层订阅的统一事件 — Claude/Codex 任一更新都推一个这个.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 #[serde(tag = "agent", rename_all = "lowercase")]
 pub enum AgentSnapshot {
     Claude(ClaudeSnapshot),
@@ -32,7 +32,7 @@ pub enum AgentSnapshot {
 
 // ---- Claude ----
 
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, specta::Type)]
 pub struct ClaudeSnapshot {
     /// 来自 usage_cache.json 的 5h / 7d quota — 服务端权威数据
     pub usage_cache: Option<UsageCache>,
@@ -43,7 +43,7 @@ pub struct ClaudeSnapshot {
 }
 
 /// `~/.claude/usage_cache.json` 完整反序列化结构
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, specta::Type)]
 pub struct UsageCache {
     pub five_hour: Option<QuotaWindow>,
     pub seven_day: Option<QuotaWindow>,
@@ -55,7 +55,7 @@ pub struct UsageCache {
     pub extra_usage: Option<ExtraUsage>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct QuotaWindow {
     /// 0..=100, 服务端给的已用百分比
     pub utilization: f64,
@@ -63,7 +63,7 @@ pub struct QuotaWindow {
     pub resets_at: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, specta::Type)]
 pub struct ExtraUsage {
     pub is_enabled: bool,
     pub monthly_limit: Option<f64>,
@@ -74,7 +74,7 @@ pub struct ExtraUsage {
 }
 
 /// Session 级信息 — 由 v2 的 project transcript watcher 填充
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, specta::Type)]
 pub struct ClaudeSession {
     pub session_id: String,
     pub project_path: String,
@@ -104,7 +104,7 @@ pub struct ClaudeSession {
 
 // ---- Codex ----
 
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, specta::Type)]
 pub struct CodexSnapshot {
     pub session_id: String,
     pub cwd: String,
@@ -137,7 +137,7 @@ pub struct CodexSnapshot {
     pub last_turn_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct RateLimit {
     pub used_percent: f64,
     /// 窗口长度 (分钟) — 10080 = 7 天, 300 = 5 小时.

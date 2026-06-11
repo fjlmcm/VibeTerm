@@ -16,7 +16,6 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.4.0",
-    "@tauri-apps/plugin-clipboard-manager": "^2.3.2",
     "@vibeterm/ipc-types": "workspace:*",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-search": "^0.16.0",

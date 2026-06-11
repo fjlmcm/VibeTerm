@@ -11,3 +11,7 @@ portable-pty = { workspace = true }
 tokio        = { workspace = true }
 tracing      = { workspace = true }
 thiserror    = { workspace = true }
+
+# Drop kill 升级链(SIGHUP→500ms→SIGKILL)的 SIGKILL 兜底
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

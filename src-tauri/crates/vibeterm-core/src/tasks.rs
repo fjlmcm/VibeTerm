@@ -271,56 +271,6 @@ impl TaskRegistry {
         Ok(())
     }
 
-    /// hook auto-naming. 仅当 auto_namable 仍 true 时执行重命名,
-    /// 执行后翻成 false (一次性). 返回 Ok(true) 表示真改了名.
-    pub fn rename_auto(&self, id: TaskId, name: String) -> Result<bool, TaskError> {
-        let mut inner = self.lock()?;
-        let t = inner.tasks.get_mut(&id).ok_or(TaskError::NotFound(id))?;
-        if !t.auto_namable {
-            return Ok(false);
-        }
-        t.name = name;
-        t.auto_namable = false;
-        let snap = inner.snapshot();
-        drop(inner);
-        if let Err(e) = vibeterm_tasks::save(&snap) {
-            tracing::warn!(err = %e, "tasks.json save failed");
-        }
-        Ok(true)
-    }
-
-    pub fn is_auto_namable(&self, id: TaskId) -> Result<bool, TaskError> {
-        let inner = self.lock()?;
-        Ok(inner
-            .tasks
-            .get(&id)
-            .map(|t| t.auto_namable)
-            .unwrap_or(false))
-    }
-
-    /// 设置 permission_mode (徽标 + 通知 body 用).
-    /// 返回 Ok(true) 表示真变化, 调用方可决定是否 emit tasks_changed.
-    pub fn set_permission_mode(&self, id: TaskId, mode: Option<String>) -> Result<bool, TaskError> {
-        let mut inner = self.lock()?;
-        let t = inner.tasks.get_mut(&id).ok_or(TaskError::NotFound(id))?;
-        if t.permission_mode == mode {
-            return Ok(false);
-        }
-        t.permission_mode = mode;
-        Ok(true)
-    }
-
-    /// 设置 reasoning effort 等级 (hook payload 的 effort.level). 返回 Ok(true) 表示真变化.
-    pub fn set_effort(&self, id: TaskId, effort: Option<String>) -> Result<bool, TaskError> {
-        let mut inner = self.lock()?;
-        let t = inner.tasks.get_mut(&id).ok_or(TaskError::NotFound(id))?;
-        if t.effort == effort {
-            return Ok(false);
-        }
-        t.effort = effort;
-        Ok(true)
-    }
-
     /// 按 terminal 找所属 task 并设 effort(嗅探层从 PTY 工作动画抠到的 effort 等级)。
     /// 返回 Some(task_id) 表示真变化(供 emit tasks_changed); 仅内存, 不写盘(effort 是 live 态)。
     pub fn set_effort_for_terminal(
@@ -561,7 +511,12 @@ impl TaskRegistry {
                         }
                     }
                     TaskStatus::Idle => {
-                        if by_osc && prev == Some(TaskStatus::Running) && active_main != Some(*tid)
+                        // "用户正在看"= 是 active_main **且**窗口聚焦——与 aggregated_status 的
+                        // is_active 定义一致。原条件漏了 window_focused:窗口失焦时当前 task 的
+                        // 真完成不翻 seen → 聚合停 Idle 不升 Done,角标/未看态系统性丢失。
+                        if by_osc
+                            && prev == Some(TaskStatus::Running)
+                            && !(active_main == Some(*tid) && window_focused)
                         {
                             t.seen = false;
                         }
@@ -612,18 +567,6 @@ impl TaskRegistry {
                 .count(),
             Err(_) => 0,
         }
-    }
-
-    /// 所有带 cwd 的 task → (id, cwd)。供 agent-watch 完成信号(claude end_turn / codex
-    /// task_complete)按 cwd 反向关联 task。codex 精确比 cwd;claude 用 cwd_to_project_dir
-    /// 两边编码后比(规避 project_path 反解歧义)。
-    pub fn task_cwd_pairs(&self) -> Result<Vec<(TaskId, String)>, TaskError> {
-        let inner = self.lock()?;
-        Ok(inner
-            .tasks
-            .iter()
-            .filter_map(|(id, t)| t.cwd.clone().map(|c| (*id, c)))
-            .collect())
     }
 
     /// hook 收到"agent 完成 turn"信号时调用. 把 seen 翻为 false —
@@ -715,15 +658,9 @@ impl TaskRegistry {
     }
 
     /// task 是否有任一 agent(用于 is_agent 判断 / 通知 body)。多 agent 时返回任一 kind。
-    pub fn agent_kind_of(&self, id: TaskId) -> Result<Option<String>, TaskError> {
-        let inner = self.lock()?;
-        Ok(inner
-            .tasks
-            .get(&id)
-            .and_then(|t| t.agent_kinds.values().next().cloned()))
-    }
-
-    /// 某终端的 agent kind(per-terminal,通知 body 用对应终端的 kind)。
+    /// 某终端自己的 agent kind(per-terminal)。完成通知归属必须用它而非 task 级
+    /// `agent_kind_of`:分屏任务里普通 shell pane 跑完命令(OSC D)不该被通报成
+    /// "claude 完成"。None = 该终端不是 agent。
     pub fn agent_kind_of_terminal(
         &self,
         id: TaskId,
@@ -734,6 +671,14 @@ impl TaskRegistry {
             .tasks
             .get(&id)
             .and_then(|t| t.agent_kinds.get(&term_id).cloned()))
+    }
+
+    pub fn agent_kind_of(&self, id: TaskId) -> Result<Option<String>, TaskError> {
+        let inner = self.lock()?;
+        Ok(inner
+            .tasks
+            .get(&id)
+            .and_then(|t| t.agent_kinds.values().next().cloned()))
     }
 
     /// 写入某终端的 agent 识别结果(**per-terminal**)。返回 true 表示有变化(供 caller 决定是否 emit)。
@@ -781,34 +726,6 @@ impl TaskRegistry {
         let mut inner = self.lock()?;
         let t = inner.tasks.get_mut(&id).ok_or(TaskError::NotFound(id))?;
         t.split_tree = tree;
-        let snap = inner.snapshot();
-        drop(inner);
-        if let Err(e) = vibeterm_tasks::save(&snap) {
-            tracing::warn!(err = %e, "tasks.json save failed");
-        }
-        Ok(())
-    }
-
-    /// 给已有 task 挂载 / 替换 worktree。同时把 task.cwd 同步为 worktree_path。
-    pub fn attach_worktree(&self, id: TaskId, wt: WorktreeRef) -> Result<(), TaskError> {
-        let mut inner = self.lock()?;
-        let t = inner.tasks.get_mut(&id).ok_or(TaskError::NotFound(id))?;
-        t.cwd = Some(wt.worktree_path.clone());
-        t.worktree = Some(wt);
-        let snap = inner.snapshot();
-        drop(inner);
-        if let Err(e) = vibeterm_tasks::save(&snap) {
-            tracing::warn!(err = %e, "tasks.json save failed");
-        }
-        Ok(())
-    }
-
-    /// 卸载 worktree(不删 git worktree,只解除关联)。task.cwd 清空。
-    pub fn detach_worktree(&self, id: TaskId) -> Result<(), TaskError> {
-        let mut inner = self.lock()?;
-        let t = inner.tasks.get_mut(&id).ok_or(TaskError::NotFound(id))?;
-        t.worktree = None;
-        t.cwd = None;
         let snap = inner.snapshot();
         drop(inner);
         if let Err(e) = vibeterm_tasks::save(&snap) {

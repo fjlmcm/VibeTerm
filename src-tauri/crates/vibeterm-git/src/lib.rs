@@ -36,7 +36,7 @@ pub enum GitError {
 }
 
 /// 一条 worktree 记录(`git worktree list --porcelain` 解析结果)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, specta::Type)]
 pub struct WorktreeEntry {
     pub path: String,
     pub head: String,
@@ -48,7 +48,7 @@ pub struct WorktreeEntry {
 }
 
 /// 工作树状态(由 `git status --porcelain=v2 --branch` 解析)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, specta::Type)]
 pub struct WorktreeStatus {
     pub branch: Option<String>,
     pub head: String,
@@ -528,7 +528,11 @@ mod branch_fast_tests {
         let tmp = tempfile::tempdir().unwrap();
         let git = tmp.path().join(".git");
         fs::create_dir(&git).unwrap();
-        fs::write(git.join("HEAD"), "0123456789abcdef0123456789abcdef01234567\n").unwrap();
+        fs::write(
+            git.join("HEAD"),
+            "0123456789abcdef0123456789abcdef01234567\n",
+        )
+        .unwrap();
         assert_eq!(branch_fast(tmp.path()), None);
     }
 

@@ -520,6 +520,7 @@
   "palette.cmd.open_diff": "Diff 보기(현재 작업)",
   "palette.cmd.apply_layout": "레이아웃: {name}",
   "palette.cmd.resume_agent": "에이전트 재개(현재 작업)",
+  "palette.cmd.repair_render": "텍스트 렌더링 복구(글자 깨짐)",
   "update.app.auto_check": "시작 시 업데이트 자동 확인",
   "update.app.auto_check_hint": "GitHub와 버전만 비교하는 읽기 전용 요청. 업로드·텔레메트리 없음. 끄면 전혀 네트워크를 사용하지 않습니다.",
   "update.app.running_warn": "{count}개의 터미널이 실행 중입니다. 설치하면 재시작되어 중단됩니다(작업 목록은 유지됨). 계속할까요?",

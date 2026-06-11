@@ -16,7 +16,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::RwLock;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type)]
 pub struct Pricing {
     pub input_per_mtok: f64,
     pub output_per_mtok: f64,
@@ -33,7 +33,7 @@ pub struct Pricing {
 
 /// 价格覆盖表 — 与 repo 根 / `config_dir/pricing.json` 格式一致.
 /// 字段名对齐 `Pricing`, serde 直接反序列化.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct PricingTable {
     /// 价格快照日期, 如 "2026-05".
     pub updated_at: String,
@@ -42,7 +42,7 @@ pub struct PricingTable {
     pub models: PricingModels,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct PricingModels {
     pub opus: Pricing,
     pub sonnet: Pricing,
@@ -50,7 +50,7 @@ pub struct PricingModels {
 }
 
 /// 当前价格来源状态 — 给设置·更新页显示.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct PricingStatus {
     /// "builtin" | "override"
     pub source: String,

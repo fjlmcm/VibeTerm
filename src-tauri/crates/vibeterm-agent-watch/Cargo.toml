@@ -6,6 +6,7 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+specta = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
 tokio       = { workspace = true }

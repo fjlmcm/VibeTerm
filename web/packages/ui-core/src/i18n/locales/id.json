@@ -520,6 +520,7 @@
   "palette.cmd.open_diff": "Lihat diff (tugas saat ini)",
   "palette.cmd.apply_layout": "Tata letak: {name}",
   "palette.cmd.resume_agent": "Lanjutkan agen (tugas saat ini)",
+  "palette.cmd.repair_render": "Perbaiki render teks (karakter rusak)",
   "update.app.auto_check": "Periksa pembaruan saat mulai",
   "update.app.auto_check_hint": "Hanya membandingkan versi dengan GitHub (baca-saja); tidak mengunggah apa pun, tanpa telemetri. Matikan untuk sepenuhnya offline.",
   "update.app.running_warn": "{count} terminal sedang berjalan. Memasang akan memulai ulang dan menghentikannya (daftar tugas tetap ada). Lanjutkan?",

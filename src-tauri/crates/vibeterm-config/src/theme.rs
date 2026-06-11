@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct Theme {
     pub schema_version: u32,
     pub id: String,
@@ -16,7 +16,7 @@ pub struct Theme {
     pub terminal: ThemeTerminal,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ThemeShell {
     pub background: String,
     pub surface: String,
@@ -30,7 +30,7 @@ pub struct ThemeShell {
     pub status_idle: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct ThemeTerminal {
     pub background: String,
     pub foreground: String,

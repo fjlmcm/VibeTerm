@@ -19,7 +19,6 @@ import type {
   ExecuteActionResult,
   SplitTreeNode,
   WorktreeRef,
-  WorktreeEntry,
   BranchSpec,
   ClaudeUsageCache,
   ClaudeSession,
@@ -69,17 +68,8 @@ export async function closePty(id: TerminalId): Promise<void> {
   return invoke("close_pty", { id });
 }
 
-// attach 已有 terminal 给新 sink(浮窗 reparent 共享 PTY 流)
-// sink_id:Rust 端为 u64,经 JSON 落地为 JS number(IEEE754 安全整数 2^53-1)。
-// 每个 terminal 的 next_sink_id 从 1 单调递增、仅 attach 时 +1,实际场景远不会
-// 触及 2^53,故 number 承接安全。彻底消除需后端将 SinkId 降为 u32(本包不改后端)。
-export async function attachTerminal(
-  id: TerminalId,
-  channel: Channel<number[] | Uint8Array>,
-): Promise<number /* sink_id */> {
-  return invoke<number>("attach_terminal", { id, channel });
-}
-
+// 取消 slot attach 的订阅(组件卸载时;不关 PTY)。sinkId 来自 SpawnPtyResult.sink_id:
+// Rust 端 u64 经 JSON 落地为 JS number,next_sink_id 单调递增,实际远不会触及 2^53,安全。
 export async function detachTerminal(id: TerminalId, sinkId: number): Promise<void> {
   return invoke("detach_terminal", { id, sinkId });
 }
@@ -89,6 +79,12 @@ export async function detachTerminal(id: TerminalId, sinkId: number): Promise<vo
 export async function getScrollback(id: TerminalId): Promise<Uint8Array> {
   const raw = await invoke<number[] | Uint8Array>("get_scrollback", { id });
   return raw instanceof Uint8Array ? raw : Uint8Array.from(raw);
+}
+
+// 读 PTY 当前生效尺寸 [rows, cols](最近一次 resize 下发值;(0,0)=spawn 后未 resize)。
+// 视图变可见时用它判断 PTY 是否被别的视图(浮窗)改过尺寸 → 不一致说明隐藏期 buffer 已污染。
+export async function terminalSize(id: TerminalId): Promise<[number, number]> {
+  return invoke<[number, number]>("terminal_size", { id });
 }
 
 // 一次 IPC 同时 try files + image + text。
@@ -102,16 +98,6 @@ export type PasteResult =
 
 export async function pasteClipboard(): Promise<PasteResult> {
   return invoke<PasteResult>("paste_clipboard");
-}
-
-// 兼容旧入口 / E2E:仅返回 image 分支
-export async function pasteClipboardImage(): Promise<string | null> {
-  return invoke<string | null>("paste_clipboard_image");
-}
-
-// (备用 / E2E)从前端字节直接保存为 clipboard-images/<ts>.png
-export async function saveClipboardImage(bytes: Uint8Array): Promise<string> {
-  return invoke<string>("save_clipboard_image", { bytes: Array.from(bytes) });
 }
 
 // 设置页查询 / 操作:当前生效目录 / 打开 / 清空
@@ -428,15 +414,6 @@ export function onStatusLineConfigChanged(handler: () => void): Promise<Unlisten
   return tauriListen("statusline_config_changed", () => handler());
 }
 
-export function onTerminalExited(
-  handler: (p: { terminal_id: TerminalId; exit_code: number | null }) => void,
-): Promise<UnlistenFn> {
-  return tauriListen<{ terminal_id: TerminalId; exit_code: number | null }>(
-    "terminal_exited",
-    (e) => handler(e.payload),
-  );
-}
-
 /** 某 task 的某终端 agent 刚完成一轮 — 用于切回任务时自动定位焦点到该终端。 */
 export function onAgentTerminalCompleted(
   handler: (p: AgentTerminalCompleted) => void,
@@ -543,7 +520,7 @@ export async function detectAiClis(): Promise<CliStatus[]> {
 }
 
 // ===== 打开外部 URL / 文件 =====
-// 后端白名单:https / localhost / file:// / 已存在的本地路径
+// 后端白名单:https / localhost / 已存在的本地路径(file:// 不放行——终端里的链接可伪造)
 export async function openExternal(target: string): Promise<void> {
   return invoke("open_external", { target });
 }
@@ -555,10 +532,6 @@ export async function gitIsRepo(path: string): Promise<boolean> {
 
 export async function gitRepoRoot(path: string): Promise<string> {
   return invoke<string>("git_repo_root", { path });
-}
-
-export async function gitListWorktrees(repoPath: string): Promise<WorktreeEntry[]> {
-  return invoke<WorktreeEntry[]>("git_list_worktrees", { repoPath });
 }
 
 export async function gitListBranches(repoPath: string): Promise<string[]> {
@@ -579,21 +552,6 @@ export async function gitRemoveWorktree(
   force: boolean,
 ): Promise<void> {
   return invoke("git_remove_worktree", { repoPath, worktreePath, force });
-}
-
-export async function attachWorktreeToTask(
-  taskId: TaskId,
-  worktree: WorktreeRef,
-): Promise<TaskDto> {
-  return invoke<TaskDto>("attach_worktree_to_task", { taskId, worktree });
-}
-
-export async function detachWorktreeFromTask(taskId: TaskId): Promise<TaskDto> {
-  return invoke<TaskDto>("detach_worktree_from_task", { taskId });
-}
-
-export async function refreshWorktreeStatus(taskId: TaskId): Promise<TaskDto | null> {
-  return invoke<TaskDto | null>("refresh_worktree_status", { taskId });
 }
 
 export async function setMenuLang(lang: string): Promise<void> {

@@ -520,6 +520,7 @@
   "palette.cmd.open_diff": "Diff'i görüntüle (geçerli görev)",
   "palette.cmd.apply_layout": "Düzen: {name}",
   "palette.cmd.resume_agent": "Aracı sürdür (geçerli görev)",
+  "palette.cmd.repair_render": "Metin işlemeyi onar (bozuk karakterler)",
   "update.app.auto_check": "Başlangıçta güncellemeleri denetle",
   "update.app.auto_check_hint": "Yalnızca GitHub ile sürüm karşılaştırması (salt okunur); hiçbir şey göndermez, telemetri yok. Kapatınca tamamen çevrimdışı.",
   "update.app.running_warn": "{count} terminal çalışıyor. Kurulum yeniden başlatıp bunları kesecek (görev listeniz korunur). Devam edilsin mi?",

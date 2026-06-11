@@ -520,6 +520,7 @@
   "palette.cmd.open_diff": "Mostra diff (attività corrente)",
   "palette.cmd.apply_layout": "Layout: {name}",
   "palette.cmd.resume_agent": "Riprendi agente (attività corrente)",
+  "palette.cmd.repair_render": "Ripara il rendering del testo (caratteri corrotti)",
   "update.app.auto_check": "Controlla aggiornamenti all'avvio",
   "update.app.auto_check_hint": "Solo un confronto di versione con GitHub (sola lettura); non invia nulla, nessuna telemetria. Disattiva per restare offline.",
   "update.app.running_warn": "{count} terminale/i in esecuzione. L'installazione riavvierà e li interromperà (l'elenco attività è mantenuto). Continuare?",

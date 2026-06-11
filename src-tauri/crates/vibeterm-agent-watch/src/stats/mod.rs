@@ -40,7 +40,7 @@ pub(crate) struct Entry {
 }
 
 /// 聚合总览.
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, specta::Type)]
 pub struct UsageStats {
     /// 统计窗口 (天).
     pub range_days: u32,
@@ -55,7 +55,7 @@ pub struct UsageStats {
     pub by_project: Vec<ProjectStat>,
 }
 
-#[derive(Debug, Clone, Serialize, Default)]
+#[derive(Debug, Clone, Serialize, Default, specta::Type)]
 pub struct Totals {
     pub input_tokens: u64,
     pub output_tokens: u64,
@@ -73,7 +73,7 @@ pub struct Totals {
     pub message_count: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct DailyStat {
     /// 本地时区 `YYYY-MM-DD`.
     pub date: String,
@@ -82,7 +82,7 @@ pub struct DailyStat {
     pub cost_usd: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct ModelStat {
     pub model: String,
     pub total_tokens: u64,
@@ -91,7 +91,7 @@ pub struct ModelStat {
     pub message_count: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, specta::Type)]
 pub struct ProjectStat {
     pub project_path: String,
     pub total_tokens: u64,
