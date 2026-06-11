@@ -4,7 +4,11 @@
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use vibeterm_ipc::{IpcError, IpcResult, TaskLocation};
 
-use crate::menu::{build_menu, current_menu_lang, MenuLang};
+// build_menu / current_menu_lang 仅在 macOS 下定义(调用点都有 cfg 门),
+// 导入不分门会在 Windows 上 E0432(v1.1.1 首次发版即栽于此)。
+use crate::menu::MenuLang;
+#[cfg(target_os = "macos")]
+use crate::menu::{build_menu, current_menu_lang};
 use crate::{emit_tasks_changed, AppState};
 
 /// macOS:把 NSVisualEffectView underWindowBackground material 装到窗口下层。
