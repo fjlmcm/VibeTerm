@@ -54,15 +54,21 @@ export const UpdateTab: Component = () => {
   const [appState, setAppState] = createSignal<"idle" | "checking" | "done" | "error">("idle");
   const [appInfo, setAppInfo] = createSignal<AppUpdateInfo | null>(null);
   const [appErr, setAppErr] = createSignal("");
+  // GitHub 限流(403/429)单独给"稍后重试"文案 —— 这种失败网络是通的,别误导用户查网络
+  const [appRateLimited, setAppRateLimited] = createSignal(false);
 
   const checkApp = async () => {
     setAppState("checking");
     setAppErr("");
+    setAppRateLimited(false);
     try {
       setAppInfo(await ipc.checkAppUpdate());
       setAppState("done");
     } catch (e) {
-      setAppErr(String(e));
+      const msg = ipc.formatIpcError(e);
+      // 后端约定:限流的 trace_id 带 ":rate_limited:" 标记(updates.rs)
+      setAppRateLimited(msg.includes(":rate_limited:"));
+      setAppErr(msg);
       setAppState("error");
     }
   };
@@ -283,7 +289,7 @@ export const UpdateTab: Component = () => {
 
         <Show when={appState() === "error"}>
           <div style={{ "margin-top": "12px", "font-size": "12px", color: "var(--color-status-waiting, #e5a23d)" }}>
-            {t("update.app.error")}
+            {appRateLimited() ? t("update.app.rate_limited") : t("update.app.error")}
             <Show when={appErr()}>
               <span style={{ color: "var(--color-text-2)", "margin-left": "6px", "font-family": "monospace", "font-size": "11px" }}>{appErr()}</span>
             </Show>

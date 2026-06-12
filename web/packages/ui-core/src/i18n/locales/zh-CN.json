@@ -486,6 +486,7 @@
   "update.app.install_done": "安装完成,正在重启…",
   "update.app.install_error": "应用内安装失败,请改用浏览器下载",
   "update.app.error": "检查失败(请检查网络后重试)",
+  "update.app.rate_limited": "检查失败(GitHub 接口限流,请稍后重试;非网络问题)",
   "update.app.note": "默认启动时检查一次 GitHub Releases(下方可关);只读比对版本号、零遥测、不上传。「下载并安装」校验 minisign 签名后原地更新并重启;失败可改用「打开下载页」。",
   "update.price.title": "模型价格估算",
   "update.price.purpose": "统计面板里的费用是按公开单价估算的,并非 Anthropic 实际账单,仅供参考。Anthropic 调价后,在此手动更新单价表,即可让历史与后续的费用估算贴近最新定价,无需等应用升级。单价来自 LiteLLM(BerriAI/litellm)社区维护的公开价格表(含分档,源自 Anthropic 官方定价),手动拉取、仅存本地。",

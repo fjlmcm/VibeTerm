@@ -481,6 +481,7 @@
   "update.app.new_version": "Yeni sürüm v{version} mevcut",
   "update.app.open_download": "İndirme sayfasını aç",
   "update.app.error": "Denetim başarısız (ağını kontrol edip yeniden dene)",
+  "update.app.rate_limited": "Denetim başarısız (GitHub API istek sınırı — lütfen daha sonra tekrar deneyin)",
   "update.app.note": "Varsayılan olarak başlangıçta GitHub Releases'i denetler (aşağıdan kapatılabilir); yalnızca sürüm karşılaştırması, telemetri yok, hiçbir şey göndermez. \"İndir ve kur\" minisign imzasını doğrular, yerinde günceller ve yeniden başlatır; başarısız olursa \"İndirme sayfasını aç\".",
   "update.price.title": "Model fiyatlandırması (tahmini)",
   "update.price.purpose": "Kullanım panelinde gösterilen maliyetler kamuya açık liste fiyatlarından tahmin edilir — gerçek Anthropic faturan değildir, yalnızca bilgi amaçlıdır. Anthropic fiyatları değiştirdikten sonra fiyat tablosunu buradan güncelle ki geçmiş ve gelecekteki tahminler en güncel fiyatlandırmayı izlesin, uygulama yükseltmesine gerek kalmadan. Liste fiyatları LiteLLM'in (BerriAI/litellm) sürdürdüğü kamuya açık tablodan gelir (kademeli fiyatlandırmayla, Anthropic'in resmi fiyatlandırmasından alınmıştır); elle çekilir, yalnızca yerelde saklanır.",

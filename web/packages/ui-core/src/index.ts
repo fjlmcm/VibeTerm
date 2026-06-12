@@ -50,3 +50,4 @@ export {
   modKeyLabel,
 } from "./keybindings";
 export type { ActionHandler, ActionMap } from "./keybindings";
+export { clampMenuToViewport, menuClampRef } from "./menu-clamp";

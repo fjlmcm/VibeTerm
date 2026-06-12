@@ -343,46 +343,26 @@ fn extract_effort_command(line: &str) -> Option<String> {
     }
 }
 
-/// Anthropic GA 1M-context model 前缀 — 跟 openclaw `ANTHROPIC_GA_1M_MODEL_PREFIXES` 对齐.
-/// 这些模型的 model id (不论带不带 `[1m]` 后缀) 都对应 1M context window.
-/// 老模型 (opus-4 / 4.1 / 4.5, sonnet-4 / 4.5, haiku-*) 仍是 200k.
-///
-/// 重要: jsonl 里 `message.model` 永远是裸 id (如 `claude-opus-4-7`), 没有 `[1m]`.
-/// 我们必须基于 prefix 列表判断, **不能依赖 `[1m]` 后缀也不能依赖 lastModelUsage**
-/// (那是历史记录, 不反映当前 session 状态).
-const ANTHROPIC_GA_1M_PREFIXES: &[&str] = &[
-    "claude-opus-4-6",
-    "claude-opus-4.6",
-    "claude-opus-4-7",
-    "claude-opus-4.7",
-    "claude-opus-4-8",
-    "claude-opus-4.8",
-    "claude-sonnet-4-6",
-    "claude-sonnet-4.6",
-];
-
-/// 模型 → 上下文窗口上限. 仅依赖 model id + 实测 ctx, 不依赖 cwd / lastModelUsage.
+/// 模型 → 上下文窗口上限. 数据驱动(内嵌 LiteLLM 快照, 发版前刷新; 运行时可手动更新),
+/// 取代旧版手维护的 GA 1M 前缀表 —— 那张表每出一个新模型就漏一次(opus-4-8、fable-5
+/// 都各虚高过 5 倍 ctx%).
 /// 优先级:
-///   1. model id 以 GA 1M 前缀开头 (含 `[1m]` 显式后缀同样命中, 因 startsWith)
-///      → 1,000,000
-///   2. 观测 ctx > 200,000 → 1M (物理推断, 兜底新 model 没被列入 prefix 表)
-///   3. 缺省 200k
+///   1. model id 带显式 `[1m]` 后缀 → 1,000,000 (Claude Code 明确处于 1M 模式)
+///   2. 数据表命中 (`pricing::context_window_of`, 含日期后缀 id 的前缀匹配)
+///      → 取数据窗口; 但实测 ctx 已超出数据窗口 → 1M (物理推断优先于过时数据)
+///   3. 数据缺失: 观测 ctx > 200,000 → 1M, 否则缺省 200k
 ///
-/// `cwd` / `observed_ctx` 仍接受为参数, 是为了未来扩展 (例如用户手动 override),
-/// 但本版本不用 cwd.
+/// `cwd` 仍接受为参数, 是为了未来扩展 (例如用户手动 override), 本版本不用.
 pub fn context_window_for(model: &str, _cwd: Option<&str>, observed_ctx: u64) -> u64 {
-    let lower = model.to_ascii_lowercase();
-    // 兼容裸 id 跟 [1m] 显式后缀: 都走 startsWith
-    if ANTHROPIC_GA_1M_PREFIXES
-        .iter()
-        .any(|p| lower.starts_with(p))
-    {
+    if model.trim().to_ascii_lowercase().ends_with("[1m]") {
         return 1_000_000;
     }
-    if observed_ctx > 200_000 {
-        return 1_000_000;
+    match crate::claude::pricing::context_window_of(model) {
+        Some(w) if observed_ctx <= w => w,
+        Some(_) => 1_000_000,
+        None if observed_ctx > 200_000 => 1_000_000,
+        None => 200_000,
     }
-    200_000
 }
 
 /// 解析 project dir 名 (`-Users-demo-dev-VibeTerm`) → 原 cwd (`/Users/demo/dev/VibeTerm`).
@@ -760,7 +740,7 @@ mod tests {
 
     #[test]
     fn context_window_inference_paths() {
-        // 老模型 (200k) — 不在 GA 1M 列表
+        // 200k 模型 — 数据表命中
         assert_eq!(
             context_window_for("claude-sonnet-4-5", None, 50_000),
             200_000
@@ -773,16 +753,12 @@ mod tests {
             context_window_for("claude-opus-4-5", None, 100_000),
             200_000
         );
-        // GA 1M 模型 — 裸 id 即 1M
+        // 1M 模型 — ctx < 200k 时也必须判 1M, 否则 ctx% 虚高 5 倍
+        // (硬编码前缀表时代 opus-4-8、fable-5 都栽过这个坑, 现在由数据表覆盖)
         assert_eq!(
             context_window_for("claude-opus-4-6", None, 50_000),
             1_000_000
         );
-        assert_eq!(
-            context_window_for("claude-opus-4-7", None, 50_000),
-            1_000_000
-        );
-        // opus-4-8(当前 GA 模型, 1M)— ctx < 200k 时也必须判 1M, 否则 ctx% 虚高 5 倍
         assert_eq!(
             context_window_for("claude-opus-4-8", None, 50_000),
             1_000_000
@@ -791,17 +767,30 @@ mod tests {
             context_window_for("claude-sonnet-4-6", None, 50_000),
             1_000_000
         );
-        // [1m] 显式后缀 — 跟裸 id 一样命中 (startsWith)
+        assert_eq!(
+            context_window_for("claude-fable-5", None, 50_000),
+            1_000_000
+        );
+        // 未来日期后缀 id → 数据表前缀命中
+        assert_eq!(
+            context_window_for("claude-opus-4-8-20991231", None, 50_000),
+            1_000_000
+        );
+        // [1m] 显式后缀 → 直接 1M (不依赖数据表)
         assert_eq!(
             context_window_for("claude-opus-4-7[1m]", None, 50_000),
             1_000_000
         );
-        // observed > 200k 兜底 — 即使 model 不在 1M 列表也判 1M (新 model 未列入)
+        // 实测超出数据窗口 → 物理推断 1M 优先于过时数据 (如 [1m] beta 漏标的场景)
+        assert_eq!(
+            context_window_for("claude-sonnet-4-5", None, 300_000),
+            1_000_000
+        );
+        // 数据缺失: observed > 200k → 1M; 否则缺省 200k
         assert_eq!(
             context_window_for("claude-future-model-xyz", None, 300_000),
             1_000_000
         );
-        // observed ≤ 200k 且不在 1M 列表 → 200k
         assert_eq!(
             context_window_for("claude-future-model-xyz", None, 150_000),
             200_000

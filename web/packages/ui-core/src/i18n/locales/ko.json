@@ -481,6 +481,7 @@
   "update.app.new_version": "새 버전 v{version} 사용 가능",
   "update.app.open_download": "다운로드 페이지 열기",
   "update.app.error": "확인 실패 (네트워크를 확인하고 다시 시도하세요)",
+  "update.app.rate_limited": "확인 실패(GitHub API 속도 제한 — 잠시 후 다시 시도하세요)",
   "update.app.note": "기본적으로 시작 시 GitHub Releases를 한 번 확인합니다(아래에서 끄기). 버전 비교만, 텔레메트리 없음, 업로드 없음. \"다운로드 후 설치\"는 minisign 서명을 검증하고 제자리 업데이트 후 재시작합니다. 실패하면 \"다운로드 페이지 열기\"를 사용하세요.",
   "update.price.title": "모델 가격 (추정)",
   "update.price.purpose": "사용량 패널에 표시되는 비용은 공개 정가로 추정한 값이며, 실제 Anthropic 청구액이 아니라 참고용입니다. Anthropic이 가격을 바꾸면 여기서 가격표를 수동으로 업데이트해 과거와 이후의 비용 추정이 최신 가격을 따라가도록 할 수 있고, 앱을 업그레이드할 필요는 없습니다. 정가는 LiteLLM(BerriAI/litellm)이 관리하는 공개 가격표에서 가져오며(단계별 가격 포함, Anthropic 공식 가격에서 유래), 수동으로 가져와 로컬에만 저장합니다.",

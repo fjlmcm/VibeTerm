@@ -4,6 +4,7 @@
 // 支持 theme prop(xterm options 立即应用)
 
 import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
+import { Portal } from "solid-js/web";
 
 import { Terminal as XTerm } from "@xterm/xterm";
 // xterm 自带样式随依赖图打包(此前 index.html/floating.html 用
@@ -11,6 +12,7 @@ import { Terminal as XTerm } from "@xterm/xterm";
 // 原样保留 → 运行时 404 → 终端无样式渲染成空白)。
 import "@xterm/xterm/css/xterm.css";
 import { WebglAddon } from "@xterm/addon-webgl";
+import { CanvasAddon } from "@xterm/addon-canvas";
 import { FitAddon } from "@xterm/addon-fit";
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { SearchAddon } from "@xterm/addon-search";
@@ -29,9 +31,11 @@ import type { UnlistenFn } from "@tauri-apps/api/event";
 import type { Theme, TaskId } from "@vibeterm/ipc-types";
 import { toXtermTheme } from "../theme";
 import { t } from "../i18n";
+import { menuClampRef } from "../menu-clamp";
 import {
   Channel,
   closePty,
+  darwinMajorVersion,
   resizePty,
   terminalSize,
   spawnTerminalInTask,
@@ -143,6 +147,24 @@ const FILE_PATH_REGEX =
 // 成本:context 创建 + 可见区重栅格化(毫秒级,触发频度低);多源同时触发用 1.5s 窗口合并。
 const [repairTick, setRepairTick] = createSignal(0);
 
+// 渲染后端选择(2026-06-12,第二次带血):macOS 26.x 上 dispose+重建也只能事后救一帧,
+// 损坏随时复发且无法检测(buffer 数据无损,纯渲染层画错),用户实测重建方案依然乱码 →
+// Darwin >= 25 直接弃用 WebGL,改挂 CanvasAddon(2D canvas 图集不走 WebGL 纹理路径,
+// 不受 xterm.js#5816 影响;仍是 GPU 加速的 2D 合成,性能远高于 DOM 渲染器)。
+// 版本查询是异步 IPC:结果到达前 mount 的实例先挂 WebGL,切 canvas 时直接 bump
+// repairTick 让已挂载实例整层重建(绕过 requestRenderRepair 的 1.5s 合并窗口,
+// 避免被启动期 focus 触发的 repair 吞掉)。非 Tauri 环境(Playwright 直连 vite)
+// 查询失败,保持 webgl 现状。
+let rendererBackend: "webgl" | "canvas" = "webgl";
+darwinMajorVersion()
+  .then((major) => {
+    if (major >= 25) {
+      rendererBackend = "canvas";
+      setRepairTick((n) => n + 1);
+    }
+  })
+  .catch(() => {});
+
 let lastRepairAt = 0;
 /** 让所有 Terminal 实例重建 WebGL 渲染层(修复偶发字形乱码) */
 export function requestRenderRepair() {
@@ -185,12 +207,12 @@ export interface TerminalProps {
 export function Terminal(props: TerminalProps) {
   let hostEl!: HTMLDivElement;
   let term: XTerm | null = null;
-  let webgl: WebglAddon | null = null;
-  // WebGL 不可用(初始化失败 / context loss)→ 永久回 DOM 渲染器,repair 不再重试
-  let webglDisabled = false;
+  let renderer: WebglAddon | CanvasAddon | null = null;
+  // GPU 渲染层不可用(初始化失败 / WebGL context loss)→ 永久回 DOM 渲染器,repair 不再重试
+  let gpuDisabled = false;
   // repair 到达时本实例不可见(display:none 的非激活任务)→ 0 尺寸下建 context 不可靠,
   // 记账推迟,变可见(onBecameVisible)时补建
-  let pendingWebglRepair = false;
+  let pendingRendererRepair = false;
   let fit: FitAddon | null = null;
   let search: SearchAddon | null = null;
   let serialize: SerializeAddon | null = null;
@@ -297,41 +319,49 @@ export function Terminal(props: TerminalProps) {
     });
   };
 
-  // 挂载 WebGL 渲染层。mount 与 rebuildWebgl 共用;失败(环境不支持)即永久回 DOM。
-  const attachWebgl = () => {
-    if (!term || webglDisabled) return;
+  // 挂载 GPU 渲染层(backend 由 module 级 rendererBackend 决定)。
+  // mount 与 rebuildRenderer 共用;失败(环境不支持)即永久回 DOM。
+  const attachRenderer = () => {
+    if (!term || gpuDisabled) return;
     try {
-      webgl = new WebglAddon();
-      webgl.onContextLoss(() => {
-        console.warn("[terminal] WebGL context lost — fallback DOM");
-        webglDisabled = true;
-        webgl?.dispose();
-        webgl = null;
-      });
-      term.loadAddon(webgl);
+      if (rendererBackend === "canvas") {
+        renderer = new CanvasAddon();
+        term.loadAddon(renderer);
+      } else {
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => {
+          console.warn("[terminal] WebGL context lost — fallback DOM");
+          gpuDisabled = true;
+          renderer?.dispose();
+          renderer = null;
+        });
+        renderer = webgl;
+        term.loadAddon(webgl);
+      }
     } catch (e) {
-      console.warn("[terminal] WebGL addon unavailable", e);
-      webglDisabled = true;
-      webgl = null;
+      console.warn("[terminal] GPU renderer addon unavailable", e);
+      gpuDisabled = true;
+      renderer = null;
     }
   };
 
-  // 整层重建:dispose 旧 addon(旧 context/纹理一并释放)→ 全新挂载。
+  // 整层重建:dispose 旧 addon(旧 context/纹理一并释放)→ 按当前 backend 全新挂载。
+  // 也承担 webgl → canvas 的切换(rendererBackend 异步判定晚于首批 mount 时)。
   // 不可见实例推迟(0 尺寸 canvas 上建 context 不可靠),变可见时由 onBecameVisible 补做。
-  const rebuildWebgl = () => {
-    if (disposed || !term || !webgl) return;
+  const rebuildRenderer = () => {
+    if (disposed || !term || !renderer) return;
     if (hostEl && hostEl.offsetParent === null) {
-      pendingWebglRepair = true;
+      pendingRendererRepair = true;
       return;
     }
-    pendingWebglRepair = false;
+    pendingRendererRepair = false;
     try {
-      webgl.dispose();
+      renderer.dispose();
     } catch {
       /* renderer 已失效时 dispose 可能抛 —— 忽略,直接重建 */
     }
-    webgl = null;
-    attachWebgl();
+    renderer = null;
+    attachRenderer();
   };
 
   // 视图从 display:none → 可见时的重排 + 反污染处理。
@@ -355,7 +385,7 @@ export function Terminal(props: TerminalProps) {
     if (!xt || terminalId === null) return;
     tryFit();
     // 隐藏期间错过的 WebGL 重建在此补做(fit 之后,尺寸已就绪)
-    if (pendingWebglRepair) rebuildWebgl();
+    if (pendingRendererRepair) rebuildRenderer();
     try {
       const [ptyRows, ptyCols] = await terminalSize(terminalId);
       const contaminated =
@@ -656,7 +686,7 @@ export function Terminal(props: TerminalProps) {
       ta.addEventListener("compositionend", onCompositionEnd);
     }
 
-    attachWebgl();
+    attachRenderer();
 
     requestAnimationFrame(async () => {
       if (disposed) return;
@@ -883,12 +913,13 @@ export function Terminal(props: TerminalProps) {
     term.options.cursorBlink = blink;
   });
 
-  // WebGL 渲染层自愈:订阅 module 级 repairTick(触发源与"为什么是整层重建而非
-  // clearTextureAtlas"见文件顶部注释)。首跑 = mount 当下(addon 刚挂),跳过;
-  // 之后每次 tick 重建。DOM fallback(webglDisabled)时 rebuildWebgl 自然 no-op。
+  // GPU 渲染层自愈 / 后端切换:订阅 module 级 repairTick(触发源与"为什么是整层重建
+  // 而非 clearTextureAtlas"见文件顶部注释;rendererBackend 异步切 canvas 也走这条)。
+  // 首跑 = mount 当下(addon 刚挂),跳过;之后每次 tick 重建。
+  // DOM fallback(gpuDisabled)时 rebuildRenderer 自然 no-op。
   createEffect<number>((prev) => {
     const tick = repairTick();
-    if (tick !== prev) rebuildWebgl();
+    if (tick !== prev) rebuildRenderer();
     return tick;
   }, repairTick());
 
@@ -1033,9 +1064,12 @@ export function Terminal(props: TerminalProps) {
           </button>
         </div>
       </Show>
-      <Show when={ctxMenu()}>
+      {/* keyed:每次右键都重建菜单 DOM,ref 里的视口夹取才会对新坐标重跑 */}
+      <Show when={ctxMenu()} keyed>
         {(m) => (
-          <>
+          // Portal 到 body:逃出 canvas 卡片的 transform 祖先(fixed 在 transform 内退化成
+          // 相对容器定位)与低层 stacking context,否则菜单会被侧栏/其他卡片遮挡。
+          <Portal>
             {/* 全屏隐形 backdrop:点空白处或滚轮关闭 */}
             <div
               onClick={closeCtxMenu}
@@ -1047,21 +1081,22 @@ export function Terminal(props: TerminalProps) {
               style={{
                 position: "fixed",
                 inset: 0,
-                "z-index": 9998,
+                "z-index": 10000,
               }}
             />
             <div
               data-testid="terminal-ctxmenu"
+              ref={menuClampRef(m.x, m.y)}
               style={{
                 position: "fixed",
-                left: `${m().x}px`,
-                top: `${m().y}px`,
+                left: `${m.x}px`,
+                top: `${m.y}px`,
                 background: "var(--color-surface)",
                 border: "1px solid var(--color-border)",
                 "border-radius": "6px",
                 padding: "4px",
                 "box-shadow": "0 8px 24px rgba(0,0,0,0.35)",
-                "z-index": 9999,
+                "z-index": 10001,
                 "min-width": "160px",
                 "font-size": "13px",
                 color: "var(--color-text)",
@@ -1070,7 +1105,7 @@ export function Terminal(props: TerminalProps) {
             >
               <CtxItem
                 label={t("ctxmenu.terminal.copy")}
-                disabled={!m().hasSel}
+                disabled={!m.hasSel}
                 onClick={() => {
                   const sel = term?.getSelection() ?? "";
                   if (sel) {
@@ -1111,7 +1146,7 @@ export function Terminal(props: TerminalProps) {
                 }}
               />
             </div>
-          </>
+          </Portal>
         )}
       </Show>
     </div>

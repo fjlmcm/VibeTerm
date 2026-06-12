@@ -481,6 +481,7 @@
   "update.app.new_version": "發現新版本 v{version}",
   "update.app.open_download": "開啟下載頁",
   "update.app.error": "檢查失敗（請檢查連線後重試）",
+  "update.app.rate_limited": "檢查失敗(GitHub API 速率限制,請稍後再試;非網路問題)",
   "update.app.note": "預設啟動時檢查一次 GitHub Releases(下方可關);唯讀比對版本號、零遙測、不上傳。「下載並安裝」校驗 minisign 簽章後原地更新並重新啟動;失敗可改用「開啟下載頁」。",
   "update.price.title": "模型價格估算",
   "update.price.purpose": "用量面板裡的費用是依公開定價估算的 —— 並非你在 Anthropic 的實際帳單,僅供參考。Anthropic 調價後,在此手動更新價格表,過去與後續的費用估算就會跟上最新定價,不必等軟體升級。定價取自 LiteLLM（BerriAI/litellm）維護的公開價格表（含分級定價,源自 Anthropic 官方定價）;手動拉取、僅存本地。",

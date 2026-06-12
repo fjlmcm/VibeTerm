@@ -3,7 +3,7 @@
 # - lint           :typecheck + cargo fmt --check + clippy -D warnings
 # - test           :cargo test 含集成测试(子 crate,不链 tauri runtime)
 # - bench-smoke    :criterion --quick,防 perf 回归
-# - playwright-web :macOS,启 dev server,跑 6 用例
+# - playwright-web :ubuntu,vite dev server(playwright webServer 自动拉起)+ chromium,跑 7 用例
 # - app-smoke      :macOS build .app + scripts/smoke-app.sh(launch + tracing 断言)
 # - build-smoke    :macOS + Windows,cross-compile + bundle web
 
@@ -79,6 +79,28 @@ jobs:
       - name: bench smoke(防性能回归)
         working-directory: src-tauri
         run: cargo bench -p vibeterm-status --bench status_detector -- --quick
+
+  playwright-web:
+    # Web 层 smoke(Tauri runtime 用 mock 替代):vite dev server + chromium。
+    # ubuntu 即可 —— Desktop Chrome 设备的 UA 固定为 Windows,与宿主平台无关。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with: { node-version: "20", cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright chromium
+        run: pnpm --filter @vibeterm/e2e exec playwright install --with-deps chromium
+      - name: Run web smoke(dev server 由 playwright webServer 自动拉起)
+        run: pnpm --filter @vibeterm/e2e run test:smoke
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: e2e/test-results/
 
   app-smoke:
     # 真 .app build + launch + tracing 断言

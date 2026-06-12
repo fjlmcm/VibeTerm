@@ -281,6 +281,7 @@ fn main() {
             close_floating,
             focus_window,
             invoke_global_action,
+            darwin_major_version,
             // i18n
             set_menu_lang,
             // AI CLI 检测

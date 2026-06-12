@@ -481,6 +481,7 @@
   "update.app.new_version": "Nuova versione v{version} disponibile",
   "update.app.open_download": "Apri la pagina di download",
   "update.app.error": "Controllo non riuscito (verifica la rete e riprova)",
+  "update.app.rate_limited": "Verifica non riuscita (limite di richieste dell'API GitHub — riprova più tardi)",
   "update.app.note": "Per impostazione predefinita controlla GitHub Releases all'avvio (disattivabile sotto); solo confronto di versione, nessuna telemetria, non invia nulla. \"Scarica e installa\" verifica la firma minisign, aggiorna sul posto e riavvia; se fallisce usa \"Apri pagina di download\".",
   "update.price.title": "Prezzi dei modelli (stime)",
   "update.price.purpose": "I costi mostrati nel pannello d'uso sono stimati dai listini pubblici — non sono la tua fattura reale di Anthropic, solo a titolo indicativo. Dopo un cambio di prezzi da parte di Anthropic, aggiorna qui la tabella così che le stime passate e future seguano i listini più recenti, senza dover aggiornare l'app. I listini provengono dalla tabella pubblica gestita da LiteLLM (BerriAI/litellm; con prezzi a fasce, basati sul listino ufficiale di Anthropic); scaricati manualmente, conservati solo in locale.",

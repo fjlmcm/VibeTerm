@@ -481,6 +481,7 @@
   "update.app.new_version": "Versi baru v{version} tersedia",
   "update.app.open_download": "Buka halaman unduhan",
   "update.app.error": "Pemeriksaan gagal (cek jaringanmu lalu coba lagi)",
+  "update.app.rate_limited": "Pemeriksaan gagal (batas permintaan API GitHub — coba lagi nanti)",
   "update.app.note": "Secara default memeriksa GitHub Releases saat mulai (matikan di bawah); hanya membandingkan versi, tanpa telemetri, tidak mengunggah. \"Unduh & pasang\" memverifikasi tanda tangan minisign, memperbarui di tempat, dan memulai ulang; jika gagal gunakan \"Buka halaman unduhan\".",
   "update.price.title": "Harga model (estimasi)",
   "update.price.purpose": "Biaya yang tampil di panel penggunaan diestimasi dari harga daftar publik — bukan tagihan Anthropic-mu yang sebenarnya, hanya untuk rujukan. Setelah Anthropic mengubah harga, perbarui tabel harga di sini agar estimasi lampau dan mendatang mengikuti harga terkini, tanpa perlu memperbarui aplikasi. Harga daftar berasal dari tabel publik yang dikelola LiteLLM (BerriAI/litellm; dengan harga berjenjang, bersumber dari harga resmi Anthropic); diambil manual, disimpan hanya secara lokal.",

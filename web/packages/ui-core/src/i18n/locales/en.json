@@ -486,6 +486,7 @@
   "update.app.install_done": "Installed, restarting…",
   "update.app.install_error": "In-app install failed; use the download page instead",
   "update.app.error": "Check failed (check your network and retry)",
+  "update.app.rate_limited": "Check failed (GitHub API rate limit — try again later; not a network issue)",
   "update.app.note": "Checks GitHub Releases on launch by default (toggle below); read-only version compare, no telemetry, never uploads. \"Download & install\" verifies the minisign signature, updates in place, and restarts; if it fails use \"Open download page\".",
   "update.price.title": "Model pricing (estimates)",
   "update.price.purpose": "Costs shown in the usage panel are estimated from public list prices — not your actual Anthropic bill, for reference only. After Anthropic changes prices, update the price table here so past and future estimates track the latest pricing, no app upgrade needed. List prices come from the public table maintained by LiteLLM (BerriAI/litellm; with tiered pricing, sourced from Anthropic's official pricing); fetched manually, stored locally only.",

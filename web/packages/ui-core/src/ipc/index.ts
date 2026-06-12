@@ -231,6 +231,12 @@ export async function invokeGlobalAction(action: string): Promise<void> {
   return invoke("invoke_global_action", { action });
 }
 
+/** Darwin 内核 major 版本(macOS 26.x = Darwin 25);非 macOS 返回 0。
+ *  WKWebView UA 版本冻结,前端拿不到真实系统版本,渲染后端选择靠它。 */
+export async function darwinMajorVersion(): Promise<number> {
+  return invoke<number>("darwin_major_version");
+}
+
 export function onGlobalAction(handler: (action: string) => void): Promise<UnlistenFn> {
   return tauriListen<string>("global_action", (e) => handler(e.payload));
 }
@@ -286,9 +292,41 @@ export async function savePngFile(path: string, base64Png: string): Promise<void
   return invoke<void>("save_png_file", { path, base64Png });
 }
 
+// ===== 错误格式化 =====
+
+/**
+ * 把 invoke 抛出的错误转成可读文本。
+ * Rust 侧 IpcError 经 serde(tag="kind", content="detail")序列化成 `{kind, detail}` 对象,
+ * 直接 `String(e)` 只会得到 "[object Object]",detail 里的真实原因(trace_id 等)全被吞掉。
+ * 所有展示 IPC 错误的地方都应走这里,别再手写 String(e)。
+ */
+export function formatIpcError(e: unknown): string {
+  if (typeof e === "string") return e;
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === "object") {
+    const { kind, detail } = e as { kind?: unknown; detail?: unknown };
+    if (typeof kind === "string") {
+      if (detail && typeof detail === "object") {
+        const fields = Object.values(detail as Record<string, unknown>)
+          .filter((v) => typeof v === "string" || typeof v === "number")
+          .map(String)
+          .join(", ");
+        return fields ? `${kind}: ${fields}` : kind;
+      }
+      return kind;
+    }
+    try {
+      return JSON.stringify(e);
+    } catch {
+      /* 循环引用等罕见情况,落回 String */
+    }
+  }
+  return String(e);
+}
+
 // ===== 设置·更新页:软件版本检查 + 模型价格(手动, 仅点按钮时联网)=====
 
-/** 检查软件更新 — GET GitHub latest release 比较版本. 仅展示 + 给 release 链接, 不下载安装. */
+/** 检查软件更新 — 主路径 GET updater latest.json(无 REST 限流)比较版本;仅展示, 不下载安装. */
 export async function checkAppUpdate(): Promise<AppUpdateInfo> {
   return invoke<AppUpdateInfo>("check_app_update");
 }

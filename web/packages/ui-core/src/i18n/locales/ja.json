@@ -481,6 +481,7 @@
   "update.app.new_version": "新バージョン v{version} があります",
   "update.app.open_download": "ダウンロードページを開く",
   "update.app.error": "確認に失敗しました(ネットワークを確認して再試行)",
+  "update.app.rate_limited": "チェックに失敗しました(GitHub API のレート制限です。しばらくしてから再試行してください)",
   "update.app.note": "既定で起動時に GitHub Releases を一度確認(下で無効化可)。バージョン照合のみ・テレメトリなし・アップロードなし。「ダウンロードしてインストール」は minisign 署名を検証してその場で更新・再起動します。失敗時は「ダウンロードページを開く」を。",
   "update.price.title": "モデル料金(推定)",
   "update.price.purpose": "統計パネルの費用は公開単価からの推定であり、Anthropic の実際の請求額ではありません(参考用)。Anthropic が価格改定した後、ここで単価表を手動更新すれば、過去と今後の費用推定が最新の価格に追従します(アプリ更新は不要)。単価は LiteLLM(BerriAI/litellm)がコミュニティで維持する公開価格表(段階料金あり、Anthropic 公式料金に由来)から手動取得し、ローカルにのみ保存します。",

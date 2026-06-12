@@ -13,13 +13,14 @@
 //   - 全局快捷键(Cmd+K / Cmd+N / Cmd+, / Cmd+Shift+]/[)拉主窗口前台
 
 import { createSignal, createEffect, onMount, onCleanup, Show } from "solid-js";
-import { render } from "solid-js/web";
+import { render, Portal } from "solid-js/web";
 import {
   Terminal,
   Titlebar,
   ipc,
   t,
   theme as themeMod,
+  menuClampRef,
   SplitView,
   singleLeaf,
   splitLeaf,
@@ -371,48 +372,53 @@ function FloatingApp() {
       </div>
 
       {/* 右键菜单 — 命令面板 / 回主窗口 */}
-      <Show when={ctxMenu()}>
+      {/* keyed:每次右键都重建菜单 DOM,ref 里的视口夹取才会对新坐标重跑 */}
+      <Show when={ctxMenu()} keyed>
         {(menu) => (
-          <div
-            data-testid="floating-ctx-menu"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              position: "fixed",
-              left: `${menu().x}px`,
-              top: `${menu().y}px`,
-              background: "var(--color-surface)",
-              border: "1px solid var(--color-border)",
-              "border-radius": "6px",
-              "box-shadow": "0 4px 12px rgba(0,0,0,0.3)",
-              padding: "4px 0",
-              "z-index": 1000,
-              "min-width": "180px",
-            }}
-          >
+          // Portal + 视口夹取:浮窗窗口小,贴边右键时菜单不得伸出窗外被裁切。
+          <Portal>
             <div
-              data-testid="floating-ctx-palette"
-              onClick={() => {
-                ipc.invokeGlobalAction("command_palette").catch(console.error);
-                setCtxMenu(null);
+              data-testid="floating-ctx-menu"
+              ref={menuClampRef(menu.x, menu.y)}
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: "fixed",
+                left: `${menu.x}px`,
+                top: `${menu.y}px`,
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+                "border-radius": "6px",
+                "box-shadow": "0 4px 12px rgba(0,0,0,0.3)",
+                padding: "4px 0",
+                "z-index": 10001,
+                "min-width": "180px",
               }}
-              style={ctxItemStyle()}
             >
-              {t("floating.open_palette")}
+              <div
+                data-testid="floating-ctx-palette"
+                onClick={() => {
+                  ipc.invokeGlobalAction("command_palette").catch(console.error);
+                  setCtxMenu(null);
+                }}
+                style={ctxItemStyle()}
+              >
+                {t("floating.open_palette")}
+              </div>
+              <div
+                data-testid="floating-ctx-return-main"
+                onClick={() => {
+                  const loc = task()?.location;
+                  if (loc && loc.kind === "Floating") {
+                    ipc.closeFloating(loc.label).catch(console.error);
+                  }
+                  setCtxMenu(null);
+                }}
+                style={ctxItemStyle()}
+              >
+                {t("ctx.return_to_main")}
+              </div>
             </div>
-            <div
-              data-testid="floating-ctx-return-main"
-              onClick={() => {
-                const loc = task()?.location;
-                if (loc && loc.kind === "Floating") {
-                  ipc.closeFloating(loc.label).catch(console.error);
-                }
-                setCtxMenu(null);
-              }}
-              style={ctxItemStyle()}
-            >
-              {t("ctx.return_to_main")}
-            </div>
-          </div>
+          </Portal>
         )}
       </Show>
 

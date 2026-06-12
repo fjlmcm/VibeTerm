@@ -138,6 +138,26 @@ pub(crate) async fn focus_window(label: String, app: AppHandle) -> IpcResult<()>
     Ok(())
 }
 
+/// Darwin 内核 major 版本(macOS 26.x = Darwin 25);非 macOS / 读取失败返回 0。
+///
+/// 前端据此选 xterm 渲染后端:macOS 26.x WebKit 存在 WebGL 纹理对象级损坏
+/// (xterm.js#5816,字形图集随机花屏),Darwin >= 25 时降级 canvas 渲染器。
+/// WKWebView 的 UA 版本号已冻结("10_15_7"),前端拿不到真实系统版本,只能后端给。
+/// 用 cfg! 运行时门而非 cfg 属性:全平台都编译,Windows 不会再踩 cfg 符号盲区。
+#[tauri::command]
+pub(crate) fn darwin_major_version() -> u32 {
+    if !cfg!(target_os = "macos") {
+        return 0;
+    }
+    std::process::Command::new("uname")
+        .arg("-r")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.trim().split('.').next()?.parse().ok())
+        .unwrap_or(0)
+}
+
 // 浮窗里按 Cmd+K 等全局快捷键时 → 通知主窗口 + 拉前台 + 触发该 action
 // (浮窗内全局快捷键自动拉主窗口前台执行)
 #[tauri::command]
@@ -242,4 +262,18 @@ pub(crate) async fn open_external(target: String) -> IpcResult<()> {
     spawn_result.map(|_| ()).map_err(|e| IpcError::Unknown {
         trace_id: format!("open_external: {e}"),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn darwin_major_version_sane() {
+        let v = super::darwin_major_version();
+        if cfg!(target_os = "macos") {
+            // 支持下限 macOS 11 = Darwin 20;解析失败会错给 0,这里兜住
+            assert!(v >= 20, "expected Darwin >= 20 on macOS, got {v}");
+        } else {
+            assert_eq!(v, 0);
+        }
+    }
 }

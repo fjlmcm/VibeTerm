@@ -481,6 +481,7 @@
   "update.app.new_version": "Nouvelle version v{version} disponible",
   "update.app.open_download": "Ouvrir la page de téléchargement",
   "update.app.error": "Échec de la vérification (vérifiez votre réseau et réessayez)",
+  "update.app.rate_limited": "Échec de la vérification (limite de requêtes de l'API GitHub — réessayez plus tard)",
   "update.app.note": "Vérifie GitHub Releases au démarrage par défaut (désactivable ci-dessous) ; comparaison de version seule, aucune télémétrie, rien n'est envoyé. « Télécharger et installer » vérifie la signature minisign, met à jour sur place et redémarre ; en cas d'échec, « Ouvrir la page de téléchargement ».",
   "update.price.title": "Tarification des modèles (estimations)",
   "update.price.purpose": "Les coûts affichés dans le panneau d'utilisation sont estimés à partir des prix publics catalogue — ce n'est pas votre facture Anthropic réelle, à titre indicatif uniquement. Après un changement de prix chez Anthropic, mettez à jour la table de prix ici pour que les estimations passées et futures suivent la dernière tarification, sans mise à niveau de l'app. Les prix catalogue proviennent de la table publique maintenue par LiteLLM (BerriAI/litellm ; avec tarification par paliers, issue de la tarification officielle d'Anthropic) ; récupérés manuellement, stockés en local uniquement.",

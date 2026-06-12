@@ -7,6 +7,7 @@
 //   - 拖拽排序
 
 import { For, Show, createMemo, createSignal, onCleanup, onMount, type Component } from "solid-js";
+import { Portal } from "solid-js/web";
 import { GitBranch } from "lucide-solid";
 import type { TaskDto, TaskId } from "@vibeterm/ipc-types";
 import {
@@ -21,6 +22,7 @@ import {
 } from "../ipc";
 import { t } from "../i18n";
 import { modKeyLabel } from "../keybindings";
+import { menuClampRef } from "../menu-clamp";
 import { urgencyColorVar } from "../urgency";
 
 export interface TaskListProps {
@@ -577,70 +579,76 @@ export const TaskList: Component<TaskListProps> = (props) => {
       </div>
 
       {/* 右键菜单 */}
-      <Show when={ctxMenu()}>
+      {/* keyed:每次右键都重建菜单 DOM,ref 里的视口夹取才会对新坐标重跑 */}
+      <Show when={ctxMenu()} keyed>
         {(menu) => (
-          <div
-            data-testid="task-ctx-menu"
-            data-task-id={menu().task.id}
-            style={{
-              position: "fixed",
-              left: `${menu().x}px`,
-              top: `${menu().y}px`,
-              background: "var(--color-surface)",
-              border: "1px solid var(--color-border)",
-              "border-radius": "6px",
-              "box-shadow": "0 4px 12px rgba(0,0,0,0.3)",
-              padding: "4px 0",
-              "z-index": 1000,
-              "min-width": "180px",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <MenuItem
-              testid="task-ctx-floating"
-              label={menu().task.location.kind === "Floating" ? t("ctx.return_to_main") : t("ctx.open_in_floating")}
-              onClick={async () => {
-                const tt = menu().task;
-                if (tt.location.kind === "Floating") {
-                  await closeFloating(tt.location.label).catch(console.error);
-                } else {
-                  await openFloating(tt.id).catch(console.error);
-                }
-                setCtxMenu(null);
+          // Portal 到 body:侧栏自身 stacking context 层级低(z=5),菜单伸进工作区会被
+          // canvas 卡片(z≥10)遮挡;Portal 后配合视口夹取保证菜单完整可见。
+          <Portal>
+            <div
+              data-testid="task-ctx-menu"
+              data-task-id={menu.task.id}
+              ref={menuClampRef(menu.x, menu.y)}
+              style={{
+                position: "fixed",
+                left: `${menu.x}px`,
+                top: `${menu.y}px`,
+                background: "var(--color-surface)",
+                border: "1px solid var(--color-border)",
+                "border-radius": "6px",
+                "box-shadow": "0 4px 12px rgba(0,0,0,0.3)",
+                padding: "4px 0",
+                "z-index": 10001,
+                "min-width": "180px",
               }}
-            />
-            <MenuItem
-              testid="task-ctx-rename"
-              label={t("ctx.rename")}
-              onClick={() => {
-                startEdit(menu().task);
-                setCtxMenu(null);
-              }}
-            />
-            <MenuItem
-              testid="task-ctx-mute"
-              label={menu().task.notify_muted ? t("ctx.unmute_notify") : t("ctx.mute_notify")}
-              onClick={() => {
-                const tt = menu().task;
-                setCtxMenu(null);
-                setTaskNotifyMuted(tt.id, !tt.notify_muted).catch(console.error);
-              }}
-            />
-            <MenuItem
-              testid="task-ctx-close"
-              label={t("ctx.close")}
-              onClick={() => {
-                const tt = menu().task;
-                setCtxMenu(null);
-                if (props.onRequestClose) {
-                  props.onRequestClose(tt);
-                } else {
-                  // 没注入回调时退化为直接关闭(测试 / 老调用方)
-                  closeTask(tt.id).catch(console.error);
-                }
-              }}
-            />
-          </div>
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MenuItem
+                testid="task-ctx-floating"
+                label={menu.task.location.kind === "Floating" ? t("ctx.return_to_main") : t("ctx.open_in_floating")}
+                onClick={async () => {
+                  const tt = menu.task;
+                  if (tt.location.kind === "Floating") {
+                    await closeFloating(tt.location.label).catch(console.error);
+                  } else {
+                    await openFloating(tt.id).catch(console.error);
+                  }
+                  setCtxMenu(null);
+                }}
+              />
+              <MenuItem
+                testid="task-ctx-rename"
+                label={t("ctx.rename")}
+                onClick={() => {
+                  startEdit(menu.task);
+                  setCtxMenu(null);
+                }}
+              />
+              <MenuItem
+                testid="task-ctx-mute"
+                label={menu.task.notify_muted ? t("ctx.unmute_notify") : t("ctx.mute_notify")}
+                onClick={() => {
+                  const tt = menu.task;
+                  setCtxMenu(null);
+                  setTaskNotifyMuted(tt.id, !tt.notify_muted).catch(console.error);
+                }}
+              />
+              <MenuItem
+                testid="task-ctx-close"
+                label={t("ctx.close")}
+                onClick={() => {
+                  const tt = menu.task;
+                  setCtxMenu(null);
+                  if (props.onRequestClose) {
+                    props.onRequestClose(tt);
+                  } else {
+                    // 没注入回调时退化为直接关闭(测试 / 老调用方)
+                    closeTask(tt.id).catch(console.error);
+                  }
+                }}
+              />
+            </div>
+          </Portal>
         )}
       </Show>
     </div>

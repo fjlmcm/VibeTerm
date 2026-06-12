@@ -3,12 +3,13 @@
 // 策略:
 //   - 直接对 Vite dev server(http://localhost:1420)做 web 层 E2E,
 //     绕过 Tauri runtime — 简单可跑、覆盖 UI 主要流程。
-//   - Tauri 集成 E2E(tauri-driver / WebDriver)在 M10+ 加 —
-//     需要 macOS / Windows 各自的 WebDriver runner,工作量大,
-//     M9 仅打基础。
+//   - Tauri 集成 E2E(真 app,CDP)走 tauri-cdp.config.ts(test:tauri)。
 //
-// 测试前 user 需手动跑 `pnpm tauri dev`(或 webServer auto-start),
-// 然后 `pnpm --filter @vibeterm/e2e test`。
+// dev server 由下方 webServer 自动拉起(本地 :1420 已有服务时直接复用);
+// 跑法:`pnpm --filter @vibeterm/e2e run test:smoke`(CI 同款)。
+//
+// 注意:devices["Desktop Chrome"] 的 UA 是 Windows —— app 按 UA 判平台,
+// 快捷键用例须按 Control+ 组合,别写 Meta+(isMacPlatform()=false)。
 
 import { defineConfig, devices } from "@playwright/test";
 
@@ -23,6 +24,13 @@ export default defineConfig({
     baseURL: "http://localhost:1420",
     trace: "on-first-retry",
     screenshot: "only-on-failure",
+  },
+  webServer: {
+    command: "pnpm dev",
+    cwd: "../web/packages/main",
+    url: "http://localhost:1420",
+    reuseExistingServer: !process.env.CI,
+    timeout: 60_000,
   },
   projects: [
     {

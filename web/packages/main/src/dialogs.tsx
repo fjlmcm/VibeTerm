@@ -124,7 +124,7 @@ export const NewTaskDialog: Component<NewTaskDialogProps> = (props) => {
       const wt = await ipc.gitAddWorktree(repoPath().trim(), worktreePath().trim(), spec);
       props.onSubmit(n, null, wt);
     } catch (e) {
-      setError(String(e));
+      setError(ipc.formatIpcError(e));
       setSubmitting(false);
     }
   };

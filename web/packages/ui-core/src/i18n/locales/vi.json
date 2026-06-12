@@ -481,6 +481,7 @@
   "update.app.new_version": "Có phiên bản mới v{version}",
   "update.app.open_download": "Mở trang tải về",
   "update.app.error": "Kiểm tra thất bại (kiểm tra mạng rồi thử lại)",
+  "update.app.rate_limited": "Kiểm tra thất bại (giới hạn tốc độ API GitHub — vui lòng thử lại sau)",
   "update.app.note": "Mặc định kiểm tra GitHub Releases khi khởi động (tắt bên dưới); chỉ so sánh phiên bản, không telemetry, không tải lên. \"Tải xuống và cài đặt\" xác minh chữ ký minisign, cập nhật tại chỗ và khởi động lại; nếu lỗi hãy dùng \"Mở trang tải xuống\".",
   "update.price.title": "Giá model (ước tính)",
   "update.price.purpose": "Chi phí hiển thị trong bảng mức dùng được ước tính từ giá niêm yết công khai — không phải hoá đơn Anthropic thực tế, chỉ để tham khảo. Sau khi Anthropic đổi giá, hãy cập nhật bảng giá ở đây để các ước tính cũ và mới đều bám sát giá mới nhất, khỏi cần nâng cấp ứng dụng. Giá niêm yết lấy từ bảng công khai do LiteLLM duy trì (BerriAI/litellm; có giá theo bậc, nguồn từ bảng giá chính thức của Anthropic); kéo về thủ công, chỉ lưu cục bộ.",

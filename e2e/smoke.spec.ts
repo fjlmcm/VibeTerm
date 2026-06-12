@@ -30,7 +30,14 @@ async function installTauriMock(page: Page) {
         { name: "aider", installed: false },
       ],
       list_themes: [fakeTheme],
-      get_keybindings: [],
+      // 真实 IPC 返回 KeybindingsFile{bindings},不是裸数组 —— 裸数组会让
+      // dispatcher 的 kb.bindings 不可迭代,键盘路径全灭。只 stub 用到的两条。
+      get_keybindings: {
+        bindings: [
+          { command: "command_palette", keys: "Mod+K" },
+          { command: "open_settings", keys: "Mod+," },
+        ],
+      },
       get_env: {},
       get_prompts: [],
     };
@@ -41,6 +48,12 @@ async function installTauriMock(page: Page) {
         return Promise.resolve(null);
       },
       transformCallback: (cb: unknown) => cb,
+      // @tauri-apps/api 2.11+ 的 getCurrentWindow/getCurrentWebview 同步读这里,
+      // 缺了会在 Titlebar mount 时直接抛 TypeError 整页白屏。
+      metadata: {
+        currentWindow: { label: "main" },
+        currentWebview: { label: "main", windowLabel: "main" },
+      },
     };
   });
 }
@@ -60,9 +73,13 @@ test.describe("VibeTerm Web Smoke", () => {
   test("Cmd+K 打开命令面板,Esc 关闭", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator("strong", { hasText: "VibeTerm" })).toBeVisible();
-    await page.keyboard.press("Meta+k");
     const input = page.locator('[data-testid="palette-input"]');
-    await expect(input).toBeVisible({ timeout: 3000 });
+    // header 可见 ≠ 全局 keydown 监听已注册(onMount 里一串 await 之后才 addEventListener),
+    // 单次按键会与启动竞态 → 按键+断言整体重试,直到监听就位。
+    await expect(async () => {
+      await page.keyboard.press("Control+k");
+      await expect(input).toBeVisible({ timeout: 300 });
+    }).toPass({ timeout: 5000 });
     await expect(input).toBeFocused();
     await page.keyboard.press("Escape");
     await expect(input).toBeHidden({ timeout: 2000 });
@@ -71,11 +88,14 @@ test.describe("VibeTerm Web Smoke", () => {
   test("Cmd+, 打开设置面板", async ({ page }) => {
     await page.goto("/");
     await expect(page.locator("strong", { hasText: "VibeTerm" })).toBeVisible();
-    await page.keyboard.press("Meta+,");
     // Settings 组件应该出现 — 用一个能区分的稳定 marker
     // (Settings 顶部有标题 link / 主题选择网格)
     const settingsRoot = page.locator('[data-testid="settings-panel"]');
-    await expect(settingsRoot).toBeVisible({ timeout: 3000 });
+    // 同上:与全局 keydown 监听注册竞态,按键+断言整体重试
+    await expect(async () => {
+      await page.keyboard.press("Control+,");
+      await expect(settingsRoot).toBeVisible({ timeout: 300 });
+    }).toPass({ timeout: 5000 });
   });
 
   test("空任务态:显示 'create a task' 提示", async ({ page }) => {
@@ -97,5 +117,54 @@ test.describe("VibeTerm Web Smoke", () => {
     // 文案含 "CLI" 或 "AI"(中英日都有)
     const banner = page.locator('[data-testid="cli-banner"]');
     await expect(banner).toBeVisible({ timeout: 3000 });
+  });
+
+  test("任务右键菜单:Portal 到 body 且整体留在视口内", async ({ page }) => {
+    // 回归:菜单曾是裸 fixed 定位 — 贴边右键伸出窗口被裁切,canvas 模式还会陷进
+    // transform/stacking context 被遮挡。修复 = Portal 到 body + 实测尺寸视口夹取。
+    await page.addInitScript(() => {
+      const internals = (window as Window & {
+        __TAURI_INTERNALS__?: { invoke: (cmd: string) => Promise<unknown> };
+      }).__TAURI_INTERNALS__!;
+      const orig = internals.invoke;
+      internals.invoke = (cmd: string) => {
+        if (cmd === "list_tasks") {
+          return Promise.resolve([
+            {
+              id: 1,
+              name: "demo",
+              cwd: null,
+              pinned: false,
+              status: "idle",
+              terminal_ids: [],
+              location: { kind: "MainWorkspace" },
+              split_tree: { kind: "leaf", slot_id: 0 },
+              notify_muted: false,
+            },
+          ]);
+        }
+        return orig(cmd);
+      };
+    });
+    // 故意压扁窗口:任务行下方放不下菜单,夹取逻辑必须把菜单收回视口
+    await page.setViewportSize({ width: 600, height: 220 });
+    await page.goto("/");
+    const row = page.locator(".task-row");
+    await expect(row).toBeVisible({ timeout: 5000 });
+    await row.click({ button: "right" });
+    const menu = page.locator('[data-testid="task-ctx-menu"]');
+    await expect(menu).toBeVisible({ timeout: 2000 });
+    // Portal 生效:菜单已逃出侧栏子树(Solid Portal 在 body 下挂容器 div)
+    const escaped = await menu.evaluate(
+      (el) => !el.closest('[data-testid="task-list"]') && el.parentElement?.parentElement === document.body,
+    );
+    expect(escaped).toBe(true);
+    // 整体留在视口内(含 8px margin 的余量判断放宽到 0/视口边)
+    const box = (await menu.boundingBox())!;
+    const vp = page.viewportSize()!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(vp.width);
+    expect(box.y + box.height).toBeLessThanOrEqual(vp.height);
   });
 });
