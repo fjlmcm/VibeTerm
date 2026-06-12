@@ -45,5 +45,8 @@ export {
   registerTerminalFocus,
   focusTerminal,
   IMPLEMENTED_COMMANDS,
+  isMacPlatform,
+  isWindowsPlatform,
+  modKeyLabel,
 } from "./keybindings";
 export type { ActionHandler, ActionMap } from "./keybindings";

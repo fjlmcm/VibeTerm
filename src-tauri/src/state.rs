@@ -81,32 +81,48 @@ pub(crate) fn main_window_focused(app: &AppHandle) -> bool {
 
 /// 通知投递方式 —— preflight 放行后告诉调用方走哪条路。
 /// 展开 cwd 字符串里的 `~` 和 `$VAR` / `${VAR}`,验证目录存在;
-/// 路径不存在或无法 stat 时 fallback $HOME。
+/// 路径不存在或无法 stat 时 fallback home(dirs::home_dir,Windows 无 $HOME)。
 pub(crate) fn expand_and_validate_cwd(input: &str) -> String {
     let expanded = expand_path_str(input);
     if std::path::Path::new(&expanded).is_dir() {
         expanded
     } else {
-        tracing::warn!(
-            input,
-            expanded,
-            "cwd not a directory, falling back to $HOME"
-        );
-        std::env::var("HOME").unwrap_or_else(|_| ".".into())
+        tracing::warn!(input, expanded, "cwd not a directory, falling back to home");
+        dirs::home_dir()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| ".".into())
     }
 }
 
 pub(crate) fn expand_path_str(input: &str) -> String {
     let trimmed = input.trim();
-    // ~ / ~/...
+    let home_str = || {
+        dirs::home_dir()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    };
+    // ~ / ~/...(Windows 习惯的 ~\... 同样展开)
     let after_tilde: String = if trimmed == "~" {
-        std::env::var("HOME").unwrap_or_else(|_| trimmed.into())
-    } else if let Some(rest) = trimmed.strip_prefix("~/") {
-        let home = std::env::var("HOME").unwrap_or_default();
+        let home = home_str();
         if home.is_empty() {
             trimmed.into()
         } else {
-            format!("{}/{}", home.trim_end_matches('/'), rest)
+            home
+        }
+    } else if let Some(rest) = trimmed
+        .strip_prefix("~/")
+        .or_else(|| trimmed.strip_prefix("~\\"))
+    {
+        let home = home_str();
+        if home.is_empty() {
+            trimmed.into()
+        } else {
+            format!(
+                "{}{}{}",
+                home.trim_end_matches(['/', '\\']),
+                std::path::MAIN_SEPARATOR,
+                rest
+            )
         }
     } else {
         trimmed.into()
@@ -189,11 +205,43 @@ pub(crate) fn now_ms() -> u64 {
 }
 
 /// 原子写: 同目录临时文件 + rename(tempfile 已在依赖).
+#[cfg(not(target_os = "windows"))]
 pub(crate) fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
     let dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
     let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
     std::io::Write::write_all(&mut tmp, bytes)?;
     tmp.persist(path).map_err(|e| e.error)?;
+    Ok(())
+}
+
+/// Windows 版: rename 可能被 AV / OneDrive 短暂锁住, 重试 3 次后降级覆盖写
+/// (与 vibeterm-config::atomic_write 同策略).
+#[cfg(target_os = "windows")]
+pub(crate) fn atomic_write(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+    for attempt in 0..3 {
+        let mut tmp = tempfile::NamedTempFile::new_in(dir)?;
+        tmp.write_all(bytes)?;
+        match tmp.persist(path) {
+            Ok(_) => return Ok(()),
+            Err(e) => {
+                tracing::warn!(
+                    attempt,
+                    err = %e.error,
+                    "atomic rename failed (likely OneDrive / AV / locked), retrying"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
+    }
+    tracing::warn!(
+        ?path,
+        "atomic rename retries exhausted, falling back to truncate+write"
+    );
+    let mut f = std::fs::File::create(path)?;
+    f.write_all(bytes)?;
+    f.sync_all()?;
     Ok(())
 }
 

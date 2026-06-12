@@ -19,7 +19,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.1.1"
+version = "1.1.2"
 edition = "2021"
 publish = false
 license = "MIT"
@@ -80,14 +80,26 @@ specta-typescript  = { workspace = true }
 [dependencies.which]
 version = "6"
 
+# 跨平台 home 目录 (Windows 无 $HOME 环境变量, 用 USERPROFILE) —— 子 crate 已用同版本
+[dependencies.dirs]
+version = "5"
+
+# Windows 进程 cwd 查询(kernel_cwd_of 的 lsof 等价物)—— 与 vibeterm-status 同版本
+[target.'cfg(windows)'.dependencies.sysinfo]
+version = "0.33"
+default-features = false
+features = ["system"]
+
 # 通知声音:进程内播放,不再 fork afplay。afplay 每次开新进程、开关默认音频输出设备,
 # 在 GUI app 的子进程环境下连续播放第二次常哑(afplay 自身 exit 0,但声音没出来)。
 # rodio 在一条常驻音频线程里持有一个 OutputStream(设备一直开、不反复开关),每次播放
-# 只塞一个 Sink —— 连续播放稳定。mp3 解码走 symphonia。
+# 只塞一个 Sink —— 连续播放稳定。mp3 解码走 symphonia;
+# wav/aiff 给系统声音 fallback 用(macOS /System/Library/Sounds/*.aiff、
+# Windows %SystemRoot%\Media\*.wav)—— 只配 symphonia-mp3 时这两类解码失败、原生播放静音。
 [dependencies.rodio]
 version = "0.20"
 default-features = false
-features = ["symphonia-mp3"]
+features = ["symphonia-mp3", "wav", "symphonia-aiff"]
 
 # 粘贴图片:官方 clipboard plugin(跨平台读 image bitmap)+ image crate 编 PNG
 [dependencies.tauri-plugin-clipboard-manager]

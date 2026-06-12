@@ -720,6 +720,18 @@ pub(crate) async fn paste_clipboard(app: AppHandle) -> IpcResult<PasteResult> {
     Ok(PasteResult::Empty)
 }
 
+// 写文本进系统剪贴板 —— 右键菜单"复制"用。
+// 不走 navigator.clipboard.writeText:WebView(尤其 Windows WebView2)要求页面有焦点 +
+// clipboard-write 权限,右键菜单弹出后焦点已漂移 → 静默失败。Rust 侧 arboard 无此约束。
+#[tauri::command]
+pub(crate) async fn write_clipboard_text(app: AppHandle, text: String) -> IpcResult<()> {
+    app.clipboard()
+        .write_text(text)
+        .map_err(|e| IpcError::Unknown {
+            trace_id: format!("write_clipboard_text:{e}"),
+        })
+}
+
 // 读 scrollback 快照(独立查询,不订阅;给搜索/导出/调试用)
 #[tauri::command]
 pub(crate) async fn get_scrollback(
@@ -849,14 +861,28 @@ pub(crate) fn kernel_cwd_of(pid: u32) -> Option<String> {
     None
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Windows: sysinfo 拿进程 cwd(内核侧真实工作目录,等价 lsof cwd)。
+/// 没它 per-terminal 完成检测在 Windows 拿不到 cwd → transcript 归属全落空。
+#[cfg(target_os = "windows")]
+pub(crate) fn kernel_cwd_of(pid: u32) -> Option<String> {
+    use sysinfo::{Pid, ProcessesToUpdate, System};
+    let mut sys = System::new();
+    let target = Pid::from_u32(pid);
+    sys.refresh_processes(ProcessesToUpdate::Some(&[target]), true);
+    sys.process(target)?
+        .cwd()
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub(crate) fn kernel_cwd_of(_pid: u32) -> Option<String> {
     None
 }
 
-/// 取某终端当前 cwd(per-terminal 完成检测用):优先 OSC 633(shell 集成,最准),退到 lsof 内核
-/// cwd。与 get_terminal_cwd 同源,供后台 3s 轮询直接调(非 IPC),让每个 agent 终端按各自 cwd
-/// 定位 transcript —— 这是多 agent 完成检测能 per-terminal 工作的前提。
+/// 取某终端当前 cwd(per-terminal 完成检测用):优先 OSC 633(shell 集成,最准),退到内核
+/// cwd(macOS lsof / Windows sysinfo)。与 get_terminal_cwd 同源,供后台 3s 轮询直接调(非
+/// IPC),让每个 agent 终端按各自 cwd 定位 transcript —— 这是多 agent 完成检测 per-terminal
+/// 工作的前提。
 pub(crate) fn terminal_cwd_for(state: &AppState, terminal_id: TerminalId) -> Option<String> {
     if let Ok(map) = state.status_detectors.lock() {
         if let Some(det) = map.get(&terminal_id) {
@@ -898,15 +924,15 @@ pub(crate) async fn get_terminal_cwd(
     Ok(kernel_cwd_of(shell_pid))
 }
 
-/// 调试用 — 把前端 console 信息追加到 /tmp/vibeterm-tasklist-debug.log,
+/// 调试用 — 把前端 console 信息追加到 <temp_dir>/vibeterm-tasklist-debug.log,
 /// 方便从主机直接 tail 文件诊断 webview 行为。
-/// 仅 debug 构建落盘:/tmp 世界可读 + 写任意前端内容, release 下为 no-op.
+/// 仅 debug 构建落盘:temp 世界可读 + 写任意前端内容, release 下为 no-op.
 #[tauri::command]
 pub(crate) async fn debug_log(msg: String) -> IpcResult<()> {
     #[cfg(debug_assertions)]
     {
         use std::io::Write;
-        let path = "/tmp/vibeterm-tasklist-debug.log";
+        let path = std::env::temp_dir().join("vibeterm-tasklist-debug.log");
         let mut f = match std::fs::OpenOptions::new()
             .append(true)
             .create(true)

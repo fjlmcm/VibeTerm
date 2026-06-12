@@ -9,6 +9,7 @@ import { type Component, type JSX, createSignal, onCleanup, onMount } from "soli
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X } from "lucide-solid";
 import { t } from "../i18n";
+import { isMacPlatform } from "../keybindings";
 
 export interface TitlebarProps {
   /** 标题(中间区,可选 — 留空则不渲染文字)*/
@@ -23,8 +24,7 @@ export interface TitlebarProps {
 
 // macOS 用原生 titleBar Overlay(traffic lights 由系统画在左上),
 // 我们的自渲按钮 + 左侧 padding 都按平台分支
-const IS_MAC =
-  typeof navigator !== "undefined" && /Mac|iPhone|iPod|iPad/.test(navigator.userAgent);
+const IS_MAC = isMacPlatform();
 
 export const Titlebar: Component<TitlebarProps> = (props) => {
   const win = getCurrentWindow();

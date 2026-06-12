@@ -4,7 +4,7 @@
 // 模糊搜索:简化版 substring(引入 fuzzysort + pinyin-pro)
 
 import { For, Show, createMemo, createSignal, onCleanup, onMount, type Component } from "solid-js";
-import { ipc, requestRenderRepair, t } from "@vibeterm/ui-core";
+import { ipc, modKeyLabel, requestRenderRepair, t } from "@vibeterm/ui-core";
 import type { ActionEntry, LayoutTemplate, TaskDto, TerminalId } from "@vibeterm/ipc-types";
 
 export interface CommandPaletteProps {
@@ -136,7 +136,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
     items.push({
       id: "cmd:new-task",
       label: t("palette.cmd.new_task"),
-      hint: "Cmd+N",
+      hint: `${modKeyLabel()}+N`,
       action: () => {
         props.onClose();
         props.onCreateTask?.();
@@ -185,7 +185,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
       items.push({
         id: "cmd:open-settings",
         label: t("kb.command.open_settings"),
-        hint: "Cmd+,",
+        hint: `${modKeyLabel()}+,`,
         action: () => props.onOpenSettings?.(),
       });
     }

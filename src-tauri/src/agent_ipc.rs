@@ -17,6 +17,8 @@ pub(crate) struct CliStatus {
 /// 从 login shell 读完整 PATH —— macOS GUI app(Dock/Launchpad 启动)的进程 PATH
 /// 不含 ~/.zshrc/.zprofile 里加的目录(homebrew / npm global / nvm 等), 直接 which 会
 /// 漏报 "未安装"。读 login shell 的 PATH 修正, 用唯一标记提取避免 rc 其它输出干扰。
+/// Windows 无 $SHELL → 返回 None 即正确降级:GUI 进程的 PATH 来自注册表(系统+用户),
+/// 不存在 macOS 的 PATH 丢失问题,npm 全局目录默认就在用户 PATH 里。
 pub(crate) fn login_shell_path() -> Option<String> {
     let shell = std::env::var("SHELL").ok()?;
     let out = std::process::Command::new(&shell)

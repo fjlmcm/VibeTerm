@@ -11,7 +11,10 @@ import { createSignal } from "solid-js";
 export type CursorStyle = "block" | "bar" | "underline";
 
 // ---- 默认值(= 改造前硬编码值) ----
-const DEFAULT_FONT_FAMILY = "JetBrains Mono, SF Mono, Menlo, Consolas, monospace";
+// Cascadia Mono: Win10+ 自带等宽;Microsoft YaHei: Windows CJK fallback
+// (Windows 无好用的 CJK 等宽,显式声明雅黑避免浏览器落到宋体——衬线 CJK 在终端里更难看)。
+const DEFAULT_FONT_FAMILY =
+  "JetBrains Mono, SF Mono, Menlo, Cascadia Mono, Consolas, Microsoft YaHei, monospace";
 const DEFAULT_LINE_HEIGHT = 1.2;
 const DEFAULT_CURSOR_STYLE: CursorStyle = "block"; // xterm.js 原生默认
 const DEFAULT_CURSOR_BLINK = true; // = 改造前 cursorBlink: true

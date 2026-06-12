@@ -683,18 +683,31 @@ pub(crate) fn format_notify_body(
     parts.join(" · ")
 }
 
-/// 判断声音字段是否为本地文件路径(而非 macOS 内建声音名).
-/// 绝对路径 / `~/...` 前缀视为路径; 其它(空 / "default" / "Glass" 等)视为系统名.
+/// 判断声音字段是否为本地文件路径(而非内建声音名).
+/// 绝对路径(Unix `/`、Windows 盘符 `C:\`/`C:/`、UNC `\\`)/ `~/`、`~\` 前缀视为路径;
+/// 其它(空 / "default" / "Glass" 等)视为系统名.
 pub(crate) fn sound_is_file_path(s: &str) -> bool {
     let s = s.trim();
-    s.starts_with('/') || s.starts_with("~/")
+    let drive_abs = {
+        let b = s.as_bytes();
+        b.len() >= 3
+            && b[0].is_ascii_alphabetic()
+            && b[1] == b':'
+            && (b[2] == b'\\' || b[2] == b'/')
+    };
+    s.starts_with('/')
+        || s.starts_with("~/")
+        || s.starts_with("~\\")
+        || s.starts_with("\\\\")
+        || drive_abs
 }
 
-/// 把 `~/...` 展开到 $HOME, 其它路径原样.
+/// 把 `~/...`(或 Windows 习惯的 `~\...`)展开到 home, 其它路径原样.
+/// 不读 $HOME 环境变量 —— Windows 默认没有, dirs::home_dir() 两边都对.
 pub(crate) fn expand_tilde(s: &str) -> std::path::PathBuf {
-    if let Some(rest) = s.strip_prefix("~/") {
-        if let Ok(home) = std::env::var("HOME") {
-            return std::path::PathBuf::from(home).join(rest);
+    if let Some(rest) = s.strip_prefix("~/").or_else(|| s.strip_prefix("~\\")) {
+        if let Some(home) = dirs::home_dir() {
+            return home.join(rest);
         }
     }
     std::path::PathBuf::from(s)
@@ -732,15 +745,15 @@ pub(crate) fn resolve_sound_to_path(app: &AppHandle, sound: &str) -> Option<std:
             }
         };
         // HOME 也 canonicalize,避免 /var → /private/var 等符号链接导致合法路径被误拒.
-        let home_ok = std::env::var("HOME").ok().and_then(|h| {
-            let home_canon =
-                std::fs::canonicalize(&h).unwrap_or_else(|_| std::path::PathBuf::from(h));
+        // dirs::home_dir() 而非 $HOME —— Windows 默认没有 $HOME, 否则所有自定义路径都被拒.
+        let home_ok = dirs::home_dir().and_then(|h| {
+            let home_canon = std::fs::canonicalize(&h).unwrap_or(h);
             canon.starts_with(&home_canon).then_some(())
         });
         if home_ok.is_some() {
             return Some(canon);
         }
-        tracing::warn!(path = %canon.display(), "notify sound rejected: outside $HOME");
+        tracing::warn!(path = %canon.display(), "notify sound rejected: outside home dir");
         return None;
     }
     // 自带:打包资源里 resources/sounds/<id>.mp3
@@ -757,12 +770,22 @@ pub(crate) fn resolve_sound_to_path(app: &AppHandle, sound: &str) -> Option<std:
         if sys.is_file() {
             return Some(sys);
         }
-        if let Ok(home) = std::env::var("HOME") {
-            let user = std::path::PathBuf::from(home)
-                .join("Library/Sounds")
-                .join(format!("{s}.aiff"));
+        if let Some(home) = dirs::home_dir() {
+            let user = home.join("Library/Sounds").join(format!("{s}.aiff"));
             if user.is_file() {
                 return Some(user);
+            }
+        }
+    }
+    // Windows 系统名 fallback: %SystemRoot%\Media\<name>.wav (Windows Notify.wav 等)
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(root) = std::env::var("SystemRoot") {
+            let sys = std::path::PathBuf::from(root)
+                .join("Media")
+                .join(format!("{s}.wav"));
+            if sys.is_file() {
+                return Some(sys);
             }
         }
     }
@@ -951,5 +974,32 @@ mod tests {
         p.quiet_hours.end = "08:00".into();
         let r = decide_notify_route(true, false, &p, "23:30", false, false, true);
         assert_eq!(r, None);
+    }
+
+    /// 路径判定:Unix / Windows 盘符 / UNC / 波浪号都算路径;声音名不算
+    #[test]
+    fn sound_path_detection_cross_platform() {
+        assert!(sound_is_file_path("/tmp/bell.mp3"));
+        assert!(sound_is_file_path("~/sounds/bell.mp3"));
+        assert!(sound_is_file_path("~\\sounds\\bell.wav"));
+        assert!(sound_is_file_path("C:\\Users\\demo\\bell.wav"));
+        assert!(sound_is_file_path("c:/Users/demo/bell.wav"));
+        assert!(sound_is_file_path("\\\\server\\share\\bell.wav"));
+        assert!(!sound_is_file_path("Glass"));
+        assert!(!sound_is_file_path("default"));
+        assert!(!sound_is_file_path(""));
+        assert!(!sound_is_file_path("C:")); // 裸盘符不算
+    }
+
+    /// 波浪号展开:`~/` 与 `~\` 都展开到 home;非波浪号原样
+    #[test]
+    fn expand_tilde_uses_home_dir() {
+        let home = dirs::home_dir().expect("home dir");
+        assert_eq!(expand_tilde("~/x/y.mp3"), home.join("x/y.mp3"));
+        assert_eq!(expand_tilde("~\\x\\y.wav"), home.join("x\\y.wav"));
+        assert_eq!(
+            expand_tilde("/abs/p.mp3"),
+            std::path::PathBuf::from("/abs/p.mp3")
+        );
     }
 }

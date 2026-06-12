@@ -100,6 +100,12 @@ export async function pasteClipboard(): Promise<PasteResult> {
   return invoke<PasteResult>("paste_clipboard");
 }
 
+// 写文本进系统剪贴板(右键菜单"复制")。不走 navigator.clipboard:
+// WebView2 要求页面焦点 + clipboard-write 权限,右键菜单弹出后焦点已漂移 → 静默失败。
+export async function writeClipboardText(text: string): Promise<void> {
+  return invoke("write_clipboard_text", { text });
+}
+
 // 设置页查询 / 操作:当前生效目录 / 打开 / 清空
 export async function getClipboardImagesDir(): Promise<string> {
   return invoke<string>("get_clipboard_images_dir");

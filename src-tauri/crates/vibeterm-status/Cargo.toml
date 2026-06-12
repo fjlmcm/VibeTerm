@@ -12,6 +12,10 @@ tracing      = { workspace = true }
 regex        = "1"
 serde        = { workspace = true }
 
+# Windows 进程枚举(pid/ppid/cmdline)—— agent 识别用;unix 走 ps 无此依赖
+[target.'cfg(windows)'.dependencies]
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }
+
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
 

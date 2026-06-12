@@ -58,10 +58,18 @@ export function keysFor(command: string): string | undefined {
   return keybindings()?.bindings.find((b) => b.command === command)?.keys;
 }
 
-// 与 titlebar/index.tsx 保持一致:用 navigator.userAgent(navigator.platform 已废弃)
-const isMacPlatform = () =>
+// 平台检测统一出口:用 navigator.userAgent(navigator.platform 已废弃)。
+// titlebar / settings 等处不要自行复制检测逻辑,从这里 import。
+export const isMacPlatform = () =>
   typeof navigator !== "undefined" &&
   /Mac|iPhone|iPod|iPad/.test(navigator.userAgent);
+
+/** 快捷键提示文案用的修饰键名:macOS → Cmd,其它平台 → Ctrl。 */
+export const modKeyLabel = () => (isMacPlatform() ? "Cmd" : "Ctrl");
+
+/** Windows 平台检测(shell quoting / 路径拼接等按平台分支用)。 */
+export const isWindowsPlatform = () =>
+  typeof navigator !== "undefined" && /Windows/.test(navigator.userAgent);
 
 /**
  * 匹配 chord 字符串 (e.g. "Mod+Shift+P").

@@ -20,6 +20,7 @@ import {
   setTaskNotifyMuted,
 } from "../ipc";
 import { t } from "../i18n";
+import { modKeyLabel } from "../keybindings";
 import { urgencyColorVar } from "../urgency";
 
 export interface TaskListProps {
@@ -550,11 +551,11 @@ export const TaskList: Component<TaskListProps> = (props) => {
                           );
                         })()}
                       </Show>
-                      {/* 行尾:#序号(替代原 terminal_count);1..9 与 Cmd+1..9 一致 */}
+                      {/* 行尾:#序号(替代原 terminal_count);1..9 与 Mod+1..9 一致 */}
                       <Show when={orderNum() <= 9}>
                         <span
                           data-testid={`task-order-${task().id}`}
-                          title={`Cmd+${orderNum()}`}
+                          title={`${modKeyLabel()}+${orderNum()}`}
                           style={{
                             "font-size": "10px",
                             color: "var(--color-text-2)",

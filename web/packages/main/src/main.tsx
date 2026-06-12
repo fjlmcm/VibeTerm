@@ -6,7 +6,7 @@
 import { For, Show, createEffect, createMemo, createSignal, onMount, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
 
-import { Terminal, TaskList, Titlebar, theme as themeMod, ipc, t, SplitView, singleLeaf, splitLeaf, removeLeaf, newSlotId, bumpSlotIdAtLeast, collectSlots, setRatiosAt, getTerminalFontSize, initKeybindings, createKeybindingDispatcher, focusTerminal, rightmostBottomSlot, leftmostBottomSlot, createCanvasViewport, StatusBar, playNotifySound, shouldConfirmCloseTask, loadSavedScrollback, startScrollbackAutosave, type SplitNode } from "@vibeterm/ui-core";
+import { Terminal, TaskList, Titlebar, theme as themeMod, ipc, t, SplitView, singleLeaf, splitLeaf, removeLeaf, newSlotId, bumpSlotIdAtLeast, collectSlots, setRatiosAt, getTerminalFontSize, initKeybindings, createKeybindingDispatcher, focusTerminal, rightmostBottomSlot, leftmostBottomSlot, createCanvasViewport, StatusBar, playNotifySound, shouldConfirmCloseTask, loadSavedScrollback, startScrollbackAutosave, modKeyLabel, isWindowsPlatform, type SplitNode } from "@vibeterm/ui-core";
 import { Plus, X, Settings as SettingsIcon, SplitSquareHorizontal, SplitSquareVertical, LayoutGrid, Layers, BarChart3 } from "lucide-solid";
 import type { TaskDto, Theme, LayoutTemplate } from "@vibeterm/ipc-types";
 import { CommandPalette } from "./command-palette";
@@ -869,8 +869,14 @@ function App() {
   const applyLayout = async (tpl: LayoutTemplate) => {
     const buildCmd = (p: { command?: string | null; cwd?: string | null }): string | null => {
       if (!p.command) return null;
+      if (!p.cwd) return p.command;
+      if (isWindowsPlatform()) {
+        // 双引号 + `;`:pwsh 7 与 powershell 5 都认(`&&` 仅 pwsh 7、单引号 cmd 不认)。
+        // 默认 shell 链 pwsh → powershell → cmd,cmd 用户极少,接受其 `;` 不可用的局限。
+        return `cd "${p.cwd}"; ${p.command}`;
+      }
       // 单引号包裹 cwd 防空格/特殊字符;内部单引号转义
-      return p.cwd ? `cd '${p.cwd.replace(/'/g, "'\\''")}' && ${p.command}` : p.command;
+      return `cd '${p.cwd.replace(/'/g, "'\\''")}' && ${p.command}`;
     };
     try {
       const task = await ipc.createTask({ name: tpl.name, cwd: tpl.cwd ?? null, worktree: null });
@@ -1057,7 +1063,7 @@ function App() {
         background: "var(--color-bg)",
         color: "var(--color-text)",
         "font-family":
-          "-apple-system, SF Pro, BlinkMacSystemFont, Helvetica, Arial, sans-serif",
+          "-apple-system, SF Pro, BlinkMacSystemFont, 'Segoe UI', system-ui, Helvetica, Arial, sans-serif",
       }}
     >
       <Titlebar
@@ -1658,9 +1664,9 @@ function App() {
                       {t("task.empty_hint")}
                     </div>
                     <div style={{ display: "flex", gap: "24px", "font-size": "12px" }}>
-                      <span><kbd style={kbdStyle()}>Ctrl+N</kbd> {t("task.new")}</span>
-                      <span><kbd style={kbdStyle()}>Ctrl+K</kbd> {t("kb.command.command_palette")}</span>
-                      <span><kbd style={kbdStyle()}>Ctrl+,</kbd> {t("settings.title")}</span>
+                      <span><kbd style={kbdStyle()}>{modKeyLabel()}+N</kbd> {t("task.new")}</span>
+                      <span><kbd style={kbdStyle()}>{modKeyLabel()}+K</kbd> {t("kb.command.command_palette")}</span>
+                      <span><kbd style={kbdStyle()}>{modKeyLabel()}+,</kbd> {t("settings.title")}</span>
                     </div>
                   </>
                 }

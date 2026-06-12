@@ -12,7 +12,7 @@
 
 import { For, Show, createMemo, createSignal, onCleanup, onMount, type Component } from "solid-js";
 import { Bell, BellOff, AlertCircle, Play, FolderOpen, X } from "lucide-solid";
-import { ipc, t, playNotifySound, stopNotifySound } from "@vibeterm/ui-core";
+import { ipc, t, playNotifySound, stopNotifySound, isMacPlatform } from "@vibeterm/ui-core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import type {
   NotifyFile,
@@ -21,9 +21,10 @@ import type {
   BuiltinSound,
 } from "@vibeterm/ipc-types";
 
-// macOS 标配的系统声音。NS-prefixed 在 /System/Library/Sounds/*.aiff 都存在。
-// Linux/Windows 这些字符串会被系统忽略并 fallback default — 仍然 OK.
-const BUILTIN_SOUNDS = [
+// 系统声音名按平台列表:
+//   macOS → /System/Library/Sounds/*.aiff;Windows → %SystemRoot%\Media\*.wav
+// (Rust 侧 resolve_sound_to_path 同步支持两套 fallback)。其它平台只留 default。
+const MAC_SOUNDS = [
   "default",
   "Glass",
   "Tink",
@@ -38,20 +39,42 @@ const BUILTIN_SOUNDS = [
   "Morse",
   "Purr",
 ] as const;
+const WIN_SOUNDS = [
+  "default",
+  "chimes",
+  "chord",
+  "ding",
+  "notify",
+  "tada",
+  "Windows Notify",
+  "Windows Ding",
+  "Windows Background",
+] as const;
+const BUILTIN_SOUNDS: readonly string[] = isMacPlatform()
+  ? MAC_SOUNDS
+  : /Win/.test(typeof navigator !== "undefined" ? navigator.userAgent : "")
+    ? WIN_SOUNDS
+    : ["default"];
 
 const CUSTOM_OPT = "__custom__";
 
-/** sound 字段是否为本地文件路径(绝对 / ~/) */
+/** sound 字段是否为本地文件路径(Unix 绝对 / ~ / Windows 盘符 / UNC)— 与 Rust 侧 sound_is_file_path 一致 */
 function isFilePath(s: string): boolean {
   const t = s.trim();
-  return t.startsWith("/") || t.startsWith("~/");
+  return (
+    t.startsWith("/") ||
+    t.startsWith("~/") ||
+    t.startsWith("~\\") ||
+    t.startsWith("\\\\") ||
+    /^[A-Za-z]:[/\\]/.test(t)
+  );
 }
 
 /** 文件路径取 basename 显示, 系统名原样返回 */
 function displaySound(s: string): string {
   if (!s) return "default";
   if (isFilePath(s)) {
-    const parts = s.split("/");
+    const parts = s.split(/[/\\]/);
     return parts[parts.length - 1] || s;
   }
   return s;

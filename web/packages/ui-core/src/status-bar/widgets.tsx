@@ -945,9 +945,9 @@ const worktreeNameWidget: WidgetRenderer = (item, ctx) => {
   const wt = t?.worktree;
   if (!wt) return null;
   const max = item.max_width ?? 160;
-  // worktree.worktree_path 最后一段
+  // worktree.worktree_path 最后一段(分隔符兼容 Windows 反斜杠)
   const path = wt.worktree_path ?? "";
-  const name = path.split("/").filter(Boolean).pop() ?? path;
+  const name = path.split(/[/\\]/).filter(Boolean).pop() ?? path;
   return (
     <span
       title={`worktree: ${path}${wt.branch ? ` · ${wt.branch}` : ""}`}

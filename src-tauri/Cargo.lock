@@ -1378,6 +1378,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "extended"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af9673d8203fcb076b19dfd17e38b3d4ae9f44959416ea532ce72415a6020365"
+
+[[package]]
 name = "fastrand"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1965,6 +1971,12 @@ checksum = "cc627f471c528ff0c4a49e1d5e60450c8f6461dd6d10ba9dcd3a61d3dff7728d"
 dependencies = [
  "windows-sys 0.61.2",
 ]
+
+[[package]]
+name = "hound"
+version = "3.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "62adaabb884c94955b19907d60019f4e145d091c75345379e70d1ee696f7854f"
 
 [[package]]
 name = "html5ever"
@@ -2873,6 +2885,15 @@ dependencies = [
  "serde",
  "tauri-winrt-notification",
  "zbus",
+]
+
+[[package]]
+name = "ntapi"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3b335231dfd352ffb0f8017f3b6027a4917f7df785ea2143d8af2adc66980ae"
+dependencies = [
+ "winapi",
 ]
 
 [[package]]
@@ -3852,6 +3873,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7ceb6607dd738c99bc8cb28eff249b7cd5c8ec88b9db96c0608c1480d140fb1"
 dependencies = [
  "cpal",
+ "hound",
  "symphonia",
 ]
 
@@ -4527,7 +4549,9 @@ checksum = "5773a4c030a19d9bfaa090f49746ff35c75dfddfa700df7a5939d5e076a57039"
 dependencies = [
  "lazy_static",
  "symphonia-bundle-mp3",
+ "symphonia-codec-pcm",
  "symphonia-core",
+ "symphonia-format-riff",
  "symphonia-metadata",
 ]
 
@@ -4544,6 +4568,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "symphonia-codec-pcm"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e89d716c01541ad3ebe7c91ce4c8d38a7cf266a3f7b2f090b108fb0cb031d95"
+dependencies = [
+ "log",
+ "symphonia-core",
+]
+
+[[package]]
 name = "symphonia-core"
 version = "0.5.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4554,6 +4588,18 @@ dependencies = [
  "bytemuck",
  "lazy_static",
  "log",
+]
+
+[[package]]
+name = "symphonia-format-riff"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2d7c3df0e7d94efb68401d81906eae73c02b40d5ec1a141962c592d0f11a96f"
+dependencies = [
+ "extended",
+ "log",
+ "symphonia-core",
+ "symphonia-metadata",
 ]
 
 [[package]]
@@ -4607,6 +4653,19 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "sysinfo"
+version = "0.33.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fc858248ea01b66f19d8e8a6d55f41deaf91e9d495246fd01368d99935c6c01"
+dependencies = [
+ "core-foundation-sys",
+ "libc",
+ "memchr",
+ "ntapi",
+ "windows 0.54.0",
 ]
 
 [[package]]
@@ -5705,12 +5764,13 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "vibeterm"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "base64 0.22.1",
  "blake3",
  "chrono",
  "cocoa",
+ "dirs 5.0.1",
  "image",
  "regex",
  "rodio",
@@ -5718,6 +5778,7 @@ dependencies = [
  "serde_json",
  "specta",
  "specta-typescript",
+ "sysinfo",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
@@ -5745,7 +5806,7 @@ dependencies = [
 
 [[package]]
 name = "vibeterm-agent-watch"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "chrono",
  "dirs 5.0.1",
@@ -5760,7 +5821,7 @@ dependencies = [
 
 [[package]]
 name = "vibeterm-config"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "dirs 5.0.1",
  "filetime",
@@ -5776,7 +5837,7 @@ dependencies = [
 
 [[package]]
 name = "vibeterm-core"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "tempfile",
  "thiserror 1.0.69",
@@ -5790,7 +5851,7 @@ dependencies = [
 
 [[package]]
 name = "vibeterm-git"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "serde",
  "specta",
@@ -5802,7 +5863,7 @@ dependencies = [
 
 [[package]]
 name = "vibeterm-ipc"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -5812,7 +5873,7 @@ dependencies = [
 
 [[package]]
 name = "vibeterm-pty"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "libc",
  "portable-pty",
@@ -5823,19 +5884,20 @@ dependencies = [
 
 [[package]]
 name = "vibeterm-status"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "criterion",
  "regex",
  "serde",
  "specta",
+ "sysinfo",
  "tracing",
  "vibeterm-ipc",
 ]
 
 [[package]]
 name = "vibeterm-tasks"
-version = "1.1.1"
+version = "1.1.2"
 dependencies = [
  "serde",
  "serde_json",

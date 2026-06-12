@@ -24,7 +24,7 @@ export const TerminalPanel: Component<{ ctx: RenderContext }> = (props) => {
             <Show when={tk().worktree}>
               <Row
                 label={t("statusbar.popover.worktree")}
-                value={`${tk().worktree!.worktree_path.split("/").filter(Boolean).pop() ?? ""}${
+                value={`${tk().worktree!.worktree_path.split(/[/\\]/).filter(Boolean).pop() ?? ""}${
                   tk().worktree!.branch ? ` · ${tk().worktree!.branch}` : ""
                 }`}
                 mono

@@ -12,7 +12,9 @@
 //!   - 不缓存 — 每次 fresh 跑 ps(macOS 上 < 5ms,Linux 类似)
 //!   - 不打分(Prowl 用打分应对 wrapped runtimes 如 npm-exec 启动 claude;
 //!     这里先做基础识别,后续如有需要再加候选打分)
-//!   - Windows 暂返 None(没装 ps;tasklist 解析复杂,后续再加)
+//!   - Windows 走 sysinfo 枚举进程表(pid/ppid/cmdline),后裔 DFS 与 unix 共用;
+//!     npm 全局装的 claude 在 Windows 是 `node …\claude-code\cli.js`,靠
+//!     mentions_binary 的反斜杠分隔兜底命中
 
 use serde::{Deserialize, Serialize};
 
@@ -231,26 +233,43 @@ fn classify(name: &str) -> Option<AgentKind> {
 
 /// Wrapped runtime — 这些 binary 本身不是 agent,但其参数往往包含真正的 agent 命令。
 /// 如 `node /usr/local/bin/claude` 应识别为 claude。
+/// cmd / powershell / pwsh:Windows 上 npm shim(claude.cmd)经它们二跳启动。
 fn is_wrapper(name: &str) -> bool {
     matches!(
         name.to_lowercase().as_str(),
-        "node" | "deno" | "bun" | "python" | "python3" | "ruby" | "npx" | "pnpx" | "yarn"
+        "node"
+            | "deno"
+            | "bun"
+            | "python"
+            | "python3"
+            | "ruby"
+            | "npx"
+            | "pnpx"
+            | "yarn"
+            | "cmd"
+            | "powershell"
+            | "pwsh"
     )
 }
 
-/// 从命令行 token 提取候选 agent 名(去 path、去 .js 扩展、去 --flag)
+/// 从命令行 token 提取候选 agent 名(去引号、去 path、去扩展名、去 --flag)。
+/// Windows 形态一并处理:反斜杠路径、`"C:\…\claude.exe"` 引号、.exe/.cmd/.bat/.ps1。
 fn token_to_name(token: &str) -> Option<String> {
-    let trimmed = token.trim();
+    let trimmed = token.trim().trim_matches('"');
     if trimmed.starts_with('-') || trimmed.is_empty() {
         return None;
     }
-    // 去 path 前缀
-    let last = trimmed.rsplit('/').next().unwrap_or(trimmed);
-    // 去常见后缀
-    let base = last
-        .strip_suffix(".js")
-        .or_else(|| last.strip_suffix(".mjs"))
-        .unwrap_or(last);
+    // 去 path 前缀(`/` 与 `\` 都是分隔符)
+    let last = trimmed.rsplit(['/', '\\']).next().unwrap_or(trimmed);
+    // 去常见后缀(大小写不敏感 —— Windows 下可能是 .EXE)。
+    // 长度从 last 自身减后缀长算(to_lowercase 对非 ASCII 可能变长,不能用 lower 的下标)。
+    let lower = last.to_lowercase();
+    let base_len = [".js", ".mjs", ".exe", ".cmd", ".bat", ".ps1"]
+        .iter()
+        .find(|ext| lower.ends_with(*ext))
+        .map(|ext| last.len().saturating_sub(ext.len()))
+        .unwrap_or(last.len());
+    let base = &last[..base_len];
     if base.is_empty() {
         return None;
     }
@@ -263,15 +282,19 @@ pub fn detect_agent_for_shell(shell_pid: u32) -> Option<AgentKind> {
 }
 
 /// `kw` 是否在 cmdline(已 lowercase)里作为**路径 basename 或独立 token**出现:
-/// 其前一个字符须为 `/`、空白或字符串开头。这样命中真正的二进制调用
-/// (`/opt/homebrew/bin/codex`、`node codex`), 但排除 `~/.codex/...` 这类点目录路径
-/// (前缀是 `.`)—— 否则任何引用过 agent 配置目录的进程都会让终端被误判成该 agent。
+/// 其前一个字符须为 `/`、`\`(Windows 路径)、引号、空白或字符串开头。这样命中真正的
+/// 二进制调用(`/opt/homebrew/bin/codex`、`node codex`、`node c:\…\claude-code\cli.js`),
+/// 但排除 `~/.codex/...` 这类点目录路径(前缀是 `.`)—— 否则任何引用过 agent 配置目录
+/// 的进程都会让终端被误判成该 agent。
 fn mentions_binary(hay: &str, kw: &str) -> bool {
     let mut from = 0;
     while let Some(rel) = hay[from..].find(kw) {
         let idx = from + rel;
-        let before_ok =
-            idx == 0 || matches!(hay[..idx].chars().next_back(), Some('/' | ' ' | '\t'));
+        let before_ok = idx == 0
+            || matches!(
+                hay[..idx].chars().next_back(),
+                Some('/' | '\\' | '"' | ' ' | '\t')
+            );
         if before_ok {
             return true;
         }
@@ -287,79 +310,61 @@ fn mentions_binary(hay: &str, kw: &str) -> bool {
 ///   node / codex 等 agent CLI 启动时常用 setsid 创建自己的 process group,
 ///   shell 的 pgid 里只有 zsh 自己, ps -g <pgid> 找不到 agent. 而 PPID 链
 ///   能穿透 process group 边界, 找到任意嵌套深度的子进程.
+/// 进程表来源平台分支(unix: ps;Windows: sysinfo),匹配逻辑共用.
 pub fn detect_agent_with_diagnostics(shell_pid: u32) -> (Option<AgentKind>, Diagnostics) {
+    let cmdlines = list_descendant_commands(shell_pid).unwrap_or_default();
     #[cfg(unix)]
-    {
-        let cmdlines = list_descendant_commands(shell_pid).unwrap_or_default();
-        let pgid = get_pgid(shell_pid);
-        let mut detected: Option<AgentKind> = None;
-        for cmd in &cmdlines {
-            let mut tokens = cmd.split_whitespace();
-            let argv0 = tokens.next().unwrap_or("");
-            if let Some(name) = token_to_name(argv0) {
-                if let Some(agent) = classify(&name) {
-                    detected = Some(agent);
-                    break;
-                }
-                if is_wrapper(&name) {
-                    for t in tokens {
-                        if let Some(n) = token_to_name(t) {
-                            if let Some(agent) = classify(&n) {
-                                detected = Some(agent);
-                                break;
-                            }
-                        }
-                    }
-                    if detected.is_some() {
-                        break;
-                    }
-                }
-            }
-        }
-        // 兜底: cmdline 把 agent 名作为**路径 basename / 独立 token**出现 — 修 codex 这种被
-        // wrapper 隐藏在长 path 里、token 切分丢失的情况。
-        // 关键: 用 mentions_binary 而非裸 contains —— 否则 `~/.codex/...` 配置目录路径
-        // (开发 / 读配置 / 任何进程引用过)会让无 agent 的终端被误判成 codex("被 codex 抢")。
-        if detected.is_none() {
-            for cmd in &cmdlines {
-                let lower = cmd.to_lowercase();
-                // 关键字从 AGENT_DEFS 派生(cmdline_keywords 只含低假阳性的独特词)
-                'outer: for def in &AGENT_DEFS {
-                    for kw in def.cmdline_keywords {
-                        if mentions_binary(&lower, kw) {
-                            detected = Some(def.kind);
-                            break 'outer;
-                        }
-                    }
-                }
-                if detected.is_some() {
-                    break;
-                }
-            }
-        }
-        (
-            detected,
-            Diagnostics {
-                shell_pid,
-                pgid,
-                cmdlines,
-                note: String::new(),
-            },
-        )
-    }
+    let pgid = get_pgid(shell_pid);
     #[cfg(not(unix))]
-    {
-        let _ = shell_pid;
-        (
-            None,
-            Diagnostics {
-                shell_pid,
-                pgid: None,
-                cmdlines: vec![],
-                note: "windows: detection not implemented".into(),
-            },
-        )
+    let pgid: Option<u32> = None;
+    let detected = detect_agent_in_cmdlines(&cmdlines);
+    (
+        detected,
+        Diagnostics {
+            shell_pid,
+            pgid,
+            cmdlines,
+            note: String::new(),
+        },
+    )
+}
+
+/// 在后裔进程 cmdline 列表上跑识别(纯字符串逻辑,跨平台,单测友好)
+fn detect_agent_in_cmdlines(cmdlines: &[String]) -> Option<AgentKind> {
+    for cmd in cmdlines {
+        let mut tokens = cmd.split_whitespace();
+        let argv0 = tokens.next().unwrap_or("");
+        if let Some(name) = token_to_name(argv0) {
+            if let Some(agent) = classify(&name) {
+                return Some(agent);
+            }
+            if is_wrapper(&name) {
+                for t in tokens {
+                    if let Some(n) = token_to_name(t) {
+                        if let Some(agent) = classify(&n) {
+                            return Some(agent);
+                        }
+                    }
+                }
+            }
+        }
     }
+    // 兜底: cmdline 把 agent 名作为**路径 basename / 独立 token**出现 — 修 codex 这种被
+    // wrapper 隐藏在长 path 里、token 切分丢失的情况。
+    // 关键: 用 mentions_binary 而非裸 contains —— 否则 `~/.codex/...` 配置目录路径
+    // (开发 / 读配置 / 任何进程引用过)会让无 agent 的终端被误判成 codex("被 codex 抢")。
+    for cmd in cmdlines {
+        let lower = cmd.to_lowercase();
+        // 关键字从 AGENT_DEFS 派生(cmdline_keywords 只含低假阳性的独特词)
+        for def in &AGENT_DEFS {
+            for kw in def.cmdline_keywords {
+                if mentions_binary(&lower, kw) {
+                    return Some(def.kind);
+                }
+            }
+        }
+    }
+    None
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
@@ -404,10 +409,9 @@ fn list_commands_in_pgid(pgid: u32) -> Option<Vec<String>> {
     )
 }
 
-/// 列 shell_pid 的所有后裔进程 cmdline (DFS via PPID).
-/// 穿透 process group 边界 — codex / node 等用 setsid 起新 pgid 时仍能找到.
+/// 全进程表 (pid, ppid, cmdline) —— unix 走 ps 文本解析
 #[cfg(unix)]
-fn list_descendant_commands(shell_pid: u32) -> Option<Vec<String>> {
+fn list_all_processes() -> Option<Vec<(u32, u32, String)>> {
     let out = std::process::Command::new("ps")
         .args(["-ax", "-o", "pid=,ppid=,command="])
         .output()
@@ -416,7 +420,6 @@ fn list_descendant_commands(shell_pid: u32) -> Option<Vec<String>> {
         return None;
     }
     let text = String::from_utf8_lossy(&out.stdout);
-    // (pid, ppid, command)
     let mut all: Vec<(u32, u32, String)> = Vec::new();
     for line in text.lines() {
         let trimmed = line.trim_start();
@@ -433,6 +436,44 @@ fn list_descendant_commands(shell_pid: u32) -> Option<Vec<String>> {
             all.push((pid, ppid, cmd.to_string()));
         }
     }
+    Some(all)
+}
+
+/// 全进程表 —— Windows 走 sysinfo(内部 NtQueryInformationProcess 拿 cmdline,
+/// 无 wmic/PowerShell 子进程开销;ConPTY 下 shell 子进程的 ppid 链同样成立)
+#[cfg(windows)]
+fn list_all_processes() -> Option<Vec<(u32, u32, String)>> {
+    use sysinfo::{ProcessesToUpdate, System};
+    let mut sys = System::new();
+    sys.refresh_processes(ProcessesToUpdate::All, true);
+    let mut all: Vec<(u32, u32, String)> = Vec::new();
+    for (pid, proc_) in sys.processes() {
+        let ppid = proc_.parent().map(|p| p.as_u32()).unwrap_or(0);
+        // cmd() 拿不到(权限/系统进程)时退进程名,至少 argv0 可识别
+        let cmd = if proc_.cmd().is_empty() {
+            proc_.name().to_string_lossy().into_owned()
+        } else {
+            proc_
+                .cmd()
+                .iter()
+                .map(|s| s.to_string_lossy())
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        all.push((pid.as_u32(), ppid, cmd));
+    }
+    Some(all)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn list_all_processes() -> Option<Vec<(u32, u32, String)>> {
+    None
+}
+
+/// 列 shell_pid 的所有后裔进程 cmdline (DFS via PPID).
+/// 穿透 process group 边界 — codex / node 等用 setsid 起新 pgid 时仍能找到.
+fn list_descendant_commands(shell_pid: u32) -> Option<Vec<String>> {
+    let all = list_all_processes()?;
     // DFS: 从 shell_pid 找所有后裔. visited 防御 ppid 环导致死循环.
     let mut frontier = vec![shell_pid];
     let mut visited = std::collections::HashSet::new();
@@ -492,10 +533,79 @@ mod tests {
     }
 
     #[test]
+    fn token_to_name_handles_windows_paths() {
+        // native 安装:%USERPROFILE%\.local\bin\claude.exe
+        assert_eq!(
+            token_to_name(r"C:\Users\demo\.local\bin\claude.exe"),
+            Some("claude".into())
+        );
+        // 引号包裹的带空格路径
+        assert_eq!(
+            token_to_name(r#""C:\Program Files\nodejs\node.exe""#),
+            Some("node".into())
+        );
+        // npm shim
+        assert_eq!(
+            token_to_name(r"C:\Users\demo\AppData\Roaming\npm\claude.cmd"),
+            Some("claude".into())
+        );
+        // 大写扩展名
+        assert_eq!(token_to_name(r"D:\TOOLS\CODEX.EXE"), Some("CODEX".into()));
+    }
+
+    #[test]
     fn wrapper_detection() {
         assert!(is_wrapper("node"));
         assert!(is_wrapper("python3"));
+        assert!(is_wrapper("pwsh"));
+        assert!(is_wrapper("cmd"));
         assert!(!is_wrapper("claude"));
+    }
+
+    #[test]
+    fn mentions_binary_windows_paths() {
+        // npm 全局装的 claude 在 Windows 的真实形态:node + 反斜杠路径
+        assert!(mentions_binary(
+            r"node c:\users\demo\appdata\roaming\npm\node_modules\@anthropic-ai\claude-code\cli.js",
+            "claude"
+        ));
+        // 引号包裹
+        assert!(mentions_binary(r#""c:\tools\codex.exe" --json"#, "codex"));
+        // Windows 点目录路径不命中(与 unix ~/.codex 同语义)
+        assert!(!mentions_binary(
+            r"type c:\users\demo\.codex\config.toml",
+            "codex"
+        ));
+    }
+
+    #[test]
+    fn detect_agent_in_windows_cmdlines() {
+        // native claude.exe
+        assert_eq!(
+            detect_agent_in_cmdlines(&[r"C:\Users\demo\.local\bin\claude.exe".into()]),
+            Some(AgentKind::Claude)
+        );
+        // node wrapper + cli.js 长路径(token 识别失败 → mentions_binary 兜底)
+        assert_eq!(
+            detect_agent_in_cmdlines(&[
+                r"C:\Program Files\nodejs\node.exe C:\Users\demo\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\cli.js".into()
+            ]),
+            Some(AgentKind::Claude)
+        );
+        // cmd shim 二跳
+        assert_eq!(
+            detect_agent_in_cmdlines(&[
+                r"cmd /c C:\Users\demo\AppData\Roaming\npm\codex.cmd".into()
+            ]),
+            Some(AgentKind::Codex)
+        );
+        // 普通 shell 不误判
+        assert_eq!(
+            detect_agent_in_cmdlines(&[
+                r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe".into()
+            ]),
+            None
+        );
     }
 }
 

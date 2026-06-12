@@ -8,7 +8,7 @@
 
 import { For, Show, createSignal, createMemo, onMount, type Component } from "solid-js";
 import { ArrowLeft, Check, Eye, EyeOff, RotateCcw, RefreshCw, Trash2, Plus } from "lucide-solid";
-import { ipc, t, Titlebar, IMPLEMENTED_COMMANDS, promptDisplayName } from "@vibeterm/ui-core";
+import { ipc, t, Titlebar, IMPLEMENTED_COMMANDS, promptDisplayName, isMacPlatform } from "@vibeterm/ui-core";
 import type { Theme, EnvFile, KeybindingsFile, CliStatus, PromptsFile, PromptEntry, PromptKind } from "@vibeterm/ipc-types";
 import { StatuslineTab } from "./settings-statusline";
 import { NotifyTab } from "./settings-notify";
@@ -452,7 +452,7 @@ const KeysTab: Component = () => {
     if (["Meta", "Control", "Shift", "Alt"].includes(e.key) && !e.repeat) {
       const now = Date.now();
       if (lastModTap && lastModTap.key === e.key && now - lastModTap.t < DOUBLE_TAP_MS) {
-        const isMac = navigator.platform.toUpperCase().includes("MAC");
+        const isMac = isMacPlatform();
         const tag =
           e.key === "Meta" ? (isMac ? "Mod" : "Meta") :
           e.key === "Control" ? (isMac ? "Control" : "Mod") :

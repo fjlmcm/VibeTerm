@@ -23,6 +23,7 @@ import {
   RESTORE_SEPARATOR,
 } from "../scrollback";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 
 import type { Theme, TaskId } from "@vibeterm/ipc-types";
@@ -38,6 +39,7 @@ import {
   writePty,
   detachTerminal,
   pasteClipboard,
+  writeClipboardText,
   openExternal,
 } from "../ipc";
 import { createKeybindingDispatcher as kbCreateDispatcher, registerTerminalFocus } from "../keybindings";
@@ -122,21 +124,31 @@ export function setTerminalFontSize(n: number) {
 const FILE_PATH_REGEX =
   /(?:^|[\s'"`(])((?:~|\.{1,2})?\/[\p{L}\p{N}._\-/]+(?::\d+(?::\d+)?)?)/gu;
 
-// WebGL 纹理图集偶发损坏自愈。
-// 现象:字形突然画错(CJK 半截/错误字形,连 ASCII 都错位)但底层数据无损——选中
-// 复制出的文本是对的。典型触发:OS 睡眠唤醒 / GPU 进程波动;CJK 大字符集填图集
-// 远快于拉丁文,概率更高。GPU 侧纹理损坏对 JS 不可见、无法检测,只能在可疑时点
-// 重建图集 —— xterm 官方为此提供 clearTextureAtlas()(其 API 注释即举例
-// "texture gets messed up when resuming the OS from sleep")。
+// WebGL 渲染层偶发损坏自愈。
+// 现象:部分字形画错/丢失(W、h、CJK 等画成错误方块或空白)但底层数据无损——选中
+// 复制出的文本是对的。典型触发:OS 睡眠唤醒 / GPU 进程波动;macOS 26.x WebKit 另有
+// 纹理对象级 WebGL bug(xterm.js#5816),CJK 大字符集填图集远快于拉丁文,概率更高。
+//
+// 实测教训(2026-06-12,带血):clearTextureAtlas() 只把字形**重传进同一个纹理对象**,
+// 修不了 WebKit 纹理对象/多页绑定层面的损坏 —— focus 清图集无效,而分屏增减(行列变化
+// → renderer 完整重建,拿到**全新纹理**)立刻恢复。因此 repair 动作升级为 dispose 再
+// loadAddon 整个 WebglAddon:全新 WebGL context + 纹理页,与分屏 resize 等价但可随时触发。
+//
 // 触发源收敛到一个 module 级 signal(同 fontSize 模式),各 Terminal 实例
 // createEffect 订阅,随组件自动释放:
-//   1. 窗口聚焦 / 文档恢复可见(下方 module 级监听,覆盖最常见的唤醒/切回场景);
-//   2. 命令面板「修复文字渲染」调用 requestRenderRepair() —— 乱码在眼前时一键重绘。
-// 成本仅为可见区字形重栅格化一帧,无闪烁;DOM 渲染器 fallback 时为 no-op。
+//   1. 窗口聚焦 / 文档恢复可见(下方 DOM 监听,覆盖唤醒/切回场景);
+//   2. Tauri 原生 onFocusChanged —— WKWebView 在终端 textarea 持焦时窗口切换
+//      不一定派发 window focus 事件,DOM 监听会整条漏掉,原生事件兜底;
+//   3. 命令面板「修复文字渲染」调用 requestRenderRepair() —— 乱码在眼前时一键重建。
+// 成本:context 创建 + 可见区重栅格化(毫秒级,触发频度低);多源同时触发用 1.5s 窗口合并。
 const [repairTick, setRepairTick] = createSignal(0);
 
-/** 让所有 Terminal 实例清 WebGL 纹理图集重绘(修复偶发字形乱码) */
+let lastRepairAt = 0;
+/** 让所有 Terminal 实例重建 WebGL 渲染层(修复偶发字形乱码) */
 export function requestRenderRepair() {
+  const now = Date.now();
+  if (now - lastRepairAt < 1500) return; // 合并 DOM focus / visibility / Tauri focus 同时触发
+  lastRepairAt = now;
   setRepairTick((n) => n + 1);
 }
 
@@ -145,6 +157,16 @@ window.addEventListener("focus", requestRenderRepair);
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") requestRenderRepair();
 });
+// Tauri 原生窗口焦点事件兜底(触发源 2)。非 Tauri 环境(Playwright 直连 vite)注册失败即跳过。
+try {
+  getCurrentWindow()
+    .onFocusChanged(({ payload: focused }) => {
+      if (focused) requestRenderRepair();
+    })
+    .catch(() => {});
+} catch {
+  /* 非 Tauri 环境 */
+}
 
 export interface TerminalProps {
   /** 在指定 task 下 spawn;不给则用 start_pty(独立) */
@@ -164,6 +186,11 @@ export function Terminal(props: TerminalProps) {
   let hostEl!: HTMLDivElement;
   let term: XTerm | null = null;
   let webgl: WebglAddon | null = null;
+  // WebGL 不可用(初始化失败 / context loss)→ 永久回 DOM 渲染器,repair 不再重试
+  let webglDisabled = false;
+  // repair 到达时本实例不可见(display:none 的非激活任务)→ 0 尺寸下建 context 不可靠,
+  // 记账推迟,变可见(onBecameVisible)时补建
+  let pendingWebglRepair = false;
   let fit: FitAddon | null = null;
   let search: SearchAddon | null = null;
   let serialize: SerializeAddon | null = null;
@@ -270,6 +297,43 @@ export function Terminal(props: TerminalProps) {
     });
   };
 
+  // 挂载 WebGL 渲染层。mount 与 rebuildWebgl 共用;失败(环境不支持)即永久回 DOM。
+  const attachWebgl = () => {
+    if (!term || webglDisabled) return;
+    try {
+      webgl = new WebglAddon();
+      webgl.onContextLoss(() => {
+        console.warn("[terminal] WebGL context lost — fallback DOM");
+        webglDisabled = true;
+        webgl?.dispose();
+        webgl = null;
+      });
+      term.loadAddon(webgl);
+    } catch (e) {
+      console.warn("[terminal] WebGL addon unavailable", e);
+      webglDisabled = true;
+      webgl = null;
+    }
+  };
+
+  // 整层重建:dispose 旧 addon(旧 context/纹理一并释放)→ 全新挂载。
+  // 不可见实例推迟(0 尺寸 canvas 上建 context 不可靠),变可见时由 onBecameVisible 补做。
+  const rebuildWebgl = () => {
+    if (disposed || !term || !webgl) return;
+    if (hostEl && hostEl.offsetParent === null) {
+      pendingWebglRepair = true;
+      return;
+    }
+    pendingWebglRepair = false;
+    try {
+      webgl.dispose();
+    } catch {
+      /* renderer 已失效时 dispose 可能抛 —— 忽略,直接重建 */
+    }
+    webgl = null;
+    attachWebgl();
+  };
+
   // 视图从 display:none → 可见时的重排 + 反污染处理。
   //
   // 根因:一个 PTY 多 sink(主窗 + 浮窗)共享同一字节流,但各自是独立、可不同尺寸的 xterm。
@@ -290,6 +354,8 @@ export function Terminal(props: TerminalProps) {
     const xt = term;
     if (!xt || terminalId === null) return;
     tryFit();
+    // 隐藏期间错过的 WebGL 重建在此补做(fit 之后,尺寸已就绪)
+    if (pendingWebglRepair) rebuildWebgl();
     try {
       const [ptyRows, ptyCols] = await terminalSize(terminalId);
       const contaminated =
@@ -590,17 +656,7 @@ export function Terminal(props: TerminalProps) {
       ta.addEventListener("compositionend", onCompositionEnd);
     }
 
-    try {
-      webgl = new WebglAddon();
-      webgl.onContextLoss(() => {
-        console.warn("[terminal] WebGL context lost — fallback DOM");
-        webgl?.dispose();
-        webgl = null;
-      });
-      term.loadAddon(webgl);
-    } catch (e) {
-      console.warn("[terminal] WebGL addon unavailable", e);
-    }
+    attachWebgl();
 
     requestAnimationFrame(async () => {
       if (disposed) return;
@@ -827,12 +883,14 @@ export function Terminal(props: TerminalProps) {
     term.options.cursorBlink = blink;
   });
 
-  // 纹理图集自愈:订阅 module 级 repairTick(触发源见文件顶部注释)。
-  // 首次运行(mount 后图集尚空)与 DOM 渲染器 fallback 时均为无害 no-op。
-  createEffect(() => {
-    repairTick();
-    term?.clearTextureAtlas();
-  });
+  // WebGL 渲染层自愈:订阅 module 级 repairTick(触发源与"为什么是整层重建而非
+  // clearTextureAtlas"见文件顶部注释)。首跑 = mount 当下(addon 刚挂),跳过;
+  // 之后每次 tick 重建。DOM fallback(webglDisabled)时 rebuildWebgl 自然 no-op。
+  createEffect<number>((prev) => {
+    const tick = repairTick();
+    if (tick !== prev) rebuildWebgl();
+    return tick;
+  }, repairTick());
 
   onCleanup(() => {
     // 卸载守卫:让仍在排队/await 中的异步 spawn 续体知道组件已销毁,
@@ -1016,9 +1074,9 @@ export function Terminal(props: TerminalProps) {
                 onClick={() => {
                   const sel = term?.getSelection() ?? "";
                   if (sel) {
-                    navigator.clipboard
-                      .writeText(normalizeGraphemes(sel))
-                      .catch(console.error);
+                    // Rust 侧 arboard 写剪贴板 —— navigator.clipboard 在右键菜单
+                    // 焦点漂移后会静默失败(尤其 Windows WebView2)。
+                    writeClipboardText(normalizeGraphemes(sel)).catch(console.error);
                   }
                   closeCtxMenu();
                 }}

@@ -613,7 +613,7 @@ const ProjectBars: Component<{ rows: UsageProjectStat[]; reveal: boolean }> = (p
     <div style={{ ...cardInnerStyle(), display: "flex", "flex-direction": "column", gap: "9px" }}>
       <For each={p.rows}>
         {(r, i) => {
-          const short = r.project_path.split("/").filter(Boolean).pop() || r.project_path;
+          const short = r.project_path.split(/[/\\]/).filter(Boolean).pop() || r.project_path;
           return (
             <div
               data-testid={`stats-project-${tid(r.project_path)}`}

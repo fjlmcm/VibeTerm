@@ -39,6 +39,8 @@ pub fn projects_root() -> Option<PathBuf> {
 /// (`/` `.` `_`、空格、CJK 等)都逐字符替换为 `-`**,大小写保留,连续分隔符不合并。
 /// 例:`/Users/demo/dev/VibeTerm` → `-Users-demo-dev-VibeTerm`;`/x/jj_upload` → `-x-jj-upload`;
 /// `/x/.claude` → `-x--claude`;`/Users/u/短剧多agent` → `-Users-u----agent`(`短剧多`→`---`)。
+/// Windows 同规则成立:Claude Code 2.1.173 二进制实测编码为 `replace(/[^a-zA-Z0-9]/g,"-")`,
+/// `C:\Users\demo\proj` 两边都得 `C--Users-demo-proj`(盘符冒号与反斜杠都变 `-`,无前导 `-`)。
 ///
 /// 旧实现只 `replace('/', "-")`,在含 `.`/`_`/空格/CJK 的路径上算出错误目录名 →
 /// [`read_for_cwd`] 落空(None)→ 完成检测拿不到 → 圆点恒 Running、完成通知不触发。

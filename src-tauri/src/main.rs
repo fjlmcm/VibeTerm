@@ -227,6 +227,7 @@ fn main() {
             get_scrollback,
             terminal_size,
             paste_clipboard,
+            write_clipboard_text,
             get_clipboard_images_dir,
             open_clipboard_images_dir,
             clear_clipboard_images,

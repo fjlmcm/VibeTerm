@@ -1,6 +1,6 @@
 {
   "name": "vibeterm-site",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "private": true,
   "type": "module",
   "description": "VibeTerm marketing site — static, multi-theme, multi-language",
