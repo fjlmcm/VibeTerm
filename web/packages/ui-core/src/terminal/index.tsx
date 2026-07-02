@@ -307,16 +307,56 @@ export function Terminal(props: TerminalProps) {
     }
   };
 
+  // PTY resize 串行化:Tauri async command 并发执行,快速连发(拖拽窗口边缘触发
+  // 几十次 onResize)时后端应用顺序无保证,最后落地的可能是旧尺寸 → PTY 与 xterm
+  // 失同步,TUI 按错误宽度重绘(偶发排版错乱,过去要开关分屏才恢复)。
+  // 同一时刻只允许一个 in-flight;期间到达的新尺寸只保留最新,前一个完成后续发。
+  // 到达顺序 = 应用顺序,中间值天然合并(拖拽期间几十次 resize 压缩成几次)。
+  let resizeInflight = false;
+  let pendingResize: { rows: number; cols: number } | null = null;
+  const sendPtyResize = (rows: number, cols: number) => {
+    if (terminalId === null) return;
+    if (resizeInflight) {
+      pendingResize = { rows, cols };
+      return;
+    }
+    resizeInflight = true;
+    resizePty(terminalId, rows, cols)
+      .catch((err) => {
+        console.error("[terminal] resizePty failed", err);
+        props.onError?.(err);
+      })
+      .finally(() => {
+        resizeInflight = false;
+        if (pendingResize !== null && !disposed) {
+          const p = pendingResize;
+          pendingResize = null;
+          sendPtyResize(p.rows, p.cols);
+        }
+      });
+  };
+
   // 把 PTY 尺寸断言为本视图(xterm)的当前尺寸。视图变可见时调用:
   // 浮窗在它生命周期里把共享 PTY 改成了浮窗尺寸,而本主窗视图隐藏期 fit 是 no-op、
   // onResize 不触发 → PTY 不会自己回到主窗尺寸,app 继续按浮窗宽度绘制 → 主窗顶部错乱。
   // 这里无条件下发本视图尺寸(后端 last_size 幂等:真没变则 no-op,不会多余 SIGWINCH)。
   const assertPtySize = () => {
     if (disposed || terminalId === null || !term) return;
-    resizePty(terminalId, term.rows, term.cols).catch((err) => {
-      console.error("[terminal] resizePty(assert) failed", err);
-      props.onError?.(err);
-    });
+    sendPtyResize(term.rows, term.cols);
+  };
+
+  // 聚焦对账:用户点进终端(focusin)或 app 窗口焦点回归时,重新 fit 并断言 PTY 尺寸。
+  // 兜住所有「可见终端的 PTY 被别的视图 / IPC 时序改走」的漏网路径(Canvas 模式浮窗
+  // 与主窗卡片同时可见互抢尺寸、乱序残留等)——把恢复动作从「手工开关分屏」变成
+  // 交互瞬间自动完成。仲裁语义:谁被聚焦谁拥有 PTY 尺寸。幂等:尺寸未变时全程 no-op。
+  const reconcileSize = () => {
+    if (disposed || terminalId === null) return;
+    tryFit();
+    assertPtySize();
+  };
+  const onWinFocus = () => {
+    // 仅本实例可见时对账;隐藏实例(display:none)变可见时另有 onBecameVisible 全套处理
+    if (hostEl && hostEl.offsetParent !== null) reconcileSize();
   };
 
   // 挂载 GPU 渲染层(backend 由 module 级 rendererBackend 决定)。
@@ -674,9 +714,14 @@ export function Terminal(props: TerminalProps) {
     //   修法: customKeyEventHandler 返回 false 时 xterm.js 跳过该 keydown,
     //   把字符交给 IME 完成合成. compositionend 由 xterm.js textarea 自身
     //   产生完整 input event 走 onData 路径 -> 一次性原子推到 PTY.
-    //   keyCode 229 是浏览器在 IME 合成期间历史值, 双保险.
+    //   注意: 合成态之外的 keyCode 229 必须放行 —— IME 直提交(全角标点
+    //   《》?:、shift+标点)只派发 keydown 229 + insertText,没有 composition
+    //   事件;xterm CompositionHelper.keydown 对 229 同样不会把键直通 PTY,
+    //   但会跑 _handleAnyTextareaChanges() 的 textarea 差分把字符发出去。
+    //   在这里拦 229 会切断该路径 → 标点滞留 textarea,连按两次才出一个
+    //   (上游同族: xtermjs #3070 / #5374)。
     term.attachCustomKeyEventHandler((e) => {
-      if (composing || e.isComposing || e.keyCode === 229) return false;
+      if (composing || e.isComposing) return false;
       return true;
     });
     // compositionstart/end 在 xterm 自己的隐藏 textarea 上触发 — 在此订阅维护合成态。
@@ -780,11 +825,7 @@ export function Terminal(props: TerminalProps) {
         });
         onResizeDispose = xterm.onResize(
           ({ rows, cols }: { rows: number; cols: number }) => {
-            if (terminalId === null) return;
-            resizePty(terminalId, rows, cols).catch((err) => {
-              console.error("[terminal] resizePty failed", err);
-              props.onError?.(err);
-            });
+            sendPtyResize(rows, cols);
           },
         );
 
@@ -846,6 +887,11 @@ export function Terminal(props: TerminalProps) {
     for (const ms of [0, 50, 200, 600, 1500]) {
       setTimeout(() => requestAnimationFrame(tryFit), ms);
     }
+
+    // 聚焦对账(挂载即注册,spawn 前 reconcileSize 有 terminalId 守卫自然 no-op):
+    // 点进终端 / app 焦点回归 → fit + PTY 尺寸断言,详见 reconcileSize 注释。
+    hostEl.addEventListener("focusin", reconcileSize);
+    window.addEventListener("focus", onWinFocus);
 
     // 父级 display:none ↔ block 切换时,IntersectionObserver 触发 fit
     // (ResizeObserver 对该转换不可靠)
@@ -934,8 +980,10 @@ export function Terminal(props: TerminalProps) {
     unregisterSnapshot?.();
     window.removeEventListener("keydown", onWinKeydown, true);
     window.removeEventListener("paste", onWinPaste, true);
+    window.removeEventListener("focus", onWinFocus);
     hostEl?.removeEventListener("contextmenu", onHostContextMenu);
     hostEl?.removeEventListener("copy", onHostCopy, true);
+    hostEl?.removeEventListener("focusin", reconcileSize);
     term?.textarea?.removeEventListener("compositionstart", onCompositionStart);
     term?.textarea?.removeEventListener("compositionend", onCompositionEnd);
     resizeObserver?.disconnect();
