@@ -273,6 +273,27 @@ export function Terminal(props: TerminalProps) {
   const tryFit = () => {
     if (!fit || !hostEl || !term) return;
     if (hostEl.offsetWidth <= 0 || hostEl.offsetHeight <= 0) return;
+    // 字形度量 sanity 守卫:渲染层整层重建(窗口 focus 触发的 repairTick)/字体切换
+    // 的窗口期,cell 宽度可能异常偏大,fit 会算出离谱的窄列数(如 900px÷60px≈14 列)
+    // 并连带 PTY —— TUI 按 14 列重绘的竖排行**永久**写进 scrollback(2026-07-02 用户
+    // 截图实锤:内容挤在左侧一窄条按 ~14 列硬折行,右侧全空)。等宽字体 cell 宽约
+    // 0.5-0.7 倍字号,超过 1.6 倍判定度量损坏:本次跳过,200ms 后重试一次(不递归;
+    // 度量恢复后 RO/IO 等其余触发源也会再 fit)。真实的窄容器(用户拉窄窗口)cell
+    // 宽正常,不会误伤。
+    const dims = fit.proposeDimensions();
+    if (!dims || dims.cols < 2 || dims.rows < 1) return;
+    const cellW = hostEl.offsetWidth / dims.cols;
+    const px = term.options.fontSize ?? 14;
+    if (cellW > px * 1.6) {
+      console.warn("[terminal] fit skipped: suspicious cell metrics", {
+        cellW: Math.round(cellW * 10) / 10,
+        fontSize: px,
+        proposedCols: dims.cols,
+        hostW: hostEl.offsetWidth,
+      });
+      setTimeout(() => requestAnimationFrame(tryFit), 200);
+      return;
+    }
     // follow-bottom 守门:fit 触发的 resize 会按行数增减扰动 xterm 视口(ydisp/ybase),
     // 用户正向上看历史时会被冲走。记录 fit 前是否贴底:仅当原本在底部才跟随到底,
     // 否则不打断用户正在看的历史(agent 提问/界面变动引起的频繁 resize 不再冲乱滚动)。
@@ -336,13 +357,49 @@ export function Terminal(props: TerminalProps) {
       });
   };
 
-  // 把 PTY 尺寸断言为本视图(xterm)的当前尺寸。视图变可见时调用:
-  // 浮窗在它生命周期里把共享 PTY 改成了浮窗尺寸,而本主窗视图隐藏期 fit 是 no-op、
-  // onResize 不触发 → PTY 不会自己回到主窗尺寸,app 继续按浮窗宽度绘制 → 主窗顶部错乱。
-  // 这里无条件下发本视图尺寸(后端 last_size 幂等:真没变则 no-op,不会多余 SIGWINCH)。
-  const assertPtySize = () => {
-    if (disposed || terminalId === null || !term) return;
-    sendPtyResize(term.rows, term.cols);
+  // 诊断 ring(localStorage,最近 40 条 PTY resize 下发记录):排版错乱偶发且无现场,
+  // 复发时可直接取证(何时、什么尺寸、容器多宽)。私有模式等写失败静默丢弃。
+  const logResizeDiag = (rows: number, cols: number) => {
+    try {
+      const key = "vibeterm.diag.ptyResizes";
+      const arr = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown[];
+      arr.push({
+        t: Date.now(),
+        id: terminalId,
+        rows,
+        cols,
+        w: hostEl?.offsetWidth ?? -1,
+        h: hostEl?.offsetHeight ?? -1,
+      });
+      while (arr.length > 40) arr.shift();
+      localStorage.setItem(key, JSON.stringify(arr));
+    } catch {
+      /* 诊断信息可丢 */
+    }
+  };
+
+  // 瞬态守门:PTY resize 走 120ms trailing debounce,回调时读 xterm **当时**的尺寸。
+  // 布局动画 / 渲染层重建窗口期的中间尺寸不产生 SIGWINCH —— TUI 不会按瞬态宽度
+  // 重绘出永久残迹;只有稳定值才下发。xterm 视图本身仍即时 resize(软折行可逆,
+  // 无持久伤害),被平滑的只有 PTY 侧。也统一承担「断言当前尺寸」语义(onBecameVisible
+  // /聚焦对账调用;后端同尺寸幂等,不会多余 SIGWINCH)。
+  let resizeDebounce: ReturnType<typeof setTimeout> | null = null;
+  const queuePtyResize = () => {
+    if (resizeDebounce !== null) clearTimeout(resizeDebounce);
+    resizeDebounce = setTimeout(() => {
+      resizeDebounce = null;
+      if (disposed || terminalId === null || !term) return;
+      if (term.cols < 20) {
+        console.warn("[terminal] narrow PTY resize", {
+          terminalId,
+          rows: term.rows,
+          cols: term.cols,
+          hostW: hostEl?.offsetWidth,
+        });
+      }
+      logResizeDiag(term.rows, term.cols);
+      sendPtyResize(term.rows, term.cols);
+    }, 120);
   };
 
   // 聚焦对账:用户点进终端(focusin)或 app 窗口焦点回归时,重新 fit 并断言 PTY 尺寸。
@@ -352,11 +409,16 @@ export function Terminal(props: TerminalProps) {
   const reconcileSize = () => {
     if (disposed || terminalId === null) return;
     tryFit();
-    assertPtySize();
+    queuePtyResize();
   };
   const onWinFocus = () => {
-    // 仅本实例可见时对账;隐藏实例(display:none)变可见时另有 onBecameVisible 全套处理
-    if (hostEl && hostEl.offsetParent !== null) reconcileSize();
+    // 延后 250ms:窗口 focus 同刻触发渲染层整层重建(repairTick),重建窗口期字形
+    // 度量不可靠,立即 fit 恰是竖排残迹的放大器(v1.1.4 复盘)。错峰执行,tryFit 的
+    // 度量守卫再兜一层。
+    setTimeout(() => {
+      // 仅本实例可见时对账;隐藏实例变可见时另有 onBecameVisible 全套处理
+      if (!disposed && hostEl && hostEl.offsetParent !== null) reconcileSize();
+    }, 250);
   };
 
   // 挂载 GPU 渲染层(backend 由 module 级 rendererBackend 决定)。
@@ -414,7 +476,7 @@ export function Terminal(props: TerminalProps) {
   //
   // 修法(不碰 reflow —— 用户确认拉伸窗口本身重排是正确的):变可见时先比对 PTY 当前尺寸与本
   // 视图尺寸;若不一致(= 隐藏期被别的视图改过、buffer 已污染)则清当前屏(ESC[2J + 光标归位,
-  // 保留 scrollback、不 reset 以免丢 app 的 cursor-keys / bracketed-paste 等模式),再 assertPtySize
+  // 保留 scrollback、不 reset 以免丢 app 的 cursor-keys / bracketed-paste 等模式),再 queuePtyResize
   // 把 PTY 断言回本视图尺寸 → app 收 SIGWINCH 在干净屏上重绘,消除重叠。尺寸一致(普通切任务)
   // 则跳过清屏,零副作用。
   // 已知竞态(可接受):隐藏期主窗被拉伸时,tryFit() 触发 xterm onResize → 异步 resizePty,
@@ -440,7 +502,7 @@ export function Terminal(props: TerminalProps) {
       console.warn("[terminal] visible-resync size check failed", e);
     }
     if (disposed || term !== xt) return;
-    assertPtySize();
+    queuePtyResize();
     resyncScroll();
   };
 
@@ -526,6 +588,29 @@ export function Terminal(props: TerminalProps) {
   };
   const onCompositionEnd = () => {
     composing = false;
+  };
+
+  // IME 直提交字符的事件驱动直送(v1.1.4 的 textarea 差分方案对第三方 IME 无效,复盘):
+  //   微信/豆包/搜狗等第三方输入法让系统对**每个键**都报 keyCode 229(xterm#5887),
+  //   且 insertText 经输入法进程 IPC **异步**落进 textarea —— xterm CompositionHelper
+  //   在 keydown 时 setTimeout(0) 做的 value 差分永远扑空(字符还没到),字符滞后一拍,
+  //   总被"下一次按键"的差分带出 → 症状:全角标点/字母连按两次才出一个。
+  //   系统拼音是同步落值所以差分能中 —— 时序赌博,不同 IME 结果不同。
+  // 修法:彻底不赌时序。keydown 229 一律拦下(customKeyEventHandler,路径唯一化,
+  //   xterm 的差分路径不再参与);字符到达的唯一可靠信号是 input 事件本身 ——
+  //   非合成态的 insertText 在此直接 term.input() 送 PTY,与到达时机无关。
+  //   与 xterm 原生 _inputEvent(emoji 面板等无 keydown 的路径)不双发:它处理过
+  //   会 preventDefault,检查 defaultPrevented 即可。合成态(拼音上屏)仍走 xterm
+  //   CompositionHelper 的 compositionend 原子提交,不经过这里。
+  const onTextareaInput = (ev: Event) => {
+    const ie = ev as InputEvent;
+    if (ie.isComposing || composing) return;
+    if (ie.inputType !== "insertText" || !ie.data) return;
+    if (ie.defaultPrevented) return;
+    term?.input(ie.data, true);
+    // 字符已直送 PTY,清掉 textarea 里的副本 —— 留着会被 composition 差分类路径
+    // 当作新增重复计入。非合成态清空无副作用(xterm 仅在合成/读屏时依赖 value)。
+    (ev.target as HTMLTextAreaElement).value = "";
   };
 
   const onWinKeydown = (e: KeyboardEvent) => {
@@ -714,21 +799,22 @@ export function Terminal(props: TerminalProps) {
     //   修法: customKeyEventHandler 返回 false 时 xterm.js 跳过该 keydown,
     //   把字符交给 IME 完成合成. compositionend 由 xterm.js textarea 自身
     //   产生完整 input event 走 onData 路径 -> 一次性原子推到 PTY.
-    //   注意: 合成态之外的 keyCode 229 必须放行 —— IME 直提交(全角标点
-    //   《》?:、shift+标点)只派发 keydown 229 + insertText,没有 composition
-    //   事件;xterm CompositionHelper.keydown 对 229 同样不会把键直通 PTY,
-    //   但会跑 _handleAnyTextareaChanges() 的 textarea 差分把字符发出去。
-    //   在这里拦 229 会切断该路径 → 标点滞留 textarea,连按两次才出一个
-    //   (上游同族: xtermjs #3070 / #5374)。
+    //   keyCode 229(IME 已吞键)也一律拦下:字符的实际投递统一走 onTextareaInput
+    //   的事件驱动直送(见其注释),xterm 的 keydown 差分路径不再参与 —— 路径唯一,
+    //   不存在双发,也不赌第三方 IME 异步 insertText 的落值时序。
     term.attachCustomKeyEventHandler((e) => {
-      if (composing || e.isComposing) return false;
+      if (composing || e.isComposing || e.keyCode === 229) return false;
       return true;
     });
     // compositionstart/end 在 xterm 自己的隐藏 textarea 上触发 — 在此订阅维护合成态。
+    // input 直送监听不用 capture:xterm 自身的 input listener 是 capture,同节点
+    // AT_TARGET 阶段 capture 先于 bubble 执行,保证 defaultPrevented 检查看得到
+    // xterm 的处理结果。
     const ta = term.textarea;
     if (ta) {
       ta.addEventListener("compositionstart", onCompositionStart);
       ta.addEventListener("compositionend", onCompositionEnd);
+      ta.addEventListener("input", onTextareaInput);
     }
 
     attachRenderer();
@@ -823,11 +909,9 @@ export function Terminal(props: TerminalProps) {
             props.onError?.(err);
           });
         });
-        onResizeDispose = xterm.onResize(
-          ({ rows, cols }: { rows: number; cols: number }) => {
-            sendPtyResize(rows, cols);
-          },
-        );
+        onResizeDispose = xterm.onResize(() => {
+          queuePtyResize();
+        });
 
         // Tauri 2 native drag-drop — 仅处理 drop 事件;事件全 webview 广播,
         // 按 hostEl 的 viewport 矩形过滤,确保多终端布局下命中正确实例
@@ -973,6 +1057,10 @@ export function Terminal(props: TerminalProps) {
     // 卸载守卫:让仍在排队/await 中的异步 spawn 续体知道组件已销毁,
     // 续体会自行 teardownPty 并跳过 window 监听器注册。
     disposed = true;
+    if (resizeDebounce !== null) {
+      clearTimeout(resizeDebounce);
+      resizeDebounce = null;
+    }
     onDataDispose?.dispose();
     onResizeDispose?.dispose();
     dragDropUnlisten?.();
@@ -986,6 +1074,7 @@ export function Terminal(props: TerminalProps) {
     hostEl?.removeEventListener("focusin", reconcileSize);
     term?.textarea?.removeEventListener("compositionstart", onCompositionStart);
     term?.textarea?.removeEventListener("compositionend", onCompositionEnd);
+    term?.textarea?.removeEventListener("input", onTextareaInput);
     resizeObserver?.disconnect();
     intersectionObserver?.disconnect();
     // 三态 PTY cleanup(见 teardownPty 注释):

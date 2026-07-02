@@ -215,6 +215,41 @@ test.describe("VibeTerm Web Smoke", () => {
     await expect(async () => {
       expect(await decodedPtyWrites(page)).toContain("《");
     }).toPass({ timeout: 3000 });
+    // 恰好一次 —— 组件直送与 xterm 原生路径不得双发
+    const once = await decodedPtyWrites(page);
+    expect(once.split("《").length - 1).toBe(1);
+  });
+
+  test("IME:第三方输入法异步 insertText(keydown 后延迟落值)不丢字符", async ({ page }) => {
+    // 回归:微信/豆包/搜狗等 IME 对每个键报 keyCode 229,insertText 经输入法进程
+    // IPC **异步**落进 textarea,晚于 xterm CompositionHelper 在 keydown 时安排的
+    // setTimeout(0) 差分窗口 → 差分扑空,字符滞后一拍,总被下一次按键带出,
+    // 表现为"连按两次出一个"(上游同族:xtermjs #5887)。v1.1.4 的差分方案对此无效;
+    // 现实现改为 input 事件驱动直送,与落值时机无关。
+    await installTerminalWithPtyCapture(page);
+    await page.goto("/");
+    await page.locator('[data-terminal-id="1"]').waitFor({ state: "attached", timeout: 10_000 });
+    await page.evaluate(async () => {
+      const ta = document.querySelector(".xterm-helper-textarea") as HTMLTextAreaElement;
+      ta.focus();
+      const kd = new KeyboardEvent("keydown", { key: "Process", bubbles: true, cancelable: true });
+      Object.defineProperty(kd, "keyCode", { get: () => 229 });
+      ta.dispatchEvent(kd);
+      // 模拟 IME 进程往返:字符在 keydown 同步链与 setTimeout(0) 差分窗口之后才落值
+      await new Promise((r) => setTimeout(r, 30));
+      ta.value += "！";
+      ta.dispatchEvent(
+        new InputEvent("input", { data: "！", inputType: "insertText", bubbles: true, composed: true }),
+      );
+      const ku = new KeyboardEvent("keyup", { key: "Process", bubbles: true, cancelable: true });
+      Object.defineProperty(ku, "keyCode", { get: () => 229 });
+      ta.dispatchEvent(ku);
+    });
+    await expect(async () => {
+      expect(await decodedPtyWrites(page)).toContain("！");
+    }).toPass({ timeout: 3000 });
+    const once = await decodedPtyWrites(page);
+    expect(once.split("！").length - 1).toBe(1);
   });
 
   test("IME:composition 期间 Enter 不漏进 PTY,选词文本原子上屏", async ({ page }) => {
