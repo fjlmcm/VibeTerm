@@ -120,7 +120,7 @@
   "credits.group.frontend": "Frontend",
   "credits.group.inspiration": "Inspirado en",
   "credits.group.assets": "Fuentes y recursos",
-  "credits.thanks": "Un agradecimiento especial a ccusage de ryoppippi (MIT). Los precios de modelos y los bloques de 5 horas vienen de ahí; los datos de precios provienen de LiteLLM y las cifras oficiales de Anthropic.",
+  "credits.thanks": "Un agradecimiento especial a ccusage de ryoppippi (MIT): la lógica de bloques de 5 horas viene de ahí.",
   "section.download.title": "¿Lo probamos?",
   "section.download.subtitle": "Gratis, código abierto, todo local. Descarga y listo, sin registro.",
   "download.macos": "Descargar",

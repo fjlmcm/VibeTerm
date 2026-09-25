@@ -120,7 +120,7 @@
   "credits.group.frontend": "フロントエンド",
   "credits.group.inspiration": "参考にしたもの",
   "credits.group.assets": "フォントと素材",
-  "credits.thanks": "ryoppippi さんの ccusage(MIT)に感謝。モデル価格、5 時間ブロックはここから参考にしました。価格データは LiteLLM と Anthropic 公式から。",
+  "credits.thanks": "ryoppippi さんの ccusage(MIT)に感謝。5 時間ブロックのロジックはここから参考にしました。",
   "section.download.title": "試してみる?",
   "section.download.subtitle": "無料、オープンソース、全部ローカル。落としたらすぐ使える、登録不要。",
   "download.macos": "ダウンロード",

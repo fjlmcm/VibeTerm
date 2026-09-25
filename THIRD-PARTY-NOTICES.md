@@ -37,10 +37,9 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-VibeTerm does **not** redistribute ccusage's code verbatim. Model data ships as an
-**offline snapshot** (`claude/litellm_snapshot.json`), refreshed before releases
-with `scripts/update-model-data.py`. The app queries this snapshot locally,
-for model context-window sizes, without fetching anything at runtime.
+VibeTerm does **not** redistribute ccusage's code verbatim; only the 5-hour block
+algorithm was ported. Model context-window sizes are derived from the model id by a
+version rule in `claude/models.rs` — no external model table is bundled or fetched.
 
 ---
 
@@ -77,7 +76,6 @@ approach only; no third-party code is redistributed:
 - **ccusage** (ryoppippi, MIT) — usage aggregation, 5-hour block algorithm — https://github.com/ryoppippi/ccusage
 - **WezTerm** (wez, MIT) — macOS clipboard file-URL handling — https://github.com/wez/wezterm
 - **Tabby** (Eugeny, MIT) — window vibrancy & n-ary split recursion — https://github.com/Eugeny/tabby
-- **LiteLLM** (BerriAI, MIT) — model table (data source for the context-window snapshot) — https://github.com/BerriAI/litellm
 - **Prowl** — process-level agent classification
 - **CodexBar** — provider fallback-chain design
 - **ccstatusline** — status bar widget design

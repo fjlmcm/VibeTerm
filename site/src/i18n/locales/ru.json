@@ -120,7 +120,7 @@
   "credits.group.frontend": "Фронтенд",
   "credits.group.inspiration": "Заимствовано у",
   "credits.group.assets": "Шрифты и ресурсы",
-  "credits.thanks": "Особая благодарность ccusage от ryoppippi (MIT). Цены моделей и 5-часовые блоки пришли оттуда; данные о ценах — из LiteLLM и официальных цифр Anthropic.",
+  "credits.thanks": "Особая благодарность ccusage от ryoppippi (MIT) — логика 5-часовых блоков пришла оттуда.",
   "section.download.title": "Хотите попробовать?",
   "section.download.subtitle": "Бесплатно, открытый код, всё локально. Скачайте и запускайте, без регистрации.",
   "download.macos": "Скачать",

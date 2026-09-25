@@ -47,7 +47,6 @@ const INSPIRATION: { name: string; by?: string; url?: string; note: string }[] =
   { name: "ccusage", by: "ryoppippi", url: "https://github.com/ryoppippi/ccusage", note: "about.inspire.ccusage" },
   { name: "WezTerm", by: "wez", url: "https://github.com/wez/wezterm", note: "about.inspire.wezterm" },
   { name: "Tabby", by: "Eugeny", url: "https://github.com/Eugeny/tabby", note: "about.inspire.tabby" },
-  { name: "LiteLLM", by: "BerriAI", url: "https://github.com/BerriAI/litellm", note: "about.inspire.litellm" },
   { name: "Prowl", note: "about.inspire.prowl" },
   { name: "CodexBar", note: "about.inspire.codexbar" },
   { name: "ccstatusline", note: "about.inspire.ccstatusline" },

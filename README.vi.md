@@ -100,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## Đứng trên vai những dự án này.
 
-Cảm ơn đặc biệt ccusage của ryoppippi (MIT). Giá mô hình và khối 5 giờ đều từ đó mà ra; dữ liệu giá đến từ LiteLLM và các con số chính thức của Anthropic.
+Cảm ơn đặc biệt ccusage của ryoppippi (MIT) — logic khối 5 giờ đến từ đó.
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

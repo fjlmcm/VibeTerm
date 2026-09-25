@@ -100,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## 站在這些專案的肩膀上。
 
-特別感謝 ryoppippi 的 ccusage(MIT)—— 模型價格、5 小時區塊這些都參考了它;價格資料來自 LiteLLM 和 Anthropic 官方。
+特別感謝 ryoppippi 的 ccusage(MIT)—— 5 小時區塊的邏輯參考了它。
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

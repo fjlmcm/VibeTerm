@@ -100,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## これらの上に立ってます。
 
-ryoppippi さんの ccusage(MIT)に感謝。モデル価格、5 時間ブロックはここから参考にしました。価格データは LiteLLM と Anthropic 公式から。
+ryoppippi さんの ccusage(MIT)に感謝。5 時間ブロックのロジックはここから参考にしました。
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

@@ -120,7 +120,7 @@
   "credits.group.frontend": "프론트엔드",
   "credits.group.inspiration": "참고한 것",
   "credits.group.assets": "폰트와 소재",
-  "credits.thanks": "ryoppippi의 ccusage(MIT)에 특별히 감사. 모델 가격, 5시간 블록은 여기서 참고했습니다. 가격 데이터는 LiteLLM과 Anthropic 공식 수치에서.",
+  "credits.thanks": "ryoppippi의 ccusage(MIT)에 특별히 감사. 5시간 블록 로직은 여기서 참고했습니다.",
   "section.download.title": "한번 써볼까?",
   "section.download.subtitle": "무료, 오픈소스, 전부 로컬. 받아서 바로 실행, 가입 불필요.",
   "download.macos": "다운로드",

@@ -31,18 +31,6 @@ python3 scripts/gen-readme.py                # ⑤ 仅当改了官网 i18n 文�
 
 - 本地复现 CI clippy 失败,先 `rustup update stable` 对齐版本(旧 clippy 漏报)。
 
-## 1.5 发版前刷新模型数据快照(用户标准:每次发新版本都先更新再发)
-
-```bash
-python3 scripts/update-model-data.py                 # 拉 LiteLLM → 重写内嵌快照
-(cd src-tauri && cargo test -p vibeterm-agent-watch) # 快照解析 + 上下文窗口断言守门
-```
-
-- 刷新的是 `src-tauri/crates/vibeterm-agent-watch/src/claude/litellm_snapshot.json`(模型上下文窗口,编译进二进制的离线兜底;费用统计功能已移除,不再含价格)。
-- 有 diff 随本次发版一起提交;`no changes` 则跳过。
-- 脚本输出 `added/removed/changed` 模型列表 —— 新模型出现时顺带确认测试断言是否要补。
-- **纯文档改动不发版时无需运行**;只在真要打 tag 发版前跑。
-
 ## 2. 版本号(何时 bump)
 
 权威源 `src-tauri/tauri.conf.json`,`scripts/bump-version.py` 一处改、lockstep 同步 6 个 package.json + Cargo workspace。
@@ -89,8 +77,7 @@ CI 失败先看是不是 `cargo fmt`(回第 1 步)。发版失败常见:`APPLE_S
 
 ## 速记
 1. **cargo fmt --all**(别忘!)→ clippy -D warnings → test 8 crate → typecheck + lint →(改文案则 gen-readme)
-2. 发版前 `python3 scripts/update-model-data.py` 刷新模型数据快照(每次发新版必做)
-3. 该 bump 才 bump(纯文档不 bump)
+2. 该 bump 才 bump(纯文档不 bump)
 3. commit + push main
 4. tag vX.Y.Z + push → 自动签名公证发布
 5. `gh run watch` 确认绿

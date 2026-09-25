@@ -120,7 +120,7 @@
   "credits.group.frontend": "前端",
   "credits.group.inspiration": "借鉴",
   "credits.group.assets": "字体与素材",
-  "credits.thanks": "特别感谢 ryoppippi 的 ccusage(MIT)——模型价格、5 小时块这些都参考了它;价格数据来自 LiteLLM 和 Anthropic 官方。",
+  "credits.thanks": "特别感谢 ryoppippi 的 ccusage(MIT)——5 小时块的逻辑参考了它。",
   "section.download.title": "试试?",
   "section.download.subtitle": "免费、开源、东西都在本地。下完就能用,不用注册。",
   "download.macos": "下载",

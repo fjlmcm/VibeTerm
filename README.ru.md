@@ -100,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## На плечах этих проектов.
 
-Особая благодарность ccusage от ryoppippi (MIT). Цены моделей и 5-часовые блоки пришли оттуда; данные о ценах — из LiteLLM и официальных цифр Anthropic.
+Особая благодарность ccusage от ryoppippi (MIT) — логика 5-часовых блоков пришла оттуда.
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

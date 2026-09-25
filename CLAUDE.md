@@ -9,7 +9,7 @@
 
 ## 技术栈与架构
 
-**Tauri 2 + Rust(workspace)+ SolidJS + xterm.js(WebglAddon GPU 渲染);pnpm monorepo。** 当前版本 1.1.6,标识 `com.vibeterm.desktop`,macOS 11+。
+**Tauri 2 + Rust(workspace)+ SolidJS + xterm.js(WebglAddon GPU 渲染);pnpm monorepo。** 当前版本 1.1.7,标识 `com.vibeterm.desktop`,macOS 11+。
 
 ### Rust 侧(`src-tauri/`)— 主 app + 8 个业务 crate(单向依赖分层)
 | crate | 职责 |
@@ -74,7 +74,6 @@ cargo fmt --all
 scripts/smoke-app.sh [--build]   # 隔离启动 .app ~8s,验存活/无 panic/PTY/截图 → .smoke/
 scripts/fix-launchpad.sh         # 装包后修 macOS Launchpad/Spotlight 找不到
 scripts/build-sounds.py          # ffmpeg 压缩提示音 → src-tauri/resources/sounds/
-scripts/update-model-data.py     # 拉 LiteLLM 刷新内嵌模型快照(ctx 窗口);每次发版前必跑
 ```
 
 CI(`.github/workflows/ci.yml`):lint + cargo test(全部 8 个子 crate)+ Playwright + app-smoke + build-smoke。发布(`release.yml`):推 `v*` tag 自动签名公证并 publish(也可 `workflow_dispatch` 手动触发),流程见 `/release` skill。

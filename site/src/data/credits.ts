@@ -48,7 +48,6 @@ export const CREDIT_GROUPS: CreditGroup[] = [
       { name: 'ccusage', url: 'https://github.com/ryoppippi/ccusage', note: 'Model pricing, 5h blocks' },
       { name: 'WezTerm', url: 'https://github.com/wezterm/wezterm', note: 'PTY & terminal craft' },
       { name: 'Tabby', url: 'https://github.com/Eugeny/tabby', note: 'Terminal UX' },
-      { name: 'LiteLLM', url: 'https://github.com/BerriAI/litellm', note: 'Model pricing reference' },
       { name: 'Prowl', note: 'Agent status inspiration' },
       { name: 'CodexBar', note: 'Status bar inspiration' },
       { name: 'ccstatusline', note: 'Status line inspiration' },
