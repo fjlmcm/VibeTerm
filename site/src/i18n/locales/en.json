@@ -52,7 +52,7 @@
   "features.urgency.label": "Stall detection + urgency sort",
   "features.urgency.desc": "Screen full of agents? The stuck ones and the ones waiting on you go to the top.",
   "features.monitor.label": "Live usage",
-  "features.monitor.desc": "Context left, 5h/7d quota, burn rate, cache, cost — all on one bar.",
+  "features.monitor.desc": "Context left, 5h/7d quota, burn rate, cache — all on one bar.",
   "features.split.label": "Splits + worktrees",
   "features.split.desc": "Mount a git worktree, one terminal tree per task.",
   "features.floating.label": "Floating windows",

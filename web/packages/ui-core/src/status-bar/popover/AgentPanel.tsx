@@ -3,7 +3,7 @@
 // 排版骨架 (三个 Section, 字段顺序固定):
 //   Session: model / provider / plan / effort / session / context / cli version
 //   Quota:   5h / 7d (+ 7d_sonnet / 7d_opus / extra_credits 追加)
-//   Usage:   tokens used / burn rate / block cost / elapsed / 24h tokens
+//   Usage:   tokens used / burn rate / elapsed / 24h tokens
 //
 // agent 独有的字段用 Show 隐藏行, agent 缺失数据的 quota 槽位由 collect 函数填 pct=null
 // (QuotaRow 显示 "—"). 视觉上 Claude / Codex panel 永远对齐.

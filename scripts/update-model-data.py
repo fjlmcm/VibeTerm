@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""刷新内嵌模型数据快照(价格 + 上下文窗口)。
+"""刷新内嵌模型上下文窗口快照。
 
-从 LiteLLM 社区价格表(model_prices_and_context_window.json,ccusage 同源)抽取
-anthropic 原生 claude 条目,写入 vibeterm-agent-watch 的内嵌快照:
+从 LiteLLM 社区模型表(model_prices_and_context_window.json)抽取 anthropic 原生
+claude 条目的 max_input_tokens,写入 vibeterm-agent-watch 的内嵌快照:
 
     src-tauri/crates/vibeterm-agent-watch/src/claude/litellm_snapshot.json
 
-该快照编译进二进制,供应用离线查询。
+该快照编译进二进制,供应用离线查 model id → 上下文窗口。
 **每次发布新版本前运行一次本脚本**(发版流程见 .claude/skills/release),
 有 diff 随版本提交,保证内置数据不过时。
 
@@ -31,18 +31,13 @@ SNAPSHOT_PATH = (
 )
 
 # 只保留 Rust 侧转换会用到的字段, 控制内嵌体积.
-KEEP_FIELDS = (
-    "litellm_provider",
-    "max_input_tokens",
-    "input_cost_per_token",
-    "output_cost_per_token",
-    "cache_creation_input_token_cost",
-    "cache_read_input_token_cost",
-    "input_cost_per_token_above_200k_tokens",
-    "output_cost_per_token_above_200k_tokens",
-    "cache_creation_input_token_cost_above_200k_tokens",
-    "cache_read_input_token_cost_above_200k_tokens",
-)
+KEEP_FIELDS = ("litellm_provider", "max_input_tokens")
+
+# 裸 model id 在 Claude Code 里默认 200k、1M 需 [1m] 后缀的模型(见 main 里的说明)。
+CONTEXT_PINS = {
+    "claude-sonnet-4-5": 200_000,
+    "claude-opus-4-5": 200_000,
+}
 
 def fetch_source() -> dict:
     if len(sys.argv) >= 3 and sys.argv[1] == "--from":
@@ -62,7 +57,7 @@ def main() -> None:
             continue
         if not key.lower().startswith("claude"):
             continue
-        if v.get("input_cost_per_token") is None or v.get("output_cost_per_token") is None:
+        if v.get("max_input_tokens") is None:
             continue
         entries[key] = {f: v[f] for f in KEEP_FIELDS if v.get(f) is not None}
     if len(entries) < 10:
@@ -71,6 +66,17 @@ def main() -> None:
     old = {}
     if SNAPSHOT_PATH.exists():
         old = json.loads(SNAPSHOT_PATH.read_text()).get("entries", {})
+
+    # 上下文窗口取"Claude Code 默认会话"的值而非 API 上限:1M 会话在 transcript 里带 [1m]
+    # 后缀(context_window_for 单独识别),裸 id 仍是 200k;LiteLLM 的 max_input_tokens 反映
+    # 开 beta header 后的上限,照抄会让 ctx% 低 5 倍。仅对已知"裸 id 默认 200k"的模型钉住。
+    pinned = []
+    for k, v in entries.items():
+        for prefix, ctx in CONTEXT_PINS.items():
+            if (k == prefix or k.startswith(prefix + "-")) and v.get("max_input_tokens") != ctx:
+                v["max_input_tokens"] = ctx
+                pinned.append(k)
+
     snapshot = {
         "snapshot_date": datetime.date.today().isoformat(),
         "source": "LiteLLM (BerriAI/litellm)",
@@ -82,7 +88,12 @@ def main() -> None:
     removed = sorted(set(old) - set(entries))
     changed = sorted(k for k in set(entries) & set(old) if entries[k] != old[k])
     print(f"wrote {SNAPSHOT_PATH.relative_to(Path.cwd())} ({len(entries)} models)")
-    for tag, names in (("added", added), ("removed", removed), ("changed", changed)):
+    for tag, names in (
+        ("added", added),
+        ("removed", removed),
+        ("context pinned", sorted(pinned)),
+        ("changed", changed),
+    ):
         if names:
             print(f"  {tag}: {', '.join(names)}")
     if not (added or removed or changed):

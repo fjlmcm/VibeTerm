@@ -52,7 +52,7 @@
   "features.urgency.label": "停止検出 + 緊急度ソート",
   "features.urgency.desc": "画面いっぱいの agent でも、停止したものと入力待ちのものが上に来ます。",
   "features.monitor.label": "使用量をリアルタイムで",
-  "features.monitor.desc": "コンテキスト残量、5h/7d クォータ、消費ペース、キャッシュ、コスト。1 本のバーに。",
+  "features.monitor.desc": "コンテキスト残量、5h/7d クォータ、消費ペース、キャッシュ。1 本のバーに。",
   "features.split.label": "分割 + worktree",
   "features.split.desc": "git worktree をマウント、タスクごとに自分のターミナルツリー。",
   "features.floating.label": "フローティング窓",

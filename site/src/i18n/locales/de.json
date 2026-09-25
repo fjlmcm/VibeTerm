@@ -52,7 +52,7 @@
   "features.urgency.label": "Hängt-Erkennung + Dringlichkeitssortierung",
   "features.urgency.desc": "Bildschirm voller Agents? Die hängenden und die, die auf dich warten, kommen nach oben.",
   "features.monitor.label": "Live-Verbrauch",
-  "features.monitor.desc": "Restkontext, 5h/7d-Kontingent, Burn-Rate, Cache, Kosten — alles in einer Leiste.",
+  "features.monitor.desc": "Restkontext, 5h/7d-Kontingent, Burn-Rate, Cache — alles in einer Leiste.",
   "features.split.label": "Splitscreen + Worktrees",
   "features.split.desc": "Ein git-Worktree gemountet, ein Terminal-Baum pro Aufgabe.",
   "features.floating.label": "Schwebende Fenster",

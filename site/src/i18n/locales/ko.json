@@ -52,7 +52,7 @@
   "features.urgency.label": "멈춤 감지 + 긴급도 정렬",
   "features.urgency.desc": "화면 가득한 에이전트에서, 멈춘 것과 당신을 기다리는 게 위로 올라옵니다.",
   "features.monitor.label": "사용량 실시간",
-  "features.monitor.desc": "남은 컨텍스트, 5h/7d 쿼터, 소모 속도, 캐시, 비용 — 한 줄에.",
+  "features.monitor.desc": "남은 컨텍스트, 5h/7d 쿼터, 소모 속도, 캐시 — 한 줄에.",
   "features.split.label": "분할 + worktree",
   "features.split.desc": "git worktree를 마운트, 작업마다 독립된 터미널 트리.",
   "features.floating.label": "플로팅 창",

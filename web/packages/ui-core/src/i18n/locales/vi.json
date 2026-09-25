@@ -403,7 +403,7 @@
   "features.group.agent": "Nắm bắt agent",
   "features.agent.sniff": "Đánh hơi trạng thái thuần — running / waiting-input / stalled / done, zero intrusion",
   "features.agent.urgency": "Phát hiện stall + xếp theo độ cấp bách — agent nào cần bạn sẽ nổi lên trên cùng",
-  "features.agent.monitor": "Theo dõi mức dùng thời gian thực — ngữ cảnh %, hạn mức 5h/7d, burn rate, cache TTL, chi phí",
+  "features.agent.monitor": "Theo dõi mức dùng thời gian thực — ngữ cảnh %, hạn mức 5h/7d, burn rate, cache TTL",
   "features.group.terminal": "Sức mạnh terminal",
   "features.terminal.split": "Chia n nhánh + gắn git worktree, mỗi task một cây terminal riêng",
   "features.terminal.floating": "Cửa sổ nổi — tách một task ra cửa sổ riêng",

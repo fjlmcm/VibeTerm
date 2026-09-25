@@ -52,7 +52,7 @@
   "features.urgency.label": "Deteksi macet + urut berdasarkan urgensi",
   "features.urgency.desc": "Layar penuh agent? Yang macet dan yang menunggumu naik ke atas.",
   "features.monitor.label": "Pemakaian langsung",
-  "features.monitor.desc": "Sisa konteks, kuota 5h/7d, laju pemakaian, cache, biaya — semua dalam satu bar.",
+  "features.monitor.desc": "Sisa konteks, kuota 5h/7d, laju pemakaian, cache — semua dalam satu bar.",
   "features.split.label": "Split panel + worktree",
   "features.split.desc": "Pasang git worktree, satu pohon terminal per tugas.",
   "features.floating.label": "Jendela mengambang",

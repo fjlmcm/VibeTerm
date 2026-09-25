@@ -5,7 +5,6 @@
 //!   - 每条事件: type=event_msg, payload.type=token_count, payload.info.last_token_usage
 //!   - 5h block 是按**账号**算的 (跟 Anthropic 一致), 跨 rollout 跨 session, 不按 cwd 过滤
 //!   - Codex 没有 cache_creation 字段, 用 input + cached_input + output + reasoning_output
-//!   - cost: Codex 没公开价格表, 暂返回 None (UI 端隐藏 cost 行)
 //!
 //! 算法 (跟 claude::blocks::active_block_for_file 一致):
 //!   - 起点 floor 到整点
@@ -280,7 +279,6 @@ pub fn active_block_for_cwd(_cwd: &str) -> Option<ActiveBlock> {
         tokens_per_min_avg: avg,
         tokens_per_min_recent: recent,
         burn_rate_level: level.to_string(),
-        cost_usd: None, // Codex 没公开价格表
     })
 }
 

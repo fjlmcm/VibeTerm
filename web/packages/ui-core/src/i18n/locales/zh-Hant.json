@@ -403,7 +403,7 @@
   "features.group.agent": "Agent 感知",
   "features.agent.sniff": "狀態純嗅探 —— 執行中／等待輸入／卡死／完成,零侵入",
   "features.agent.urgency": "卡死偵測 + 紧迫度排序 —— 最需要你的那個 agent 自動浮到最上",
-  "features.agent.monitor": "即時用量監控 —— 上下文 %、5h/7d 額度、burn rate、cache TTL、成本",
+  "features.agent.monitor": "即時用量監控 —— 上下文 %、5h/7d 額度、burn rate、cache TTL",
   "features.group.terminal": "終端機火力",
   "features.terminal.split": "n 叉分割 + git worktree 掛載,每個任務一棵獨立終端機樹",
   "features.terminal.floating": "浮動視窗 —— 把任務彈成獨立視窗",

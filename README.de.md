@@ -46,7 +46,7 @@ _Alle üblichen Terminal-Funktionen, dazu Zustandserkennung und Orchestrierung f
 
 - **Sieht, was ein Agent tut** — Läuft, wartet, hängt oder fertig — erkannt, ohne deine Config anzufassen.
 - **Hängt-Erkennung + Dringlichkeitssortierung** — Bildschirm voller Agents? Die hängenden und die, die auf dich warten, kommen nach oben.
-- **Live-Verbrauch** — Restkontext, 5h/7d-Kontingent, Burn-Rate, Cache, Kosten — alles in einer Leiste.
+- **Live-Verbrauch** — Restkontext, 5h/7d-Kontingent, Burn-Rate, Cache — alles in einer Leiste.
 
 ### Terminal
 

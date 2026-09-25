@@ -52,7 +52,7 @@
   "features.urgency.label": "Detección de atascos + orden por urgencia",
   "features.urgency.desc": "¿Pantalla llena de agentes? Los atascados y los que te esperan se van arriba.",
   "features.monitor.label": "Uso en vivo",
-  "features.monitor.desc": "Contexto restante, cuota 5h/7d, ritmo de gasto, caché, coste — todo en una barra.",
+  "features.monitor.desc": "Contexto restante, cuota 5h/7d, ritmo de gasto, caché — todo en una barra.",
   "features.split.label": "Divisiones + worktrees",
   "features.split.desc": "Monta un worktree de git, un árbol de terminales por tarea.",
   "features.floating.label": "Ventanas flotantes",

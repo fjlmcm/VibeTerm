@@ -403,7 +403,7 @@
   "features.group.agent": "Agent-Wahrnehmung",
   "features.agent.sniff": "Reines Status-Sniffing — running / waiting-input / stalled / done, null Eingriff",
   "features.agent.urgency": "Stall-Erkennung + Dringlichkeitsranking — der Agent, der dich braucht, steigt nach oben",
-  "features.agent.monitor": "Live-Nutzungsüberwachung — Kontext %, 5h/7d-Kontingent, Burn Rate, Cache TTL, Kosten",
+  "features.agent.monitor": "Live-Nutzungsüberwachung — Kontext %, 5h/7d-Kontingent, Burn Rate, Cache TTL",
   "features.group.terminal": "Terminal-Power",
   "features.terminal.split": "N-fache Teilungen + Einhängen von git worktree, ein Terminal-Baum pro Aufgabe",
   "features.terminal.floating": "Schwebende Fenster — eine Aufgabe in ein eigenes Fenster lösen",

@@ -403,7 +403,7 @@
   "features.group.agent": "Agent 感知",
   "features.agent.sniff": "状态纯嗅探 —— 运行 / 等待输入 / 卡死 / 完成,零侵入识别",
   "features.agent.urgency": "卡死(Stalled)检测 + 紧迫度排序,满屏 agent 谁该看一眼自动排前",
-  "features.agent.monitor": "实时用量监控 —— 上下文 %、5h/7d 额度、burn rate、cache TTL、成本",
+  "features.agent.monitor": "实时用量监控 —— 上下文 %、5h/7d 额度、burn rate、cache TTL",
   "features.group.terminal": "终端能力",
   "features.terminal.split": "n 叉分屏 + git worktree 挂载,每个任务一棵独立终端树",
   "features.terminal.floating": "浮窗 —— 把任务弹成独立窗口",

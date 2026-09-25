@@ -64,13 +64,7 @@ tokens_per_min_recent: number;
 /**
  * 等级 (匹配 ccusage 阈值): "normal" / "moderate" / "high"
  */
-burn_rate_level: string; 
-/**
- * block 内累计 cost (USD). 模型未匹配 pricing 表则为 None.
- * 注: 这是按 hardcoded pricing × tokens 估算, **不是 Anthropic 权威值**.
- * 仅保留字段方便未来按需重启, 当前 UI 不显示.
- */
-cost_usd: number | null }
+burn_rate_level: string }
 
 /**
  * 11 种 agent — 与 Prowl 对齐
@@ -105,10 +99,6 @@ context_tokens: number | null;
  * 模型上下文窗口上限 (根据 model_id 查表)
  */
 context_window: number | null; 
-/**
- * 累计 cost (USD)
- */
-session_cost_usd: number | null; 
 /**
  * Prompt cache 5min TTL 到期时刻 (unix ms) — None = 没用过 5min cache.
  * Anthropic prompt cache 5m 跟 1h 是两个独立 TTL, 取最后一次 cache_creation

@@ -52,7 +52,7 @@
   "features.urgency.label": "Rilevamento blocchi + ordine per urgenza",
   "features.urgency.desc": "Schermo pieno di agenti? Quelli bloccati e quelli che ti aspettano salgono in cima.",
   "features.monitor.label": "Uso in tempo reale",
-  "features.monitor.desc": "Contesto rimasto, quota 5h/7d, ritmo di consumo, cache, costo — tutto su una barra.",
+  "features.monitor.desc": "Contesto rimasto, quota 5h/7d, ritmo di consumo, cache — tutto su una barra.",
   "features.split.label": "Divisioni + worktree",
   "features.split.desc": "Monta un worktree git, un albero di terminali per attività.",
   "features.floating.label": "Finestre fluttuanti",

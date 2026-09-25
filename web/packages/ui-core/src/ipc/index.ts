@@ -352,7 +352,7 @@ export async function getClaudeBlockByCwd(cwd: string): Promise<ClaudeActiveBloc
 }
 
 /// Codex 5h 块 — 本地从 rollout token_count 事件算 (跟 Claude 同算法).
-/// 后端字段跟 ClaudeActiveBlock 同形, 类型直接复用; cost_usd 永远 null (Codex 没价格表).
+/// 后端字段跟 ClaudeActiveBlock 同形, 类型直接复用.
 export async function getCodexBlockByCwd(cwd: string): Promise<ClaudeActiveBlock | null> {
   return invoke<ClaudeActiveBlock | null>("get_codex_block_by_cwd", { cwd });
 }

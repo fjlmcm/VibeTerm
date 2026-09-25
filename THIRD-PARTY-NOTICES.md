@@ -7,9 +7,8 @@ VibeTerm bundles or derives from the following third-party open-source software.
 ## ccusage
 
 VibeTerm's agent usage logic — the 5-hour rolling **block** detection
-(`vibeterm-agent-watch/src/claude/blocks.rs`, `.../codex/blocks.rs`), the offline
-**pricing / cost** model (`.../claude/pricing.rs`) — is derived from or inspired by
-**ccusage** by ryoppippi.
+(`vibeterm-agent-watch/src/claude/blocks.rs`, `.../codex/blocks.rs`) — is derived
+from or inspired by **ccusage** by ryoppippi.
 
 - Project: https://github.com/ryoppippi/ccusage
 - License: MIT
@@ -41,10 +40,7 @@ SOFTWARE.
 VibeTerm does **not** redistribute ccusage's code verbatim. Model data ships as an
 **offline snapshot** (`claude/litellm_snapshot.json`), refreshed before releases
 with `scripts/update-model-data.py`. The app queries this snapshot locally,
-including model context-window sizes, without fetching a price table at runtime.
-
-Model pricing figures originate from Anthropic's public pricing page; ccusage's own
-pricing data derives from LiteLLM (BerriAI/litellm, MIT).
+for model context-window sizes, without fetching anything at runtime.
 
 ---
 
@@ -78,10 +74,10 @@ write to `~/.claude` or `~/.codex`.
 Several parts of VibeTerm were informed by reading these projects — design and
 approach only; no third-party code is redistributed:
 
-- **ccusage** (ryoppippi, MIT) — usage aggregation, pricing, 5-hour block algorithm — https://github.com/ryoppippi/ccusage
+- **ccusage** (ryoppippi, MIT) — usage aggregation, 5-hour block algorithm — https://github.com/ryoppippi/ccusage
 - **WezTerm** (wez, MIT) — macOS clipboard file-URL handling — https://github.com/wez/wezterm
 - **Tabby** (Eugeny, MIT) — window vibrancy & n-ary split recursion — https://github.com/Eugeny/tabby
-- **LiteLLM** (BerriAI, MIT) — model price table (data source for the manual price update) — https://github.com/BerriAI/litellm
+- **LiteLLM** (BerriAI, MIT) — model table (data source for the context-window snapshot) — https://github.com/BerriAI/litellm
 - **Prowl** — process-level agent classification
 - **CodexBar** — provider fallback-chain design
 - **ccstatusline** — status bar widget design

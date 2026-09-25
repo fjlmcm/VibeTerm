@@ -7,7 +7,7 @@
 //   - item.color / bold / max_width / metadata 由 widget 自己解释
 //
 // 当前 v1 范围: cwd / git / claude-* / codex-* — 9 个 widget.
-// v2 加: 5h block / burn rate / session cost / today cost (移植 ccusage 算法).
+// v2 加: 5h block / burn rate (移植 ccusage 算法).
 
 import { Show, type Accessor, type Component, type JSX } from "solid-js";
 import type {

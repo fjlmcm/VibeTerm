@@ -3,7 +3,7 @@
 //! 数据源:
 //!   - Claude:
 //!     - `~/.claude/usage_cache.json`  →  5h/7d quota (服务端给, 准确)
-//!     - `~/.claude/projects/<sanitize(cwd)>/<sid>.jsonl`  →  context / model / cost
+//!     - `~/.claude/projects/<sanitize(cwd)>/<sid>.jsonl`  →  context / model
 //!   - Codex:
 //!     - `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`  →  全字段 (rate_limits 内联)
 //!
@@ -63,8 +63,6 @@ pub struct ClaudeSession {
     pub context_tokens: Option<u64>,
     /// 模型上下文窗口上限 (根据 model_id 查表)
     pub context_window: Option<u64>,
-    /// 累计 cost (USD)
-    pub session_cost_usd: Option<f64>,
     /// Prompt cache 5min TTL 到期时刻 (unix ms) — None = 没用过 5min cache.
     /// Anthropic prompt cache 5m 跟 1h 是两个独立 TTL, 取最后一次 cache_creation
     /// 写入时刻 + TTL 长度作为到期时刻. 后续 cache_read 命中不刷新 TTL.

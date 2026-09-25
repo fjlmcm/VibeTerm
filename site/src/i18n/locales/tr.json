@@ -52,7 +52,7 @@
   "features.urgency.label": "Takılma algılama + aciliyet sıralaması",
   "features.urgency.desc": "Ekran ajanlarla mı dolu? Takılanlar ve seni bekleyenler en üste çıkar.",
   "features.monitor.label": "Canlı kullanım",
-  "features.monitor.desc": "Kalan bağlam, 5h/7d kota, yakma hızı, önbellek, maliyet — hepsi tek barda.",
+  "features.monitor.desc": "Kalan bağlam, 5h/7d kota, yakma hızı, önbellek — hepsi tek barda.",
   "features.split.label": "Bölmeler + worktree",
   "features.split.desc": "Bir git worktree bağla, görev başına bir terminal ağacı.",
   "features.floating.label": "Yüzen pencereler",

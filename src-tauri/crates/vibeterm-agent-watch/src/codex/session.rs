@@ -546,12 +546,11 @@ not json
         .unwrap();
         // 明确 mtime: a 比 b 新
         let base = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
-        std::fs::File::open(&older)
-            .unwrap()
-            .set_modified(base)
-            .unwrap();
-        std::fs::File::open(&newer)
-            .unwrap()
+        // Windows 下 set_modified 需要写句柄, File::open 只读会 PermissionDenied
+        let writable =
+            |p: &std::path::Path| std::fs::OpenOptions::new().write(true).open(p).unwrap();
+        writable(&older).set_modified(base).unwrap();
+        writable(&newer)
             .set_modified(base + std::time::Duration::from_secs(10))
             .unwrap();
         assert_eq!(rollout_cwd(&newer).as_deref(), Some("/other"));

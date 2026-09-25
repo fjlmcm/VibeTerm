@@ -403,7 +403,7 @@
   "features.group.agent": "Agent awareness",
   "features.agent.sniff": "Pure status sniffing — running / waiting-input / stalled / done, zero intrusion",
   "features.agent.urgency": "Stall detection + urgency ranking — the agent that needs you floats to the top",
-  "features.agent.monitor": "Live usage monitoring — context %, 5h/7d quota, burn rate, cache TTL, cost",
+  "features.agent.monitor": "Live usage monitoring — context %, 5h/7d quota, burn rate, cache TTL",
   "features.group.terminal": "Terminal power",
   "features.terminal.split": "N-ary splits + git worktree mounting, one terminal tree per task",
   "features.terminal.floating": "Floating windows — pop a task into its own window",

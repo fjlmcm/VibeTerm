@@ -46,7 +46,7 @@ pub(crate) fn start_background_tasks(app: &tauri::AppHandle) {
     vibeterm_agent_watch::claude::project::spawn_watcher(sess_tx);
     tauri::async_runtime::spawn(async move {
         while let Some(sess) = sess_rx.recv().await {
-            // watcher 只刷新显示(model/ctx/cost),不驱动完成检测。
+            // watcher 只刷新显示(model/ctx),不驱动完成检测。
             // 为何:这里的 ClaudeSession 来自 find_active_session_file() —— 全局 mtime 最新
             // 的会话,未必是本任务 agent 的。典型反例:同一仓库里 Claude Code 自身几百 MB 的
             // transcript,每条消息都在写 → mtime 几乎永远最新,且超限只能读末尾 stop_reason。
@@ -66,7 +66,7 @@ pub(crate) fn start_background_tasks(app: &tauri::AppHandle) {
     vibeterm_agent_watch::codex::session::spawn_watcher(codex_tx);
     tauri::async_runtime::spawn(async move {
         while let Some(snap) = codex_rx.recv().await {
-            // watcher 只刷新显示(model/ctx/cost)。完成检测**一律走 3s 轮询的
+            // watcher 只刷新显示(model/ctx)。完成检测**一律走 3s 轮询的
             // poll_agent_turn_for_terminal**(per-terminal:按每个 agent 终端各自 cwd 检测)——
             // watcher 推的是全局最新 rollout,不知对应哪个 task/terminal,无法 per-terminal 归属。
             let _ = app_for_codex.emit("codex_session_changed", &snap);

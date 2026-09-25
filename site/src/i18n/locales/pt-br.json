@@ -52,7 +52,7 @@
   "features.urgency.label": "Detecção de travamento + ordem por urgência",
   "features.urgency.desc": "Tela cheia de agentes? Os travados e os que te esperam sobem pro topo.",
   "features.monitor.label": "Uso ao vivo",
-  "features.monitor.desc": "Contexto restante, cota 5h/7d, velocidade de consumo, cache, custo — tudo numa barra.",
+  "features.monitor.desc": "Contexto restante, cota 5h/7d, velocidade de consumo, cache — tudo numa barra.",
   "features.split.label": "Divisões + worktrees",
   "features.split.desc": "Monte um git worktree, uma árvore de terminais por tarefa.",
   "features.floating.label": "Janelas flutuantes",

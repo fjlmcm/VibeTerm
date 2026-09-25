@@ -17,7 +17,7 @@
 | `vibeterm-core` | 领域核心:`TerminalRegistry` + `TaskRegistry`(纯领域,不依赖 Tauri) |
 | `vibeterm-pty` | PTY 抽象:每 PTY 独立阻塞读线程,`ChunkSink` 多 sink 订阅(浮窗 attach),256KB scrollback ring |
 | `vibeterm-status` | **状态嗅探**:OSC 133/633 解析 + agent stdout 规则(11 个 agent)+ 16KB ring 跨 chunk 正则,5 态判定 |
-| `vibeterm-agent-watch` | **只读**监听 transcript/rollout → model / ctx / cost / effort / 额度;`AgentProvider` trait 统一 claude/codex |
+| `vibeterm-agent-watch` | **只读**监听 transcript/rollout → model / ctx / effort / 额度;`AgentProvider` trait 统一 claude/codex |
 | `vibeterm-config` | 配置加载 / 原子写 / 主题 / 热加载(notify 50ms debounce);含 `config_dir()` 安全门(见红线 2) |
 | `vibeterm-tasks` | 任务持久化(`tasks.json` 原子写),分屏树 + git worktree 挂载 |
 | `vibeterm-ipc` | 跨 Rust/Web IPC schema(`TaskDto` / `SpawnPtyOpts` / `SplitNode` 等)+ 统一 `IpcError` |
@@ -74,7 +74,7 @@ cargo fmt --all
 scripts/smoke-app.sh [--build]   # 隔离启动 .app ~8s,验存活/无 panic/PTY/截图 → .smoke/
 scripts/fix-launchpad.sh         # 装包后修 macOS Launchpad/Spotlight 找不到
 scripts/build-sounds.py          # ffmpeg 压缩提示音 → src-tauri/resources/sounds/
-scripts/update-model-data.py     # 拉 LiteLLM 刷新内嵌模型快照(价格+ctx 窗口);每次发版前必跑
+scripts/update-model-data.py     # 拉 LiteLLM 刷新内嵌模型快照(ctx 窗口);每次发版前必跑
 ```
 
 CI(`.github/workflows/ci.yml`):lint + cargo test(全部 8 个子 crate)+ Playwright + app-smoke + build-smoke。发布(`release.yml`):推 `v*` tag 自动签名公证并 publish(也可 `workflow_dispatch` 手动触发),流程见 `/release` skill。

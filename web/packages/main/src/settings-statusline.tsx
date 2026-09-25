@@ -94,7 +94,6 @@ const MOCK_CLAUDE_SESSION: ClaudeSession = {
   model: "claude-opus-4-7",
   context_tokens: 142000,
   context_window: 1_000_000,
-  session_cost_usd: 4.21,
   cache_5m_until_ms: Date.now() + 3.5 * 60_000,
   cache_1h_until_ms: Date.now() + 42 * 60_000,
   effort: "xhigh",
@@ -118,7 +117,6 @@ const MOCK_CLAUDE_BLOCK: ClaudeActiveBlock = {
   tokens_per_min_avg: 1500,
   tokens_per_min_recent: 1800,
   burn_rate_level: "normal",
-  cost_usd: 4.21,
 };
 const MOCK_CODEX: CodexSnapshot = {
   session_id: "preview",

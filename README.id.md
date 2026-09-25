@@ -46,7 +46,7 @@ _Semua fitur terminal biasa, plus kesadaran status dan orkestrasi untuk layar pe
 
 - **Melihat agent sedang apa** — Berjalan, menunggu, macet, atau selesai — diketahui tanpa menyentuh konfigmu.
 - **Deteksi macet + urut berdasarkan urgensi** — Layar penuh agent? Yang macet dan yang menunggumu naik ke atas.
-- **Pemakaian langsung** — Sisa konteks, kuota 5h/7d, laju pemakaian, cache, biaya — semua dalam satu bar.
+- **Pemakaian langsung** — Sisa konteks, kuota 5h/7d, laju pemakaian, cache — semua dalam satu bar.
 
 ### Terminal
 

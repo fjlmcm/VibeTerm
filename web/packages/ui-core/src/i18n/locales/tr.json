@@ -403,7 +403,7 @@
   "features.group.agent": "Ajan farkındalığı",
   "features.agent.sniff": "Saf durum sniffing — çalışıyor / girdi-bekliyor / takıldı / bitti, sıfır müdahale",
   "features.agent.urgency": "Takılma algılama + aciliyet sıralaması — sana en çok ihtiyaç duyan ajan en üste çıkar",
-  "features.agent.monitor": "Canlı kullanım izleme — bağlam %, 5s/7g kota, burn rate, cache TTL, maliyet",
+  "features.agent.monitor": "Canlı kullanım izleme — bağlam %, 5s/7g kota, burn rate, cache TTL",
   "features.group.terminal": "Terminal gücü",
   "features.terminal.split": "n'li bölmeler + git worktree bağlama, görev başına bir terminal ağacı",
   "features.terminal.floating": "Yüzen pencereler — bir görevi kendi penceresine çıkar",

@@ -52,7 +52,7 @@
   "features.urgency.label": "Détection de blocage + tri par urgence",
   "features.urgency.desc": "Écran rempli d'agents ? Les bloqués et ceux qui vous attendent remontent tout en haut.",
   "features.monitor.label": "Usage en direct",
-  "features.monitor.desc": "Contexte restant, quota 5h/7d, vitesse de consommation, cache, coût — tout sur une seule barre.",
+  "features.monitor.desc": "Contexte restant, quota 5h/7d, vitesse de consommation, cache — tout sur une seule barre.",
   "features.split.label": "Divisions + worktrees",
   "features.split.desc": "Montez un worktree git, un arbre de terminaux par tâche.",
   "features.floating.label": "Fenêtres flottantes",

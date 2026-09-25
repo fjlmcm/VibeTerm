@@ -52,7 +52,7 @@
   "features.urgency.label": "Phát hiện kẹt + sắp xếp theo độ gấp",
   "features.urgency.desc": "Màn hình đầy agent? Cái kẹt và cái đang đợi bạn được đẩy lên đầu.",
   "features.monitor.label": "Mức dùng thời gian thực",
-  "features.monitor.desc": "Ngữ cảnh còn lại, hạn mức 5h/7d, tốc độ tiêu, cache, chi phí — tất cả trên một thanh.",
+  "features.monitor.desc": "Ngữ cảnh còn lại, hạn mức 5h/7d, tốc độ tiêu, cache — tất cả trên một thanh.",
   "features.split.label": "Chia ô + worktree",
   "features.split.desc": "Gắn một git worktree, mỗi tác vụ một cây terminal riêng.",
   "features.floating.label": "Cửa sổ nổi",

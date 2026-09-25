@@ -52,7 +52,7 @@
   "features.urgency.label": "卡住检测 + 紧急排序",
   "features.urgency.desc": "一屏 agent,卡住的和等你的自动排最前。",
   "features.monitor.label": "用量实时看",
-  "features.monitor.desc": "上下文用了多少、5h/7d 额度、烧得多快、缓存、花了多少钱,一屏看完。",
+  "features.monitor.desc": "上下文用了多少、5h/7d 额度、烧得多快、缓存,一屏看完。",
   "features.split.label": "分屏 + worktree",
   "features.split.desc": "挂上 git worktree,每个任务一棵自己的终端树。",
   "features.floating.label": "浮窗",

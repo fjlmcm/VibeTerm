@@ -40,10 +40,6 @@ pub struct ActiveBlock {
     pub tokens_per_min_recent: f64,
     /// 等级 (匹配 ccusage 阈值): "normal" / "moderate" / "high"
     pub burn_rate_level: String,
-    /// block 内累计 cost (USD). 模型未匹配 pricing 表则为 None.
-    /// 注: 这是按 hardcoded pricing × tokens 估算, **不是 Anthropic 权威值**.
-    /// 仅保留字段方便未来按需重启, 当前 UI 不显示.
-    pub cost_usd: Option<f64>,
 }
 
 fn floor_to_hour_ms(ms: i64) -> i64 {
@@ -59,12 +55,10 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// jsonl 一条 assistant 行的解析结果 — 用于 block / cost 计算
+/// jsonl 一条 assistant 行的解析结果 — 用于 block 计算
 struct Entry {
     ts_ms: i64,
     total_tokens: u64,
-    usage: super::pricing::Usage,
-    model: Option<String>,
 }
 
 /// 解析 jsonl 文件, 算当前活跃 5h block. 文件不存在或全空返回 None.
@@ -113,26 +107,9 @@ pub fn active_block_for_file(path: &Path) -> Option<ActiveBlock> {
             .get("output_tokens")
             .and_then(|x| x.as_u64())
             .unwrap_or(0);
-        let model = v
-            .get("model")
-            .and_then(|m| m.as_str())
-            .or_else(|| {
-                v.get("message")
-                    .and_then(|m| m.get("model"))
-                    .and_then(|m| m.as_str())
-            })
-            .map(|s| s.to_string());
-        let total = input + cache_creation + cache_read + output;
         entries.push(Entry {
             ts_ms,
-            total_tokens: total,
-            usage: super::pricing::Usage {
-                input_tokens: input,
-                cache_creation_input_tokens: cache_creation,
-                cache_read_input_tokens: cache_read,
-                output_tokens: output,
-            },
-            model,
+            total_tokens: input + cache_creation + cache_read + output,
         });
     }
     if entries.is_empty() {
@@ -144,8 +121,6 @@ pub fn active_block_for_file(path: &Path) -> Option<ActiveBlock> {
     let mut current_start: Option<i64> = None;
     let mut current_last: i64 = 0;
     let mut current_tokens: u64 = 0;
-    let mut current_cost: f64 = 0.0;
-    let mut current_cost_unknown = false;
     let mut current_entries: Vec<(i64, u64)> = Vec::new();
 
     for e in &entries {
@@ -156,8 +131,6 @@ pub fn active_block_for_file(path: &Path) -> Option<ActiveBlock> {
                 if since_start > FIVE_HOURS_MS || since_last > FIVE_HOURS_MS {
                     current_start = Some(floor_to_hour_ms(e.ts_ms));
                     current_tokens = 0;
-                    current_cost = 0.0;
-                    current_cost_unknown = false;
                     current_entries.clear();
                 }
             }
@@ -168,18 +141,6 @@ pub fn active_block_for_file(path: &Path) -> Option<ActiveBlock> {
         current_last = e.ts_ms;
         current_tokens += e.total_tokens;
         current_entries.push((e.ts_ms, e.total_tokens));
-        // cost — 没 model 或没 pricing 表则该 entry 跳过, 总和标 unknown
-        let ctx_at_call = e.usage.input_tokens
-            + e.usage.cache_creation_input_tokens
-            + e.usage.cache_read_input_tokens;
-        match e
-            .model
-            .as_deref()
-            .and_then(|m| super::pricing::cost_of(m, e.usage, ctx_at_call))
-        {
-            Some(c) => current_cost += c,
-            None => current_cost_unknown = true,
-        }
     }
 
     let start = current_start?;
@@ -215,13 +176,6 @@ pub fn active_block_for_file(path: &Path) -> Option<ActiveBlock> {
     } else {
         "high"
     };
-    // 只要 block 内存在任何未知 pricing 的条目, 累加值就是"部分成本", 无法区分于完整成本,
-    // 直接返回 None 避免把偏低的部分成本当成权威值回传 (混合场景也算未知).
-    let cost_usd = if current_cost_unknown {
-        None
-    } else {
-        Some(current_cost)
-    };
     Some(ActiveBlock {
         start_at_ms: start,
         end_at_ms: end,
@@ -233,7 +187,6 @@ pub fn active_block_for_file(path: &Path) -> Option<ActiveBlock> {
         tokens_per_min_avg: avg,
         tokens_per_min_recent: recent,
         burn_rate_level: level.to_string(),
-        cost_usd,
     })
 }
 

@@ -132,7 +132,7 @@ export function collectCodexData(ctx: RenderContext): AgentPanelData {
   const c = ctx.codexSnap();
   const block = ctx.codexBlock?.() ?? null;
 
-  // 短窗(5h 之类)优先本地 block (含 tokens_used + cost), 没有再看 rate_limits.
+  // 短窗(5h 之类)优先本地 block (含 tokens_used), 没有再看 rate_limits.
   // 长窗(>=1天)走 rate_limits —— 周(10080)/月(43200) 按 window_minutes 自动选, 不锁死分钟数
   // (free 计划 2026-06 起从 7d 改月度). 用 widgets 里同一套 picker, 分类逻辑单一来源.
   const shortFromLimits = pickCodexShortWindow(c);

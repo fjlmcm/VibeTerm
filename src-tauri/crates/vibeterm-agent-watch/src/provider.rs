@@ -78,7 +78,6 @@ pub struct AgentUsage {
     pub effort: Option<String>,
     pub context: Option<ContextUsage>,
     pub quotas: Vec<QuotaWindow>,
-    pub cost_usd: Option<f64>,
     /// 降级链诊断
     pub sources: Vec<SourceAttempt>,
 }
@@ -110,13 +109,13 @@ impl AgentProvider for ClaudeProvider {
     fn resolve_by_cwd(&self, cwd: &str) -> Option<AgentUsage> {
         let mut sources = Vec::new();
 
-        // 源 1: transcript jsonl → model / context / cost
+        // 源 1: transcript jsonl → model / context
         let sess = crate::claude::project::read_for_cwd(cwd);
         sources.push(SourceAttempt {
             source: "transcript".into(),
             ok: sess.is_some(),
             note: if sess.is_some() {
-                "会话 jsonl 解析成功(model/context/cost)".into()
+                "会话 jsonl 解析成功(model/context)".into()
             } else {
                 "该 cwd 无活跃 Claude 会话 jsonl".into()
             },
@@ -175,7 +174,6 @@ impl AgentProvider for ClaudeProvider {
             effort: sess.effort,
             context,
             quotas,
-            cost_usd: sess.session_cost_usd,
             sources,
         })
     }
@@ -240,7 +238,6 @@ impl AgentProvider for CodexProvider {
             effort: snap.effort,
             context,
             quotas,
-            cost_usd: None,
             sources,
         })
     }

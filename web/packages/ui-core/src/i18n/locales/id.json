@@ -403,7 +403,7 @@
   "features.group.agent": "Kesadaran agent",
   "features.agent.sniff": "Penyifatan status murni — running / waiting-input / stalled / done, tanpa intrusi",
   "features.agent.urgency": "Deteksi macet + peringkat urgensi — agent yang membutuhkanmu mengapung ke atas",
-  "features.agent.monitor": "Pemantauan penggunaan langsung — konteks %, kuota 5j/7h, burn rate, cache TTL, biaya",
+  "features.agent.monitor": "Pemantauan penggunaan langsung — konteks %, kuota 5j/7h, burn rate, cache TTL",
   "features.group.terminal": "Daya terminal",
   "features.terminal.split": "Bagi n-ary + pemasangan git worktree, satu pohon terminal per tugas",
   "features.terminal.floating": "Jendela mengambang — pisahkan tugas ke jendelanya sendiri",

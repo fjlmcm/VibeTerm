@@ -403,7 +403,7 @@
   "features.group.agent": "Осведомлённость об agent",
   "features.agent.sniff": "Чистое пассивное наблюдение за состоянием — running / waiting-input / stalled / done, ноль вторжения",
   "features.agent.urgency": "Обнаружение зависаний + ранжирование по срочности — тот agent, которому вы нужны, всплывает наверх",
-  "features.agent.monitor": "Мониторинг использования в реальном времени — контекст в %, квота 5h/7d, burn rate, cache TTL, стоимость",
+  "features.agent.monitor": "Мониторинг использования в реальном времени — контекст в %, квота 5h/7d, burn rate, cache TTL",
   "features.group.terminal": "Мощь терминала",
   "features.terminal.split": "N-арные разделения + подключение git worktree, по одному дереву терминалов на задачу",
   "features.terminal.floating": "Плавающие окна — вынесите задачу в отдельное окно",

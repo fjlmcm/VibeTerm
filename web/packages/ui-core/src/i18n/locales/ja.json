@@ -403,7 +403,7 @@
   "features.group.agent": "Agent 把握",
   "features.agent.sniff": "純粋スニッフィング —— 実行中 / 入力待ち / スタック / 完了をゼロ侵入で識別",
   "features.agent.urgency": "スタック検出 + 緊急度ソート —— 見るべき agent が自動で上に",
-  "features.agent.monitor": "リアルタイム使用量 —— コンテキスト %、5h/7d 枠、burn rate、cache TTL、コスト",
+  "features.agent.monitor": "リアルタイム使用量 —— コンテキスト %、5h/7d 枠、burn rate、cache TTL",
   "features.group.terminal": "ターミナル機能",
   "features.terminal.split": "n 分割 + git worktree マウント、タスクごとに独立した端末ツリー",
   "features.terminal.floating": "フローティングウィンドウ —— タスクを独立ウィンドウに",

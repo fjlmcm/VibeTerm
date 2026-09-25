@@ -403,7 +403,7 @@
   "features.group.agent": "Agent 감지",
   "features.agent.sniff": "순수 상태 sniffing — running / waiting-input / stalled / done, 제로 침입",
   "features.agent.urgency": "Stall 감지 + 긴급도 순위 — 당신이 봐야 할 agent가 맨 위로 떠오릅니다",
-  "features.agent.monitor": "실시간 사용량 모니터링 — context %, 5h/7d 할당량, burn rate, cache TTL, 비용",
+  "features.agent.monitor": "실시간 사용량 모니터링 — context %, 5h/7d 할당량, burn rate, cache TTL",
   "features.group.terminal": "터미널 기능",
   "features.terminal.split": "N분할 + git worktree 연결, 작업마다 독립된 터미널 트리 하나",
   "features.terminal.floating": "플로팅 창 — 작업을 독립된 창으로 띄우기",

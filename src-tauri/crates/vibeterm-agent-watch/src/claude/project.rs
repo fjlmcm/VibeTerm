@@ -27,7 +27,7 @@ const PROJECTS_SUBDIR: &str = "projects";
 /// 单个 jsonl 文件大小软上限 — 超过则只解析尾部 `TAIL_BYTES`(见 parse_last_assistant),
 /// 不整读(整读 143MB 这种长会话每 3s 一刷太慢, 原来直接 return None 又导致状态栏全空).
 pub(crate) const JSONL_MAX_BYTES: u64 = 64 * 1024 * 1024;
-/// 超限文件只读末尾这么多字节 —— 末尾即最新 assistant(model/ctx/cost)+ 最近 effort,
+/// 超限文件只读末尾这么多字节 —— 末尾即最新 assistant(model/ctx)+ 最近 effort,
 /// 单 turn 通常 < 1MB, 8MB 足够覆盖最近若干 turn, 且 3s 一扫够快.
 const TAIL_BYTES: u64 = 8 * 1024 * 1024;
 
@@ -194,7 +194,7 @@ fn parse_last_assistant(path: &Path) -> Option<ParsedSession> {
     let meta = std::fs::metadata(path).ok()?;
     let mut file = std::fs::File::open(path).ok()?;
     // 超大文件(长会话, 远超 cap): 不整读(慢, 3s 一刷), 只 seek 到尾部 TAIL_BYTES 解析。
-    // 文件末尾即最新 assistant(model/ctx/cost)+ 最近 effort/attachment, 状态栏够用。
+    // 文件末尾即最新 assistant(model/ctx)+ 最近 effort/attachment, 状态栏够用。
     // (原来直接 return None → model/ctx/effort 全没, 是长会话状态栏空白 + effort 抓不到的真因。)
     // 早期 /effort 命令可能落在窗口外, 但 live effort 由嗅探层 task.effort 兜底。
     let skip_partial_first = meta.len() > JSONL_MAX_BYTES;
@@ -348,7 +348,7 @@ fn extract_effort_command(line: &str) -> Option<String> {
 /// 都各虚高过 5 倍 ctx%).
 /// 优先级:
 ///   1. model id 带显式 `[1m]` 后缀 → 1,000,000 (Claude Code 明确处于 1M 模式)
-///   2. 数据表命中 (`pricing::context_window_of`, 含日期后缀 id 的前缀匹配)
+///   2. 数据表命中 (`models::context_window_of`, 含日期后缀 id 的前缀匹配)
 ///      → 取数据窗口; 但实测 ctx 已超出数据窗口 → 1M (物理推断优先于过时数据)
 ///   3. 数据缺失: 观测 ctx > 200,000 → 1M, 否则缺省 200k
 ///
@@ -357,7 +357,7 @@ pub fn context_window_for(model: &str, _cwd: Option<&str>, observed_ctx: u64) ->
     if model.trim().to_ascii_lowercase().ends_with("[1m]") {
         return 1_000_000;
     }
-    match crate::claude::pricing::context_window_of(model) {
+    match crate::claude::models::context_window_of(model) {
         Some(w) if observed_ctx <= w => w,
         Some(_) => 1_000_000,
         None if observed_ctx > 200_000 => 1_000_000,
@@ -400,7 +400,6 @@ fn build_snapshot(path: &Path, project_dir: &str, cwd_hint: Option<&str>) -> Opt
         model: parsed.model,
         context_tokens: Some(parsed.context_tokens),
         context_window: Some(context_window),
-        session_cost_usd: None,
         cache_5m_until_ms: parsed.cache_5m_until_ms,
         cache_1h_until_ms: parsed.cache_1h_until_ms,
         effort: parsed.effort,
