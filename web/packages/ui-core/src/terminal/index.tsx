@@ -584,8 +584,11 @@ export function Terminal(props: TerminalProps) {
   // WKWebView 下拼音选词「提交候选的数字键 keydown」常不带这俩标记 → 漏进 PTY(打中文成 2112)。
   // 合成期间用本标志在 customKeyEventHandler 里一律拦下。
   let composing = false;
-  // compositionend 后 xterm CompositionHelper 要 setTimeout(0) 才读 textarea.value 提交合成结果;
-  // 这一拍内若又来了非合成 insertText(快速连打),清空 value 会把合成文本一起抹掉 → 丢字。
+  // compositionend 后 xterm CompositionHelper 要 setTimeout(0) 才读 textarea.value.substring(start)
+  // 提交合成结果,并且**设计上**会把这一拍里合成后追加的字符一起带出(源码注释:"pick up any
+  // characters after the composition")。标点键提交拼音时("zhongwen,")compositionend 与
+  // 标点的 insertText 在同一事件链里:组件若直送 "," 再清空 value → xterm 读到空串,中文丢;
+  // 若直送但不清空 → xterm 再把 "," 带出一次,双发(e2e 已实锤)。所以这一拍内组件完全让路。
   let finalizing = false;
   let finalizingTimer: ReturnType<typeof setTimeout> | null = null;
   const onCompositionStart = () => {
@@ -624,12 +627,15 @@ export function Terminal(props: TerminalProps) {
     if (ie.target !== term?.textarea) return;
     if (ie.isComposing || composing) return;
     if (ie.inputType !== "insertText" || !ie.data) return;
+    // 祖先 capture 截走,xterm 原生 _inputEvent 永远看不到非合成 insertText。
     ev.stopPropagation();
+    // compositionend 后的 finalizing 一拍:字符已在 textarea.value 里排在合成文本之后,
+    // xterm 的 timer 会连同合成文本一次性送出 —— 这里不直送、不清空,否则丢字或双发。
+    if (finalizing) return;
     term?.input(ie.data, true);
     // 字符已直送 PTY,清掉 textarea 里的副本 —— 留着会被 composition 差分类路径
     // 当作新增重复计入。非合成态清空无副作用(xterm 仅在合成/读屏时依赖 value)。
-    // 例外:compositionend 后的 finalizing 一拍内不清,否则 xterm 读不到刚合成的文本。
-    if (!finalizing) (ie.target as HTMLTextAreaElement).value = "";
+    (ie.target as HTMLTextAreaElement).value = "";
   };
 
   const onWinKeydown = (e: KeyboardEvent) => {

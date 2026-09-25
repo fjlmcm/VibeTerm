@@ -345,6 +345,55 @@ test.describe("VibeTerm Web Smoke", () => {
     expect(await decodedPtyWrites(page)).not.toContain("\r");
   });
 
+  test("IME:标点键提交合成(compositionend 同一拍紧跟 insertText)中文与标点各到达一次", async ({
+    page,
+  }) => {
+    // 拼音 "zhongwen," —— 逗号键既提交 "中文" 又输入 ","。WebKit 在同一事件链里派发
+    // compositionend + insertFromComposition + keydown 229 + insertText ","。
+    // xterm CompositionHelper 要到 setTimeout(0) 才读 textarea.value.substring(start) 提交
+    // 合成文本,并且**设计上**会把合成后追加的字符一起带出("pick up any characters after
+    // the composition")。组件在这一拍里若直送 "," 并清空 value → 中文丢;若直送但不清空 →
+    // "," 被 xterm 再带出一次 → 双发。正确做法是这一拍内完全交给 xterm 的 timer。
+    await installTerminalWithPtyCapture(page);
+    await page.goto("/");
+    await page.locator('[data-terminal-id="1"]').waitFor({ state: "attached", timeout: 10_000 });
+    await page.evaluate(() => {
+      const ta = document.querySelector(".xterm-helper-textarea") as HTMLTextAreaElement;
+      ta.focus();
+      ta.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true }));
+      ta.dispatchEvent(new CompositionEvent("compositionupdate", { data: "zhongwen", bubbles: true }));
+      ta.value += "中文";
+      ta.dispatchEvent(new CompositionEvent("compositionend", { data: "中文", bubbles: true }));
+      ta.dispatchEvent(
+        new InputEvent("input", {
+          data: "中文",
+          inputType: "insertFromComposition",
+          bubbles: true,
+          composed: true,
+        }),
+      );
+      // 同一拍:提交键本身的 229 keydown + 直提交标点
+      const kd = new KeyboardEvent("keydown", { key: "Process", bubbles: true, cancelable: true });
+      Object.defineProperty(kd, "keyCode", { get: () => 229 });
+      ta.dispatchEvent(kd);
+      ta.value += ",";
+      ta.dispatchEvent(
+        new InputEvent("input", { data: ",", inputType: "insertText", bubbles: true, composed: true }),
+      );
+      const ku = new KeyboardEvent("keyup", { key: "Process", bubbles: true, cancelable: true });
+      Object.defineProperty(ku, "keyCode", { get: () => 229 });
+      ta.dispatchEvent(ku);
+    });
+    await expect(async () => {
+      expect(await decodedPtyWrites(page)).toContain("中文");
+    }).toPass({ timeout: 3000 });
+    await page.waitForTimeout(300);
+    const all = await decodedPtyWrites(page);
+    expect(all.split("中文").length - 1).toBe(1);
+    expect(all.split(",").length - 1).toBe(1);
+    expect(all).toContain("中文,");
+  });
+
   test("PTY resize:聚焦对账触发尺寸断言,且 in-flight 全程串行", async ({ page }) => {
     // 回归:偶发排版错乱(PTY 与 xterm 列数失同步,过去要开关分屏才恢复)。
     // 两道防线:1) focusin 对账 —— 点进终端即 fit + 断言 PTY 尺寸;
