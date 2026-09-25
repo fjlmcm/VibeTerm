@@ -10,8 +10,8 @@
 //! enabled = true
 //! sound = "Tink"            # macOS 系统声音 / ~/Library/Sounds/*.aiff 文件名
 //!
-//! [events.done]               # 现在语义 = "agent 完成 turn (via Stop hook)"
-//! enabled = true               # 不再是 OSC 133 D shell 完成
+//! [events.done]               # 语义 = "agent 完成一轮"(transcript 只读监听 / OSC 133 D)
+//! enabled = true
 //! sound = "Glass"
 //!
 //! [quiet_hours]
@@ -24,7 +24,7 @@
 //!  - Stalled 事件曾在 EventsPrefs 里, 但区分"agent 真挂了"vs"agent 完成等输入"
 //!    在通用 TUI 协议层做不到, 误报严重, 后期移除.
 //!  - `done` 字段保留, 但语义从"OSC 133/633 D shell 命令完成"改成"claude/codex
-//!    Stop hook 完成". 用户的现有 notify.toml 不破坏, UI 标签改成"Agent 完成 (via hook)".
+//!    答完一轮"(只读 transcript 监听推断). 用户的现有 notify.toml 不破坏.
 //!    旧的 notify.toml `[events.stalled]` 段会被 TOML parser 默默忽略, 向前兼容.
 //!
 //! 设计取舍:

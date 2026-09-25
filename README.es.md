@@ -45,7 +45,6 @@ _Todas las funciones habituales de una terminal, más detección de estado y orq
 ### Agentes
 
 - **Ve qué hace un agente** — En curso, esperando, atascado o listo — averiguado sin tocar tu config.
-- **Detección de atascos + orden por urgencia** — ¿Pantalla llena de agentes? Los atascados y los que te esperan se van arriba.
 - **Uso en vivo** — Contexto restante, cuota 5h/7d, ritmo de gasto, caché — todo en una barra.
 
 ### Terminal

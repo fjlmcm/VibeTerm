@@ -2,7 +2,7 @@
 """统一管理 VibeTerm 版本号 —— monorepo 多处保持 lockstep 一致。
 
 权威版本源: src-tauri/tauri.conf.json
-一处 bump,同步到所有 package.json + Cargo workspace。
+一处 bump,同步 tauri.conf.json + Cargo workspace + 官网 site.ts。
 
 用法:
   python scripts/bump-version.py            # patch: 0.3.0 -> 0.3.1
@@ -21,13 +21,9 @@ import pathlib
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 # 需同步版本号的 JSON 文件(顶层 "version")
+# 权威源 tauri.conf.json;私有 package.json 的 version 没有任何读者,不再同步。
 JSON_FILES = [
-    "package.json",
     "src-tauri/tauri.conf.json",
-    "site/package.json",
-    "web/packages/main/package.json",
-    "web/packages/ipc-types/package.json",
-    "web/packages/ui-core/package.json",
 ]
 # Cargo workspace 版本(子 crate 走 version.workspace = true 自动继承)
 CARGO_TOML = "src-tauri/Cargo.toml"

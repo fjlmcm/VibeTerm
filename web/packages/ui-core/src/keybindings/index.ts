@@ -211,21 +211,3 @@ export function focusTerminal(id: number): void {
   terminalFocusers.get(id)?.();
 }
 
-export const IMPLEMENTED_COMMANDS: ReadonlySet<string> = new Set([
-  "command_palette",
-  "new_task",
-  "open_settings",
-  "prompt_picker",
-  "new_terminal",
-  "close_terminal",
-  "next_task",
-  "prev_task",
-  "split_horizontal",
-  "split_vertical",
-  "close_split",
-  "font_size_up",
-  "font_size_down",
-  "font_size_reset",
-  "find_in_terminal",
-  "scroll_to_bottom",
-]);

@@ -74,11 +74,10 @@ pub(crate) async fn get_env_file() -> IpcResult<EnvFile> {
 }
 
 #[tauri::command]
-pub(crate) async fn save_env_file(file: EnvFile, app: AppHandle) -> IpcResult<()> {
+pub(crate) async fn save_env_file(file: EnvFile) -> IpcResult<()> {
     file.save().map_err(|e| IpcError::Unknown {
         trace_id: format!("env_save:{e}"),
     })?;
-    let _ = app.emit("env_changed", ());
     Ok(())
 }
 
@@ -100,77 +99,24 @@ pub(crate) async fn save_keybindings(file: KeybindingsFile, app: AppHandle) -> I
 /// 重置所有快捷键为内置默认值. 删 keybindings.toml, 下次 load 返回 default.
 /// 立即对指定 terminal 的 shell pid 做一次 agent 嗅探, 不等 3s 后台轮询.
 /// PromptPicker 弹出时调一次, 确保 kind 与"用户当前焦点所在终端"一致.
-/// 返回完整诊断信息: 命中的 agent + pid + pgid + 整个 process group cmdlines,
-/// 前端 console 直接展示, 不需要后端日志.
-#[derive(serde::Serialize, specta::Type)]
-pub(crate) struct DetectAgentResult {
-    agent_kind: Option<String>,
-    shell_pid: Option<u32>,
-    pgid: Option<u32>,
-    cmdlines: Vec<String>,
-    note: String,
-}
-
+/// 返回识别到的 agent kind(`claude` / `codex` / ...),未识别或无 pid → None.
 #[tauri::command]
 pub(crate) async fn detect_agent_for_terminal(
     terminal_id: TerminalId,
     state: tauri::State<'_, AppState>,
-) -> IpcResult<DetectAgentResult> {
-    let result = match state.terminals.pid_of(terminal_id) {
-        Some(pid) => {
-            let (kind, diag) = vibeterm_status::detect_agent_with_diagnostics(pid);
-            tracing::info!(
-                terminal_id, pid, pgid = ?diag.pgid, agent_kind = ?kind,
-                cmdlines = ?diag.cmdlines,
-                "detect_agent_for_terminal"
-            );
-            DetectAgentResult {
-                agent_kind: kind.map(|k| k.as_str().to_string()),
-                shell_pid: Some(diag.shell_pid),
-                pgid: diag.pgid,
-                cmdlines: diag.cmdlines,
-                note: diag.note,
-            }
-        }
-        None => DetectAgentResult {
-            agent_kind: None,
-            shell_pid: None,
-            pgid: None,
-            cmdlines: vec![],
-            note: format!("terminal {terminal_id}: pid_of returned None"),
-        },
-    };
-    // 诊断已通过上面的 tracing::info! 输出. 额外写固定 /tmp 文件方便排查,
-    // 但 cmdlines 可能含敏感命令行参数 + /tmp 世界可读, 故仅限 debug 构建.
-    #[cfg(debug_assertions)]
-    if let Ok(mut f) = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("/tmp/vibeterm-detect.log")
-    {
-        use std::io::Write;
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        let _ = writeln!(
-            f,
-            "ts={} terminal_id={} agent={:?} pid={:?} pgid={:?} cmdlines={:?} note={}",
-            ts,
-            terminal_id,
-            result.agent_kind,
-            result.shell_pid,
-            result.pgid,
-            result.cmdlines,
-            result.note,
-        );
-    }
-    Ok(result)
+) -> IpcResult<Option<String>> {
+    let kind = state.terminals.pid_of(terminal_id).and_then(|pid| {
+        vibeterm_status::ProcessTable::snapshot()
+            .detect_agent_for_shell(pid)
+            .map(|k| k.as_str().to_string())
+    });
+    tracing::info!(terminal_id, agent_kind = ?kind, "detect_agent_for_terminal");
+    Ok(kind)
 }
 
 /// 重置所有 prompts 为内置默认值. 删 prompts.toml, 下次 load 返回 default.
 #[tauri::command]
-pub(crate) async fn reset_prompts(app: AppHandle) -> IpcResult<PromptsFile> {
+pub(crate) async fn reset_prompts() -> IpcResult<PromptsFile> {
     let p = vibeterm_config::prompts_toml_path().map_err(|e| IpcError::Unknown {
         trace_id: format!("prompts_path:{e}"),
     })?;
@@ -179,7 +125,6 @@ pub(crate) async fn reset_prompts(app: AppHandle) -> IpcResult<PromptsFile> {
             trace_id: format!("prompts_rm:{e}"),
         })?;
     }
-    let _ = app.emit("prompts_changed", ());
     Ok(PromptsFile::load())
 }
 
@@ -204,11 +149,10 @@ pub(crate) async fn get_prompts() -> IpcResult<PromptsFile> {
 }
 
 #[tauri::command]
-pub(crate) async fn save_prompts(file: PromptsFile, app: AppHandle) -> IpcResult<()> {
+pub(crate) async fn save_prompts(file: PromptsFile) -> IpcResult<()> {
     file.save().map_err(|e| IpcError::Unknown {
         trace_id: format!("prompts_save:{e}"),
     })?;
-    let _ = app.emit("prompts_changed", ());
     Ok(())
 }
 
@@ -231,15 +175,6 @@ pub(crate) async fn get_actions() -> IpcResult<ActionsFile> {
 #[tauri::command]
 pub(crate) async fn list_layouts() -> IpcResult<Vec<vibeterm_config::LayoutTemplate>> {
     Ok(vibeterm_config::LayoutsFile::load().layouts)
-}
-
-#[tauri::command]
-pub(crate) async fn save_actions(file: ActionsFile, app: AppHandle) -> IpcResult<()> {
-    file.save().map_err(|e| IpcError::Unknown {
-        trace_id: format!("actions_save:{e}"),
-    })?;
-    let _ = app.emit("actions_changed", ());
-    Ok(())
 }
 
 /// 执行一个 action。

@@ -21,7 +21,6 @@ mod tests {
         t.register::<vibeterm_ipc::Orientation>();
         t.register::<vibeterm_ipc::WorktreeRef>();
         t.register::<vibeterm_ipc::CreateTaskOpts>();
-        t.register::<vibeterm_ipc::BranchSpecDto>();
         t.register::<vibeterm_ipc::SpawnPtyOpts>();
         t.register::<vibeterm_ipc::SpawnPtyResult>();
         t.register::<vibeterm_ipc::IpcError>();
@@ -43,15 +42,14 @@ mod tests {
         // vibeterm-status / git
         t.register::<vibeterm_status::AgentKind>();
         t.register::<vibeterm_git::WorktreeStatus>();
+        t.register::<vibeterm_git::BranchSpec>();
         // bin 内 DTO
         t.register::<crate::CliStatus>();
         t.register::<crate::ResumeInfo>();
-        t.register::<crate::AppUpdateInfo>();
         t.register::<crate::GitDiffResult>();
         t.register::<crate::NotifySoundData>();
         t.register::<crate::BuiltinSound>();
         t.register::<crate::ExecuteActionResult>();
-        t.register::<crate::DetectAgentResult>();
         t
     }
 

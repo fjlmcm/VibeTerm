@@ -72,18 +72,6 @@ pub(crate) async fn rename_task(
     Ok(())
 }
 
-#[tauri::command]
-pub(crate) async fn pin_task(
-    id: vibeterm_ipc::TaskId,
-    pinned: bool,
-    state: tauri::State<'_, AppState>,
-    app: AppHandle,
-) -> IpcResult<()> {
-    state.tasks.pin(id, pinned).map_err(map_task_err)?;
-    emit_tasks_changed(&app, &state.tasks);
-    Ok(())
-}
-
 /// 切换 task 通知静音(持久化到 tasks.json).
 #[tauri::command]
 pub(crate) async fn set_task_notify_muted(

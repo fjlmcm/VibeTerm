@@ -49,8 +49,6 @@
   "features.group.productivity": "Hiệu suất",
   "features.sniff.label": "Thấy agent đang làm gì",
   "features.sniff.desc": "Đang chạy, đang chờ, kẹt hay xong — nhận ra mà không đụng cấu hình của bạn.",
-  "features.urgency.label": "Phát hiện kẹt + sắp xếp theo độ gấp",
-  "features.urgency.desc": "Màn hình đầy agent? Cái kẹt và cái đang đợi bạn được đẩy lên đầu.",
   "features.monitor.label": "Mức dùng thời gian thực",
   "features.monitor.desc": "Ngữ cảnh còn lại, hạn mức 5h/7d, tốc độ tiêu, cache — tất cả trên một thanh.",
   "features.split.label": "Chia ô + worktree",

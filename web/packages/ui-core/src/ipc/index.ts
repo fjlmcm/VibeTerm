@@ -17,14 +17,14 @@ import type {
   PromptsFile,
   ActionsFile,
   ExecuteActionResult,
-  SplitTreeNode,
+  SplitNode,
   WorktreeRef,
   BranchSpec,
-  ClaudeUsageCache,
+  UsageCache,
   ClaudeSession,
-  ClaudeActiveBlock,
+  ActiveBlock,
   CodexSnapshot,
-  GitStatusBrief,
+  WorktreeStatus,
   GitDiffResult,
   LayoutTemplate,
   ResumeInfo,
@@ -33,18 +33,10 @@ import type {
   NotifyPermissionState,
   NotifySoundData,
   BuiltinSound,
-  AppUpdateInfo,
   AgentTerminalCompleted,
 } from "@vibeterm/ipc-types";
 
 // ===== Terminal =====
-export async function startPty(
-  opts: SpawnPtyOpts,
-  channel: Channel<number[] | Uint8Array>,
-): Promise<SpawnPtyResult> {
-  return invoke<SpawnPtyResult>("start_pty", { opts, channel });
-}
-
 export async function spawnTerminalInTask(
   taskId: TaskId,
   slotId: number | null,
@@ -70,13 +62,6 @@ export async function closePty(id: TerminalId): Promise<void> {
 // Rust 端 u64 经 JSON 落地为 JS number,next_sink_id 单调递增,实际远不会触及 2^53,安全。
 export async function detachTerminal(id: TerminalId, sinkId: number): Promise<void> {
   return invoke("detach_terminal", { id, sinkId });
-}
-
-// 读 scrollback 快照(独立 query,不订阅 stream)
-// 后端 ring buffer 上限 256KB,超出按 FIFO 丢弃头部
-export async function getScrollback(id: TerminalId): Promise<Uint8Array> {
-  const raw = await invoke<number[] | Uint8Array>("get_scrollback", { id });
-  return raw instanceof Uint8Array ? raw : Uint8Array.from(raw);
 }
 
 // 读 PTY 当前生效尺寸 [rows, cols](最近一次 resize 下发值;(0,0)=spawn 后未 resize)。
@@ -134,10 +119,6 @@ export async function renameTask(id: TaskId, name: string): Promise<void> {
   return invoke("rename_task", { id, name });
 }
 
-export async function pinTask(id: TaskId, pinned: boolean): Promise<void> {
-  return invoke("pin_task", { id, pinned });
-}
-
 /** 切换 task 通知静音 (持久化). 静音的 task 不弹系统通知. */
 export async function setTaskNotifyMuted(id: TaskId, muted: boolean): Promise<void> {
   return invoke("set_task_notify_muted", { id, muted });
@@ -181,7 +162,7 @@ export async function setActiveTask(id: TaskId): Promise<void> {
 // 写回任务分屏布局,后端 source of truth,主 + 浮窗都从此读写
 export async function setTaskSplitTree(
   id: TaskId,
-  tree: SplitTreeNode,
+  tree: SplitNode,
 ): Promise<void> {
   return invoke("set_task_split_tree", { id, tree });
 }
@@ -248,10 +229,6 @@ export function onThemeChanged(handler: (theme: Theme) => void): Promise<Unliste
   return tauriListen<Theme>("theme_changed", (e) => handler(e.payload));
 }
 
-export function onConfigChanged(handler: () => void): Promise<UnlistenFn> {
-  return tauriListen("config_changed", () => handler());
-}
-
 /** 通知点击聚焦目标 — 主窗口聚焦时若窗口期内有 last_notify,后端发此事件 */
 export function onNotificationFocusTarget(
   handler: (taskId: TaskId) => void,
@@ -276,8 +253,8 @@ export function onTaskFlash(handler: (taskId: TaskId) => void): Promise<Unlisten
 }
 
 // ===== Agent watch (v1) =====
-export async function getClaudeUsageCache(): Promise<ClaudeUsageCache | null> {
-  return invoke<ClaudeUsageCache | null>("get_claude_usage_cache");
+export async function getClaudeUsageCache(): Promise<UsageCache | null> {
+  return invoke<UsageCache | null>("get_claude_usage_cache");
 }
 
 // ===== 错误格式化 =====
@@ -312,17 +289,10 @@ export function formatIpcError(e: unknown): string {
   return String(e);
 }
 
-// ===== 软件版本检查 =====
-
-/** 检查软件更新 — 主路径 GET updater latest.json(无 REST 限流)比较版本;仅展示, 不下载安装. */
-export async function checkAppUpdate(): Promise<AppUpdateInfo> {
-  return invoke<AppUpdateInfo>("check_app_update");
-}
-
 export function onClaudeUsageChanged(
-  handler: (cache: ClaudeUsageCache | null) => void,
+  handler: (cache: UsageCache | null) => void,
 ): Promise<UnlistenFn> {
-  return tauriListen<ClaudeUsageCache | null>("claude_usage_changed", (e) => handler(e.payload));
+  return tauriListen<UsageCache | null>("claude_usage_changed", (e) => handler(e.payload));
 }
 
 export async function getClaudeSession(): Promise<ClaudeSession | null> {
@@ -347,14 +317,14 @@ export async function getCodexSessionByCwd(cwd: string): Promise<CodexSnapshot |
   return invoke<CodexSnapshot | null>("get_codex_session_by_cwd", { cwd });
 }
 
-export async function getClaudeBlockByCwd(cwd: string): Promise<ClaudeActiveBlock | null> {
-  return invoke<ClaudeActiveBlock | null>("get_claude_block_by_cwd", { cwd });
+export async function getClaudeBlockByCwd(cwd: string): Promise<ActiveBlock | null> {
+  return invoke<ActiveBlock | null>("get_claude_block_by_cwd", { cwd });
 }
 
 /// Codex 5h 块 — 本地从 rollout token_count 事件算 (跟 Claude 同算法).
-/// 后端字段跟 ClaudeActiveBlock 同形, 类型直接复用.
-export async function getCodexBlockByCwd(cwd: string): Promise<ClaudeActiveBlock | null> {
-  return invoke<ClaudeActiveBlock | null>("get_codex_block_by_cwd", { cwd });
+/// 后端字段跟 ActiveBlock 同形, 类型直接复用.
+export async function getCodexBlockByCwd(cwd: string): Promise<ActiveBlock | null> {
+  return invoke<ActiveBlock | null>("get_codex_block_by_cwd", { cwd });
 }
 
 export async function getClaudeTokensToday(): Promise<number> {
@@ -375,8 +345,8 @@ export async function getTerminalCwd(terminalId: TerminalId): Promise<string | n
   return invoke<string | null>("get_terminal_cwd", { terminalId });
 }
 
-export async function gitStatusBrief(cwd: string): Promise<GitStatusBrief | null> {
-  return invoke<GitStatusBrief | null>("git_status_brief", { cwd });
+export async function gitStatusBrief(cwd: string): Promise<WorktreeStatus | null> {
+  return invoke<WorktreeStatus | null>("git_status_brief", { cwd });
 }
 
 export async function gitStashCount(cwd: string): Promise<number> {
@@ -463,34 +433,22 @@ export async function resetKeybindings(): Promise<KeybindingsFile> {
   return invoke<KeybindingsFile>("reset_keybindings");
 }
 
-/** 重置所有 prompts 到默认值. 删 prompts.toml + emit prompts_changed. */
+/** 重置所有 prompts 到默认值. 删 prompts.toml. */
 export async function resetPrompts(): Promise<PromptsFile> {
   return invoke<PromptsFile>("reset_prompts");
-}
-
-export interface DetectAgentResult {
-  agent_kind: string | null;
-  shell_pid: number | null;
-  pgid: number | null;
-  cmdlines: string[];
-  note: string;
 }
 
 /**
  * 立即对指定 terminal 做 agent 嗅探, 不等 3s 后台轮询.
  * PromptPicker 弹出时调一次, 用焦点所在终端的实时 agent_kind 决定 picker 类.
- * 返回完整诊断 — agent_kind=null 时, cmdlines / note 能告诉你为什么没识别.
+ * 返回 agent kind(`claude` / `codex` / ...), 未识别 → null.
  */
-export async function detectAgentForTerminal(terminalId: number): Promise<DetectAgentResult> {
-  return invoke<DetectAgentResult>("detect_agent_for_terminal", { terminalId });
+export async function detectAgentForTerminal(terminalId: number): Promise<string | null> {
+  return invoke<string | null>("detect_agent_for_terminal", { terminalId });
 }
 
 export function onKeybindingsChanged(handler: () => void): Promise<UnlistenFn> {
   return tauriListen("keybindings_changed", () => handler());
-}
-
-export function onEnvChanged(handler: () => void): Promise<UnlistenFn> {
-  return tauriListen("env_changed", () => handler());
 }
 
 // ===== prompts.toml =====
@@ -502,17 +460,9 @@ export async function savePrompts(file: PromptsFile): Promise<void> {
   return invoke("save_prompts", { file });
 }
 
-export function onPromptsChanged(handler: () => void): Promise<UnlistenFn> {
-  return tauriListen("prompts_changed", () => handler());
-}
-
 // ===== Custom Actions =====
 export async function getActions(): Promise<ActionsFile> {
   return invoke<ActionsFile>("get_actions");
-}
-
-export async function saveActions(file: ActionsFile): Promise<void> {
-  return invoke("save_actions", { file });
 }
 
 export async function executeAction(
@@ -573,16 +523,6 @@ export async function gitRemoveWorktree(
 
 export async function setMenuLang(lang: string): Promise<void> {
   return invoke("set_menu_lang", { lang });
-}
-
-/** 调试 — 写到 /tmp/vibeterm-tasklist-debug.log 方便从主机读 */
-export function debugLog(msg: string): void {
-  invoke("debug_log", { msg }).catch(() => {});
-  // 同时打 console,方便 DevTools 看;仅 dev 构建保留,生产构建静态剔除
-  if ((import.meta as { env?: { DEV?: boolean } }).env?.DEV) {
-    // eslint-disable-next-line no-console
-    console.debug(msg);
-  }
 }
 
 export { Channel } from "@tauri-apps/api/core";

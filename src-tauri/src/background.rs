@@ -7,7 +7,6 @@ use tauri::{Emitter, Manager};
 use vibeterm_ipc::TerminalId;
 use vibeterm_status::StatusDetector;
 
-use crate::events::record_event;
 use crate::{
     emit_tasks_changed, maybe_persistent_remind, notify_status_transition, now_ms,
     poll_agent_turn_for_terminal, refresh_dock_badge, terminal_cwd_for, validated_worktree_path,
@@ -16,11 +15,10 @@ use crate::{
 
 pub(crate) fn start_background_tasks(app: &tauri::AppHandle) {
     // 启动 config watcher(50ms debounce)
-    // 同时 fan-out 到 statusline_config_changed — 用户改 statusline.toml 即时生效
+    // 目前唯一消费者是 statusline_config_changed — 用户改 statusline.toml 即时生效
     let app_h = app.clone();
     if let Ok(w) = vibeterm_config::ConfigWatcher::start(move || {
-        tracing::info!("config dir changed → emit config_changed + statusline_config_changed");
-        let _ = app_h.emit("config_changed", ());
+        tracing::info!("config dir changed → emit statusline_config_changed");
         let _ = app_h.emit("statusline_config_changed", ());
     }) {
         // watcher 被 leak 让其活到 app 退出(简化)
@@ -312,12 +310,6 @@ pub(crate) fn start_background_tasks(app: &tauri::AppHandle) {
                     let _ = app_for_status_tick.emit(
                         "task_status_changed",
                         serde_json::json!({"task_id": task_id, "status": s}),
-                    );
-                    record_event(
-                        "status_changed",
-                        task_id,
-                        Some(tid),
-                        serde_json::to_value(s).ok(),
                     );
                     emit_tasks_changed(&app_for_status_tick, &state.tasks);
                     notify_status_transition(

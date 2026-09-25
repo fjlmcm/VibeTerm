@@ -18,7 +18,6 @@ use serde::{Deserialize, Serialize};
 
 pub mod claude;
 pub mod codex;
-pub mod provider;
 
 // ---- Claude ----
 

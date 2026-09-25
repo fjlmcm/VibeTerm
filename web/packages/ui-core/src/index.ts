@@ -1,7 +1,6 @@
 export * as ipc from "./ipc";
 export { playNotifySound, stopNotifySound, disposeNotifyAudio } from "./notify-audio";
 export * as theme from "./theme";
-export * as urgency from "./urgency";
 export * as i18n from "./i18n";
 export * as split from "./split";
 export { t, tOr, promptDisplayName, promptDisplayContent, setLang, currentLang, LANGS, LANG_NAMES } from "./i18n";
@@ -42,7 +41,6 @@ export {
   createKeybindingDispatcher,
   registerTerminalFocus,
   focusTerminal,
-  IMPLEMENTED_COMMANDS,
   isMacPlatform,
   isWindowsPlatform,
   modKeyLabel,

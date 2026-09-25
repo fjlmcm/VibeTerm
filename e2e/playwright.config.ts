@@ -3,7 +3,6 @@
 // 策略:
 //   - 直接对 Vite dev server(http://localhost:1420)做 web 层 E2E,
 //     绕过 Tauri runtime — 简单可跑、覆盖 UI 主要流程。
-//   - Tauri 集成 E2E(真 app,CDP)走 tauri-cdp.config.ts(test:tauri)。
 //
 // dev server 由下方 webServer 自动拉起(本地 :1420 已有服务时直接复用);
 // 跑法:`pnpm --filter @vibeterm/e2e run test:smoke`(CI 同款)。

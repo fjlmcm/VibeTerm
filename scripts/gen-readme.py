@@ -108,7 +108,7 @@ def render(loc: str) -> str:
     A(f"_{t('section.features.subtitle')}_")
     A("")
     groups = {
-        "agent": ["sniff", "urgency", "monitor"],
+        "agent": ["sniff", "monitor"],
         "terminal": ["split", "floating", "render"],
         "productivity": ["palette", "prompts", "statusbar", "notify", "theme"],
     }

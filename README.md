@@ -45,7 +45,6 @@ _All the usual terminal features, plus state-awareness and orchestration built f
 ### Agents
 
 - **Sees what an agent's doing** — Working, waiting, stalled, or done — figured out without touching your config.
-- **Stall detection + urgency sort** — Screen full of agents? The stuck ones and the ones waiting on you go to the top.
 - **Live usage** — Context left, 5h/7d quota, burn rate, cache — all on one bar.
 
 ### Terminal

@@ -76,9 +76,15 @@ async fn full_worktree_lifecycle() {
 
     // 在 repo 外面建一个 worktree(避免 nested)
     let wt = tmp.path().join("wt-feat");
-    let entry = add_worktree(&repo, &wt, BranchSpec::NewFromHead("feat-x".into()))
-        .await
-        .unwrap();
+    let entry = add_worktree(
+        &repo,
+        &wt,
+        BranchSpec::NewFromHead {
+            branch: "feat-x".into(),
+        },
+    )
+    .await
+    .unwrap();
     assert!(entry.branch.as_deref().unwrap_or("").ends_with("feat-x"));
 
     let list1 = list_worktrees(&repo).await.unwrap();
@@ -117,9 +123,15 @@ async fn remove_force_when_dirty() {
     init_repo(&repo);
 
     let wt = tmp.path().join("wt-dirty");
-    add_worktree(&repo, &wt, BranchSpec::NewFromHead("dirty-branch".into()))
-        .await
-        .unwrap();
+    add_worktree(
+        &repo,
+        &wt,
+        BranchSpec::NewFromHead {
+            branch: "dirty-branch".into(),
+        },
+    )
+    .await
+    .unwrap();
     std::fs::write(wt.join("new.txt"), b"new\n").unwrap();
 
     // 非 force 应该失败

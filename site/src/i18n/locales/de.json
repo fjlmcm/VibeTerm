@@ -49,8 +49,6 @@
   "features.group.productivity": "Workflow",
   "features.sniff.label": "Sieht, was ein Agent tut",
   "features.sniff.desc": "Läuft, wartet, hängt oder fertig — erkannt, ohne deine Config anzufassen.",
-  "features.urgency.label": "Hängt-Erkennung + Dringlichkeitssortierung",
-  "features.urgency.desc": "Bildschirm voller Agents? Die hängenden und die, die auf dich warten, kommen nach oben.",
   "features.monitor.label": "Live-Verbrauch",
   "features.monitor.desc": "Restkontext, 5h/7d-Kontingent, Burn-Rate, Cache — alles in einer Leiste.",
   "features.split.label": "Splitscreen + Worktrees",

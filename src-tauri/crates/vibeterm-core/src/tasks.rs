@@ -27,7 +27,6 @@ pub enum TaskError {
 struct TaskRuntime {
     name: String,
     cwd: Option<String>,
-    pinned: bool,
     terminal_ids: Vec<TerminalId>,
     terminal_statuses: HashMap<TerminalId, TaskStatus>,
     location: TaskLocation,
@@ -48,15 +47,9 @@ struct TaskRuntime {
     slot_terminals: HashMap<u32, TerminalId>,
     /// 通知静音 (持久化). 通知层每次弹之前查它.
     notify_muted: bool,
-    /// agent 当前 permission mode (claude/codex hook payload 的 permission_mode 字段).
-    /// 视觉徽标用 — yolo 模式高亮提示.
-    permission_mode: Option<String>,
     /// agent 当前 reasoning effort 等级 (low/medium/high/xhigh/max), 来自 hook payload 的
     /// effort.level. 实时(每个携带 effort 的 event 刷新); 比 transcript 解析更直接.
     effort: Option<String>,
-    /// hook auto-naming: 任务名是否还能被 UserPromptSubmit 自动重命名.
-    /// 新建时 true. 自动改过名 / 用户手动改过名后 → false.
-    auto_namable: bool,
     /// agent transcript 当前轮状态,**per-terminal**(key=terminal_id):
     /// true=该终端刚答完一轮、false=正在干、缺键=非 transcript agent(走 PTY 嗅探)。
     /// 比 PTY 输出嗅探可靠 —— 压过 codex 底部状态栏持续刷新造成的"假 Running"。
@@ -220,7 +213,6 @@ impl TaskRegistry {
             TaskRuntime {
                 name,
                 cwd: effective_cwd,
-                pinned: false,
                 terminal_ids: vec![],
                 terminal_statuses: HashMap::new(),
                 location: TaskLocation::MainWorkspace,
@@ -230,9 +222,7 @@ impl TaskRegistry {
                 agent_kinds: HashMap::new(),
                 slot_terminals: HashMap::new(),
                 notify_muted: false,
-                permission_mode: None,
                 effort: None,
-                auto_namable: true,
                 agent_turn_done: HashMap::new(),
                 last_completed_turn_id: HashMap::new(),
                 agent_session_pins: HashMap::new(),
@@ -272,8 +262,6 @@ impl TaskRegistry {
         let mut inner = self.lock()?;
         let t = inner.tasks.get_mut(&id).ok_or(TaskError::NotFound(id))?;
         t.name = name;
-        // 用户手动改名 → 关掉自动命名 (避免后续 prompt 覆盖用户的命名)
-        t.auto_namable = false;
         let snap = inner.snapshot();
         drop(inner);
         self.save(&snap);
@@ -298,16 +286,6 @@ impl TaskRegistry {
             }
         }
         Ok(None)
-    }
-
-    pub fn pin(&self, id: TaskId, pinned: bool) -> Result<(), TaskError> {
-        let mut inner = self.lock()?;
-        let t = inner.tasks.get_mut(&id).ok_or(TaskError::NotFound(id))?;
-        t.pinned = pinned;
-        let snap = inner.snapshot();
-        drop(inner);
-        self.save(&snap);
-        Ok(())
     }
 
     /// 切换该 task 的通知静音.
@@ -803,7 +781,6 @@ impl Inner {
                 TaskRuntime {
                     name: snap.name.clone(),
                     cwd: snap.cwd.clone(),
-                    pinned: snap.pinned,
                     terminal_ids: vec![], // 终端不自动 rerun
                     terminal_statuses: HashMap::new(),
                     location: TaskLocation::MainWorkspace,
@@ -813,10 +790,7 @@ impl Inner {
                     agent_kinds: HashMap::new(),
                     slot_terminals: HashMap::new(),
                     notify_muted: snap.notify_muted,
-                    permission_mode: None,
                     effort: None,
-                    // 从 disk 恢复:已 persist 过则不再自动重命名 (snap.auto_namable 字段)
-                    auto_namable: snap.auto_namable,
                     agent_turn_done: HashMap::new(),
                     last_completed_turn_id: HashMap::new(),
                     agent_session_pins: HashMap::new(),
@@ -852,12 +826,10 @@ impl Inner {
                     id: *id,
                     name: t.name.clone(),
                     cwd: t.cwd.clone(),
-                    pinned: t.pinned,
                     last_terminal_ids: t.terminal_ids.clone(),
                     split_tree: t.split_tree.clone(),
                     worktree: t.worktree.clone(),
                     notify_muted: t.notify_muted,
-                    auto_namable: t.auto_namable,
                 })
             })
             .collect();
@@ -894,7 +866,6 @@ impl Inner {
             id,
             name: t.name.clone(),
             cwd: t.cwd.clone(),
-            pinned: t.pinned,
             status,
             terminal_ids: t.terminal_ids.clone(),
             location: t.location.clone(),
@@ -904,7 +875,6 @@ impl Inner {
             // last_output 由 src-tauri 在 emit 前注入(需要 TerminalRegistry,核心层不持有)
             last_output: None,
             notify_muted: t.notify_muted,
-            permission_mode: t.permission_mode.clone(),
             effort: t.effort.clone(),
         }
     }

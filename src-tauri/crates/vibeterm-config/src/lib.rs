@@ -107,12 +107,6 @@ pub fn notify_toml_path() -> Result<PathBuf, ConfigError> {
     Ok(config_dir()?.join("notify.toml"))
 }
 
-/// 事件流日志(task 状态变更 append-only JSONL,供外部脚本 `tail -f` 订阅)。
-/// 仅 VibeTerm 自己的 config 目录,零侵入。
-pub fn events_jsonl_path() -> Result<PathBuf, ConfigError> {
-    Ok(config_dir()?.join("events.jsonl"))
-}
-
 /// 布局模板文件(命令面板的任务预设)。仅 VibeTerm 自己的 config 目录。
 pub fn layouts_toml_path() -> Result<PathBuf, ConfigError> {
     Ok(config_dir()?.join("layouts.toml"))
@@ -216,8 +210,10 @@ fn validate_clipboard_images_dir(candidate: PathBuf) -> Result<PathBuf, ConfigEr
     }
 }
 
-fn expand_user_path(s: &str) -> PathBuf {
-    if let Some(rest) = s.strip_prefix("~/") {
+/// 把 `~` / `~/...`(或 Windows 习惯的 `~\...`)展开到 home,其它路径原样。
+/// 不读 $HOME 环境变量 —— Windows 默认没有,dirs::home_dir() 两边都对。
+pub fn expand_user_path(s: &str) -> PathBuf {
+    if let Some(rest) = s.strip_prefix("~/").or_else(|| s.strip_prefix("~\\")) {
         if let Some(home) = dirs::home_dir() {
             return home.join(rest);
         }
@@ -434,10 +430,6 @@ pub struct Config {
     pub schema_version: u32,
     #[serde(default = "Config::default_active_theme")]
     pub active_theme: String,
-    #[serde(default)]
-    pub follow_system_theme: bool,
-    #[serde(default)]
-    pub language: Option<String>, // "zh-CN" | "en" | "ja"
     /// zsh shell 集成自动注入(spawn 时临时 ZDOTDIR,让 OSC 133 标记可靠发出)。
     /// 默认开;纯临时 env 注入,不写用户 dotfiles。
     #[serde(default = "Config::default_shell_integration")]
@@ -453,8 +445,6 @@ impl Default for Config {
         Self {
             schema_version: Self::default_schema_version(),
             active_theme: Self::default_active_theme(),
-            follow_system_theme: false,
-            language: None,
             shell_integration: Self::default_shell_integration(),
             auto_check_updates: Self::default_auto_check_updates(),
         }
@@ -535,7 +525,7 @@ pub fn get_theme(id: &str) -> Theme {
 
 // ---- 文件监听 watcher(50ms debounce)----
 
-/// 只有 `*.toml` 才算配置变更:config 目录里还有 tasks.json / events.jsonl / scrollback.json
+/// 只有 `*.toml` 才算配置变更:config 目录里还有 tasks.json / scrollback.json
 /// 以及 atomic_write 的临时文件,这些由 VibeTerm 自己频繁写入,不过滤会自触发 config_changed 回环。
 fn is_config_toml(path: &Path) -> bool {
     path.extension().is_some_and(|e| e == "toml")
@@ -609,12 +599,22 @@ impl ConfigWatcher {
 mod tests {
     use super::*;
 
+    /// 波浪号展开:`~` / `~/` / `~\` 都展开到 home;非波浪号原样
+    #[test]
+    fn expand_user_path_uses_home_dir() {
+        let home = dirs::home_dir().expect("home dir");
+        assert_eq!(expand_user_path("~"), home);
+        assert_eq!(expand_user_path("~/x/y.mp3"), home.join("x/y.mp3"));
+        assert_eq!(expand_user_path("~\\x\\y.wav"), home.join("x\\y.wav"));
+        assert_eq!(expand_user_path("/abs/p.mp3"), PathBuf::from("/abs/p.mp3"));
+    }
+
     #[test]
     fn watcher_only_reacts_to_toml() {
         assert!(is_config_toml(Path::new("/cfg/config.toml")));
         assert!(is_config_toml(Path::new("/cfg/statusline.toml")));
         assert!(!is_config_toml(Path::new("/cfg/tasks.json")));
-        assert!(!is_config_toml(Path::new("/cfg/events.jsonl")));
+        assert!(!is_config_toml(Path::new("/cfg/tasks.json")));
         assert!(!is_config_toml(Path::new("/cfg/.tmpAbC123")));
     }
 

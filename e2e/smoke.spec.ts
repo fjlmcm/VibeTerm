@@ -3,8 +3,6 @@
 // 假定:VibeTerm dev server 已启动在 http://localhost:1420
 // 这些测试在 vanilla browser 跑 Web 层(Tauri runtime 由 mock 替代) —
 // 主要看 UI 装配、键盘路径、组件可见性。
-//
-// 完整 Tauri 集成 E2E(driving real Tauri app via tauri-driver)留 M12+。
 
 import { test, expect, type Page } from "@playwright/test";
 
@@ -186,30 +184,6 @@ test.describe("VibeTerm Web Smoke", () => {
       const writes = (window as Window & { __ptyWrites__?: number[][] }).__ptyWrites__ ?? [];
       return writes.map((w) => new TextDecoder().decode(Uint8Array.from(w))).join("");
     });
-
-  test("旧画布偏好:启动后显示标准工作区且终端可输入", async ({ page }) => {
-    await installTerminalWithPtyCapture(page);
-    await page.addInitScript(() => {
-      localStorage.setItem("vibeterm.view_mode", "canvas");
-      localStorage.setItem("vibeterm.canvas.cards", JSON.stringify({
-        1: { x: 10000, y: 10000, w: 480, h: 320 },
-      }));
-    });
-    await page.goto("/");
-    await expect(page.locator("aside")).toBeVisible();
-    await expect(page.getByTestId("sidebar-resizer")).toBeVisible();
-    await expect(page.getByTestId("split-h-btn")).toBeVisible();
-    await expect(page.getByTestId("task-pane-1")).toBeInViewport();
-    await expect(page.getByTestId("view-mode-btn")).toHaveCount(0);
-    await expect(page.getByTestId("stats-btn")).toHaveCount(0);
-
-    // data-terminal-id 由 spawn 成功后 setHostAttrs 设置 = onData 已绑定
-    await page.locator('[data-terminal-id="1"]').waitFor({ state: "attached", timeout: 10_000 });
-    await page.locator(".xterm-helper-textarea").pressSequentially("hello");
-    await expect(async () => {
-      expect(await decodedPtyWrites(page)).toContain("hello");
-    }).toPass({ timeout: 3000 });
-  });
 
   test("IME:全角标点直提交(keydown 229 + insertText,无 composition)一次到达 PTY", async ({
     page,

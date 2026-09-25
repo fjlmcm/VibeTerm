@@ -3,7 +3,7 @@
 ---
 
 ## 一句话项目定位
-> 一个**现代化、CJK 一等公民的本地优先终端管理器**(Tauri 2 + Rust + SolidJS + xterm.js);为多 AI agent 工作流提供**纯嗅探的 agent 状态(OSC 0/2 标题 spinner + OSC 133/633 + 输出时序)/ Stalled 卡死检测 / 任务紧迫度排序(urgency)**等针对性增强;坚守"**终端是终端**",不做 agent 工作台。**零侵入**——纯嗅探 + 只读文件监听,绝不写 `~/.claude`/`~/.codex`,无 hook、无账号、无遥测、不主动联网。MIT 开源。
+> 一个**现代化、CJK 一等公民的本地优先终端管理器**(Tauri 2 + Rust + SolidJS + xterm.js);为多 AI agent 工作流提供**纯嗅探的 agent 状态(OSC 0/2 标题 spinner + OSC 133/633 + 输出时序)/ Stalled 卡死检测**等针对性增强;坚守"**终端是终端**",不做 agent 工作台。**零侵入**——纯嗅探 + 只读文件监听,绝不写 `~/.claude`/`~/.codex`,无 hook、无账号、无遥测、不主动联网。MIT 开源。
 
 ---
 
@@ -16,7 +16,7 @@
 |---|---|
 | `vibeterm-core` | 领域核心:`TerminalRegistry` + `TaskRegistry`(纯领域,不依赖 Tauri) |
 | `vibeterm-pty` | PTY 抽象:每 PTY 独立阻塞读线程,`ChunkSink` 多 sink 订阅(浮窗 attach),256KB scrollback ring |
-| `vibeterm-status` | **状态嗅探**:OSC 133/633 解析 + agent stdout 规则(11 个 agent)+ 16KB ring 跨 chunk 正则,5 态判定 |
+| `vibeterm-status` | **状态嗅探**:OSC 133/633 解析 + agent stdout 规则(12 个 agent)+ 16KB ring 跨 chunk 正则,5 态判定 |
 | `vibeterm-agent-watch` | **只读**监听 transcript/rollout → model / ctx / effort / 额度;`AgentProvider` trait 统一 claude/codex |
 | `vibeterm-config` | 配置加载 / 原子写 / 主题 / 热加载(notify 50ms debounce);含 `config_dir()` 安全门(见红线 2) |
 | `vibeterm-tasks` | 任务持久化(`tasks.json` 原子写),分屏树 + git worktree 挂载 |
@@ -43,7 +43,7 @@
 
 **三层嗅探**(`vibeterm-status/src/lib.rs`):
 1. **OSC 133/633**(shell 集成,最可靠):`133;C`→Running、`133;D[;code]`→Idle 并 finalize 真完成、`133;A/B`→prompt ready;`633` 取 VSCode cmdline/cwd。
-2. **agent stdout 正则**:claude/codex/aider 等 11 个 agent 的授权框文案匹配 → WaitingInput。
+2. **agent stdout 正则**:claude/codex/aider 等 12 个 agent 的授权框文案匹配 → WaitingInput。
 3. **OSC 0/2 标题 braille spinner**(U+2800–28FF 在动 = working)→ Running。
 
 **5 个状态(任务列表圆点,`web/packages/ui-core/src/tasklist/index.tsx`)**:

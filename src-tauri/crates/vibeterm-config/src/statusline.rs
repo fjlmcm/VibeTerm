@@ -4,8 +4,6 @@
 //!   - profiles: HashMap<String, ProfileConfig> — 按 agent_kind key (`default` / `claude` / `codex` / `aider` ...)
 //!   - 运行时根据当前终端的 agent_kind 选 profile, 没匹配的 fallback 到 `default`
 //!   - 用户可 add custom profile 给其他 agent / 程序
-//!
-//! v1 (旧 `items` 字段) 自动迁移成 v2 default profile.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -66,9 +64,6 @@ pub struct StatusLineFile {
     /// profile 映射. key 跟 agent_kind 对齐 (`default` 用作未识别 agent 的 fallback).
     #[serde(default)]
     pub profiles: HashMap<String, ProfileConfig>,
-    /// v1 旧字段, 迁移用. 新写不会输出.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub items: Option<Vec<StatusLineItem>>,
 }
 
 fn default_version() -> u32 {
@@ -138,7 +133,6 @@ impl Default for StatusLineFile {
             schema_version: 2,
             use_theme_colors: true,
             profiles,
-            items: None,
         }
     }
 }
@@ -153,40 +147,10 @@ impl StatusLineFile {
             return Self::default();
         }
         match std::fs::read_to_string(&p) {
-            Ok(s) => {
-                let mut parsed: Self = toml::from_str(&s).unwrap_or_else(|e| {
-                    tracing::warn!(err = %e, "statusline parse failed, fallback default");
-                    Self::default()
-                });
-                // v1 迁移: 旧 items 字段 → default profile
-                if parsed.schema_version < 2 || parsed.profiles.is_empty() {
-                    if let Some(legacy) = parsed.items.take() {
-                        let mut profiles = HashMap::new();
-                        profiles.insert(
-                            "default".into(),
-                            ProfileConfig {
-                                display_name: Some("终端".into()),
-                                items: legacy,
-                            },
-                        );
-                        // 补 claude / codex 用默认
-                        let defaults = Self::default();
-                        for (k, v) in defaults.profiles {
-                            profiles.entry(k).or_insert(v);
-                        }
-                        parsed.profiles = profiles;
-                    } else if parsed.profiles.is_empty() {
-                        parsed.profiles = Self::default().profiles;
-                    }
-                    parsed.schema_version = 2;
-                    parsed.items = None;
-                    // 保存迁移结果
-                    if let Err(e) = parsed.save() {
-                        tracing::warn!(err = %e, "statusline v1->v2 migration save failed");
-                    }
-                }
-                parsed
-            }
+            Ok(s) => toml::from_str(&s).unwrap_or_else(|e| {
+                tracing::warn!(err = %e, "statusline parse failed, fallback default");
+                Self::default()
+            }),
             Err(e) => {
                 tracing::warn!(err = %e, path = ?p, "statusline read failed, using default");
                 Self::default()
@@ -243,19 +207,6 @@ mod tests {
         // default profile 没 claude widget
         assert!(!p.items.iter().any(|i| i.kind() == "claude-model"));
         assert!(p.items.iter().any(|i| i.kind() == "current-dir"));
-    }
-
-    #[test]
-    fn v1_migration() {
-        let v1_toml = r#"
-schema_version = 1
-items = ["current-dir", "git-branch", "claude-ctx"]
-"#;
-        let parsed: StatusLineFile = toml::from_str(v1_toml).unwrap();
-        // 解析后还没自动迁移 (load 才会迁), 这里只检查兼容
-        assert_eq!(parsed.schema_version, 1);
-        assert!(parsed.items.is_some());
-        assert_eq!(parsed.items.as_ref().unwrap().len(), 3);
     }
 
     #[test]

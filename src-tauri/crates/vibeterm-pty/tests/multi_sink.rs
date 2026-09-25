@@ -116,7 +116,6 @@ fn scrollback_snapshot_returns_recent_output_without_subscribing() {
         "scrollback snapshot 缺内容 = {:?}",
         snap_str
     );
-    assert_eq!(terminal.scrollback_len(), snap.len());
 }
 
 #[test]

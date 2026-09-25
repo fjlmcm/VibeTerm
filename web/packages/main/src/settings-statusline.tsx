@@ -29,13 +29,13 @@ import {
   type Draggable,
   type Droppable,
 } from "@thisbeyond/solid-dnd";
-import { WIDGETS, WIDGET_LIST, ipc, t, tOr, type WidgetMeta } from "@vibeterm/ui-core";
+import { WIDGETS, WIDGET_LIST, ipc, t, type WidgetMeta } from "@vibeterm/ui-core";
 import type {
-  ClaudeActiveBlock,
+  ActiveBlock,
   ClaudeSession,
-  ClaudeUsageCache,
+  UsageCache,
   CodexSnapshot,
-  GitStatusBrief,
+  WorktreeStatus,
   ProfileConfig,
   StatusLineFile,
   StatusLineItem,
@@ -76,7 +76,7 @@ const CATEGORY_COLOR: Record<WidgetMeta["category"], string> = {
 
 // ---- mock 数据给每个 profile 预览用 ----
 
-const MOCK_GIT: GitStatusBrief = {
+const MOCK_GIT: WorktreeStatus = {
   branch: "main",
   head: "abc1234",
   is_dirty: true,
@@ -98,7 +98,7 @@ const MOCK_CLAUDE_SESSION: ClaudeSession = {
   cache_1h_until_ms: Date.now() + 42 * 60_000,
   effort: "xhigh",
 };
-const MOCK_CLAUDE_USAGE: ClaudeUsageCache = {
+const MOCK_CLAUDE_USAGE: UsageCache = {
   five_hour: { utilization: 38, resets_at: new Date(Date.now() + 1.5 * 3600_000).toISOString() },
   seven_day: { utilization: 19, resets_at: new Date(Date.now() + 4.5 * 86400_000).toISOString() },
   seven_day_sonnet: { utilization: 12, resets_at: null },
@@ -106,7 +106,7 @@ const MOCK_CLAUDE_USAGE: ClaudeUsageCache = {
   seven_day_oauth_apps: null,
   extra_usage: null,
 };
-const MOCK_CLAUDE_BLOCK: ClaudeActiveBlock = {
+const MOCK_CLAUDE_BLOCK: ActiveBlock = {
   start_at_ms: Date.now() - 1.5 * 3600_000,
   end_at_ms: Date.now() + 3.5 * 3600_000,
   last_entry_at_ms: Date.now() - 60_000,
@@ -147,7 +147,6 @@ const MOCK_TASK: TaskDto = {
   name: "Example",
   notify_muted: false,
   cwd: "/Users/example/dev",
-  pinned: false,
   status: "running",
   terminal_ids: [],
   location: { kind: "MainWorkspace" },
@@ -250,8 +249,7 @@ export const StatuslineTab: Component<StatuslineTabProps> = (props) => {
       return;
     }
     try {
-      const d = await ipc.detectAgentForTerminal(tid);
-      setCurrentAgent(d.agent_kind ?? null);
+      setCurrentAgent(await ipc.detectAgentForTerminal(tid));
     } catch {
       setCurrentAgent(null);
     }
@@ -736,10 +734,10 @@ const SortableChip: Component<{
           ? "none"
           : "transform 200ms cubic-bezier(0.16, 1, 0.3, 1), background 120ms ease, border-color 120ms ease, opacity 120ms",
       }}
-      title={`${meta() ? tOr(`statusbar.widget_desc.${meta()!.id}`, meta()!.description) : detail().type}\nid: ${detail().type}`}
+      title={`${meta() ? t(`statusbar.widget_desc.${meta()!.id}`) : detail().type}\nid: ${detail().type}`}
     >
       <GripVertical size={10} style={{ opacity: hovered() || props.isSelected ? 0.7 : 0.3, transition: "opacity 120ms" }} />
-      <span style={{ "font-weight": 500 }}>{meta() ? tOr(`statusbar.widget.${meta()!.id}`, meta()!.display_name) : detail().type}</span>
+      <span style={{ "font-weight": 500 }}>{meta() ? t(`statusbar.widget.${meta()!.id}`) : detail().type}</span>
       <Show when={detail().hide}>
         <span style={{ "font-size": "9px", opacity: 0.7, "font-style": "italic" }}>(hidden)</span>
       </Show>
@@ -784,7 +782,7 @@ const CatalogPopover: Component<{
     const q = search().toLowerCase().trim();
     const m = new Map<WidgetMeta["category"], WidgetMeta[]>();
     for (const w of WIDGET_LIST) {
-      const tname = tOr(`statusbar.widget.${w.id}`, w.display_name);
+      const tname = t(`statusbar.widget.${w.id}`);
       if (q && !w.id.toLowerCase().includes(q) && !tname.toLowerCase().includes(q)) continue;
       const arr = m.get(w.category) ?? [];
       arr.push(w);
@@ -869,7 +867,7 @@ const CatalogPopover: Component<{
                     return (
                       <div
                         onClick={() => props.onPick(w.id)}
-                        title={tOr(`statusbar.widget_desc.${w.id}`, w.description)}
+                        title={t(`statusbar.widget_desc.${w.id}`)}
                         style={{
                           padding: "5px 8px",
                           cursor: "pointer",
@@ -891,7 +889,7 @@ const CatalogPopover: Component<{
                           <Show when={already}>
                             <span style={{ "font-size": "9px", opacity: 0.6 }}>✓</span>
                           </Show>
-                          {tOr(`statusbar.widget.${w.id}`, w.display_name)}
+                          {t(`statusbar.widget.${w.id}`)}
                         </div>
                         <div
                           style={{
@@ -902,7 +900,7 @@ const CatalogPopover: Component<{
                             "text-overflow": "ellipsis",
                           }}
                         >
-                          {tOr(`statusbar.widget_desc.${w.id}`, w.description)}
+                          {t(`statusbar.widget_desc.${w.id}`)}
                         </div>
                       </div>
                     );
@@ -970,7 +968,7 @@ const ItemEditor: Component<{
     >
       <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
         <div style={{ "font-weight": 600, "font-size": "13px" }}>
-          {props.meta ? tOr(`statusbar.widget.${props.meta.id}`, props.meta.display_name) : props.item.type}
+          {props.meta ? t(`statusbar.widget.${props.meta.id}`) : props.item.type}
         </div>
         <code style={{ "font-size": "10px", color: "var(--color-text-2)" }}>
           [{props.profileKey}].{props.item.type}
@@ -982,7 +980,7 @@ const ItemEditor: Component<{
       </div>
       <Show when={props.meta}>
         <div style={{ "font-size": "11px", color: "var(--color-text-2)", "line-height": 1.5 }}>
-          {tOr(`statusbar.widget_desc.${props.meta!.id}`, props.meta!.description)}
+          {t(`statusbar.widget_desc.${props.meta!.id}`)}
         </div>
       </Show>
 

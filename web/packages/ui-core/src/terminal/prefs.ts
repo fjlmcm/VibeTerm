@@ -45,7 +45,7 @@ function readStr(key: string, def: string): string {
   }
 }
 
-function readNum(key: string, def: number, min: number, max: number): number {
+export function readNum(key: string, def: number, min: number, max: number): number {
   try {
     const raw = localStorage.getItem(key);
     const n = raw != null ? Number(raw) : def;
@@ -71,7 +71,7 @@ function readCursorStyle(): CursorStyle {
   return CURSOR_STYLES.includes(raw as CursorStyle) ? (raw as CursorStyle) : DEFAULT_CURSOR_STYLE;
 }
 
-function write(key: string, val: string) {
+export function write(key: string, val: string) {
   try {
     localStorage.setItem(key, val);
   } catch {

@@ -351,9 +351,7 @@ fn extract_effort_command(line: &str) -> Option<String> {
 ///   1. model id 带显式 `[1m]` 后缀 → 1,000,000 (Claude Code 明确处于 1M 模式)
 ///   2. 规则命中 → 取规则窗口; 但实测 ctx 已超出 → 1M (物理推断优先)
 ///   3. 数据缺失: 观测 ctx > 200,000 → 1M, 否则缺省 200k
-///
-/// `cwd` 仍接受为参数, 是为了未来扩展 (例如用户手动 override), 本版本不用.
-pub fn context_window_for(model: &str, _cwd: Option<&str>, observed_ctx: u64) -> u64 {
+pub fn context_window_for(model: &str, observed_ctx: u64) -> u64 {
     if model.trim().to_ascii_lowercase().ends_with("[1m]") {
         return 1_000_000;
     }
@@ -372,7 +370,7 @@ pub fn project_dir_to_cwd(dir_name: &str) -> String {
 }
 
 /// 由 latest jsonl 组装出 ClaudeSession; 文件不可读或没 assistant 行 → None.
-/// `cwd_hint`: 已知真 cwd 时传入 (调用方持有), 用于查 ~/.claude.json 做 1M 确定性识别.
+/// `cwd_hint`: 已知真 cwd 时传入 (调用方持有), 作为 project_path(比从目录名反推更准).
 fn build_snapshot(path: &Path, project_dir: &str, cwd_hint: Option<&str>) -> Option<ClaudeSession> {
     let parsed = parse_last_assistant(path)?;
     let session_id = parsed.session_id.unwrap_or_else(|| {
@@ -386,7 +384,7 @@ fn build_snapshot(path: &Path, project_dir: &str, cwd_hint: Option<&str>) -> Opt
     let context_window = parsed
         .model
         .as_deref()
-        .map(|m| context_window_for(m, Some(project_path.as_str()), parsed.context_tokens))
+        .map(|m| context_window_for(m, parsed.context_tokens))
         .unwrap_or_else(|| {
             if parsed.context_tokens > 200_000 {
                 1_000_000
@@ -530,7 +528,6 @@ pub fn read_for_cwd(cwd: &str) -> Option<ClaudeSession> {
     // 完成检测:排除超限的巨型同 cwd 会话(典型即 Claude Code 自身几百 MB 的 transcript),
     // 否则会掩盖本任务 agent 真正的小会话 → 漏判完成(见 newest_jsonl_under 文档)。
     let path = newest_jsonl_under(&canon_dir, JSONL_MAX_BYTES)?;
-    // 传 cwd_hint 让 build_snapshot 查 ~/.claude.json 做 1M 确定性识别
     build_snapshot(&path, &project_dir_name, Some(cwd))
 }
 
@@ -734,58 +731,34 @@ mod tests {
     #[test]
     fn context_window_inference_paths() {
         // 200k 模型 — 数据表命中
+        assert_eq!(context_window_for("claude-sonnet-4-5", 50_000), 200_000);
         assert_eq!(
-            context_window_for("claude-sonnet-4-5", None, 50_000),
+            context_window_for("claude-haiku-4-5-20251001", 50_000),
             200_000
         );
-        assert_eq!(
-            context_window_for("claude-haiku-4-5-20251001", None, 50_000),
-            200_000
-        );
-        assert_eq!(
-            context_window_for("claude-opus-4-5", None, 100_000),
-            200_000
-        );
+        assert_eq!(context_window_for("claude-opus-4-5", 100_000), 200_000);
         // 1M 模型 — ctx < 200k 时也必须判 1M, 否则 ctx% 虚高 5 倍
         // (硬编码前缀表时代 opus-4-8、fable-5 都栽过这个坑, 现在由数据表覆盖)
-        assert_eq!(
-            context_window_for("claude-opus-4-6", None, 50_000),
-            1_000_000
-        );
-        assert_eq!(
-            context_window_for("claude-opus-4-8", None, 50_000),
-            1_000_000
-        );
-        assert_eq!(
-            context_window_for("claude-sonnet-4-6", None, 50_000),
-            1_000_000
-        );
-        assert_eq!(
-            context_window_for("claude-fable-5", None, 50_000),
-            1_000_000
-        );
+        assert_eq!(context_window_for("claude-opus-4-6", 50_000), 1_000_000);
+        assert_eq!(context_window_for("claude-opus-4-8", 50_000), 1_000_000);
+        assert_eq!(context_window_for("claude-sonnet-4-6", 50_000), 1_000_000);
+        assert_eq!(context_window_for("claude-fable-5", 50_000), 1_000_000);
         // 未来日期后缀 id → 数据表前缀命中
         assert_eq!(
-            context_window_for("claude-opus-4-8-20991231", None, 50_000),
+            context_window_for("claude-opus-4-8-20991231", 50_000),
             1_000_000
         );
         // [1m] 显式后缀 → 直接 1M (不依赖数据表)
-        assert_eq!(
-            context_window_for("claude-opus-4-7[1m]", None, 50_000),
-            1_000_000
-        );
+        assert_eq!(context_window_for("claude-opus-4-7[1m]", 50_000), 1_000_000);
         // 实测超出数据窗口 → 物理推断 1M 优先于过时数据 (如 [1m] beta 漏标的场景)
-        assert_eq!(
-            context_window_for("claude-sonnet-4-5", None, 300_000),
-            1_000_000
-        );
+        assert_eq!(context_window_for("claude-sonnet-4-5", 300_000), 1_000_000);
         // 数据缺失: observed > 200k → 1M; 否则缺省 200k
         assert_eq!(
-            context_window_for("claude-future-model-xyz", None, 300_000),
+            context_window_for("claude-future-model-xyz", 300_000),
             1_000_000
         );
         assert_eq!(
-            context_window_for("claude-future-model-xyz", None, 150_000),
+            context_window_for("claude-future-model-xyz", 150_000),
             200_000
         );
     }

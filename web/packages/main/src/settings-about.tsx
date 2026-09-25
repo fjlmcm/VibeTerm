@@ -13,7 +13,7 @@ const REPO_URL = "https://github.com/fjlmcm/VibeTerm";
 const FEATURES: { group: string; items: string[] }[] = [
   {
     group: "features.group.agent",
-    items: ["features.agent.sniff", "features.agent.urgency", "features.agent.monitor"],
+    items: ["features.agent.sniff", "features.agent.monitor"],
   },
   {
     group: "features.group.terminal",

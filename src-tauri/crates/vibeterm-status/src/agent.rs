@@ -347,32 +347,6 @@ fn mentions_binary(hay: &str, kw: &str) -> bool {
     false
 }
 
-/// 调试版(按需 IPC 调用, 非周期轮询): 返回 (识别结果, 诊断信息)
-///   diagnostics 包含 pgid + 该 shell 的所有后裔进程 cmdlines (任意深度).
-///
-/// 关键设计:用 PPID 链追溯 descendants 而非 PGID. 原因:
-///   node / codex 等 agent CLI 启动时常用 setsid 创建自己的 process group,
-///   shell 的 pgid 里只有 zsh 自己, ps -g <pgid> 找不到 agent. 而 PPID 链
-///   能穿透 process group 边界, 找到任意嵌套深度的子进程.
-/// 进程表来源平台分支(unix: ps;Windows: sysinfo),匹配逻辑共用.
-pub fn detect_agent_with_diagnostics(shell_pid: u32) -> (Option<AgentKind>, Diagnostics) {
-    let cmdlines = ProcessTable::snapshot().descendant_commands(shell_pid);
-    #[cfg(unix)]
-    let pgid = get_pgid(shell_pid);
-    #[cfg(not(unix))]
-    let pgid: Option<u32> = None;
-    let detected = detect_agent_in_cmdlines(&cmdlines);
-    (
-        detected,
-        Diagnostics {
-            shell_pid,
-            pgid,
-            cmdlines,
-            note: String::new(),
-        },
-    )
-}
-
 /// 在后裔进程 cmdline 列表上跑识别(纯字符串逻辑,跨平台,单测友好)
 fn detect_agent_in_cmdlines(cmdlines: &[String]) -> Option<AgentKind> {
     for cmd in cmdlines {
@@ -409,29 +383,6 @@ fn detect_agent_in_cmdlines(cmdlines: &[String]) -> Option<AgentKind> {
         }
     }
     None
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-pub struct Diagnostics {
-    pub shell_pid: u32,
-    pub pgid: Option<u32>,
-    pub cmdlines: Vec<String>,
-    pub note: String,
-}
-
-#[cfg(unix)]
-fn get_pgid(pid: u32) -> Option<u32> {
-    let out = std::process::Command::new("ps")
-        .args(["-o", "pgid=", "-p", &pid.to_string()])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    String::from_utf8_lossy(&out.stdout)
-        .trim()
-        .parse::<u32>()
-        .ok()
 }
 
 /// 全进程表 (pid, ppid, cmdline) —— unix 走 ps 文本解析

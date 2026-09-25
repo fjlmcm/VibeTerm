@@ -45,7 +45,6 @@ _Her zamanki terminal özellikleri, artı ekranı dolduran yapay zekâ ajanları
 ### Ajanlar
 
 - **Bir ajanın ne yaptığını görür** — Çalışıyor, bekliyor, takıldı ya da bitti — yapılandırmana dokunmadan anlaşılır.
-- **Takılma algılama + aciliyet sıralaması** — Ekran ajanlarla mı dolu? Takılanlar ve seni bekleyenler en üste çıkar.
 - **Canlı kullanım** — Kalan bağlam, 5h/7d kota, yakma hızı, önbellek — hepsi tek barda.
 
 ### Terminal

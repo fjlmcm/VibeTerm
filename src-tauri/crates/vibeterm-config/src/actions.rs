@@ -15,7 +15,6 @@
 //! command = "claude -p 'review this diff'"
 //! mode = "current_terminal"           # current_terminal | new_task | insert
 //! shortcut = "Mod+Shift+R"            # 可选;Web 端按下时调 execute_action
-//! close_on_success = false            # 仅 new_task 模式可用(暂未实现)
 //! ```
 
 use serde::{Deserialize, Serialize};
@@ -47,8 +46,6 @@ pub struct ActionEntry {
     pub mode: ActionMode,
     #[serde(default)]
     pub shortcut: Option<String>,
-    #[serde(default)]
-    pub close_on_success: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, specta::Type)]
@@ -107,7 +104,6 @@ mod tests {
                     command: "npm test".into(),
                     mode: ActionMode::CurrentTerminal,
                     shortcut: Some("Mod+T".into()),
-                    close_on_success: false,
                 },
                 ActionEntry {
                     id: "a2".into(),
@@ -116,7 +112,6 @@ mod tests {
                     command: "claude -p 'review'".into(),
                     mode: ActionMode::NewTask,
                     shortcut: None,
-                    close_on_success: true,
                 },
             ],
         };
@@ -138,6 +133,5 @@ mod tests {
         "#;
         let f: ActionsFile = toml::from_str(s).unwrap();
         assert_eq!(f.actions[0].mode, ActionMode::CurrentTerminal);
-        assert!(!f.actions[0].close_on_success);
     }
 }

@@ -3,9 +3,10 @@ import { type Component, Show, createSignal, onMount } from "solid-js";
 import { Package, RefreshCw, Download, Check } from "lucide-solid";
 import { ipc, t } from "@vibeterm/ui-core";
 import { getVersion } from "@tauri-apps/api/app";
-import { check } from "@tauri-apps/plugin-updater";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import type { AppUpdateInfo } from "@vibeterm/ipc-types";
+
+const RELEASES_URL = "https://github.com/fjlmcm/VibeTerm/releases";
 
 const card = (): Record<string, string> => ({
   background: "var(--color-bg)",
@@ -49,48 +50,39 @@ export const UpdateTab: Component = () => {
   const [version, setVersion] = createSignal("");
 
   // ---- 软件更新 ----
+  // updater 插件 check():只拉 latest.json 比对版本(不上传、零遥测);null = 已是最新。
   const [appState, setAppState] = createSignal<"idle" | "checking" | "done" | "error">("idle");
-  const [appInfo, setAppInfo] = createSignal<AppUpdateInfo | null>(null);
+  const [update, setUpdate] = createSignal<Update | null>(null);
   const [appErr, setAppErr] = createSignal("");
-  // GitHub 限流(403/429)单独给"稍后重试"文案 —— 这种失败网络是通的,别误导用户查网络
-  const [appRateLimited, setAppRateLimited] = createSignal(false);
 
   const checkApp = async () => {
     setAppState("checking");
     setAppErr("");
-    setAppRateLimited(false);
     try {
-      setAppInfo(await ipc.checkAppUpdate());
+      setUpdate(await check());
       setAppState("done");
     } catch (e) {
-      const msg = ipc.formatIpcError(e);
-      // 后端约定:限流的 trace_id 带 ":rate_limited:" 标记(updates.rs)
-      setAppRateLimited(msg.includes(":rate_limited:"));
-      setAppErr(msg);
+      setAppErr(ipc.formatIpcError(e));
       setAppState("error");
     }
   };
 
   // ---- 应用内下载并安装(Sparkle 等价物)----
-  // 🔴 零侵入:check()/downloadAndInstall() 仅在此函数(用户点按钮)里调用,无启动期/后台自动触发。
+  // 🔴 零侵入:downloadAndInstall() 仅在此函数(用户点按钮)里调用,无启动期/后台自动触发。
   // updater 用 minisign 校验签名后原地更新;失败则回退到「打开下载页」。
   const [installState, setInstallState] =
     createSignal<"idle" | "downloading" | "installing" | "done" | "error">("idle");
   const [downloadPct, setDownloadPct] = createSignal(0);
 
   const downloadAndInstall = async () => {
+    const u = update();
+    if (!u) return;
     setInstallState("downloading");
     setDownloadPct(0);
     try {
-      const update = await check();
-      if (!update) {
-        // latest.json 缺失 / 未签名 / 版本不更新 → 当作"应用内安装不可用",回退打开下载页
-        setInstallState("error");
-        return;
-      }
       let total = 0;
       let downloaded = 0;
-      await update.downloadAndInstall((event) => {
+      await u.downloadAndInstall((event) => {
         switch (event.event) {
           case "Started":
             total = event.data.contentLength ?? 0;
@@ -178,9 +170,9 @@ export const UpdateTab: Component = () => {
           <RefreshCw size={13} /> {appState() === "checking" ? t("update.app.checking") : t("update.app.check")}
         </button>
 
-        <Show when={appState() === "done" && appInfo()}>
+        <Show when={appState() === "done"}>
           <Show
-            when={appInfo()!.has_update}
+            when={update()}
             fallback={
               <div style={{ "margin-top": "12px", "font-size": "13px", color: "var(--color-status-running, var(--color-accent))", display: "flex", "align-items": "center", gap: "6px" }}>
                 <Check size={14} /> {t("update.app.up_to_date")}
@@ -189,11 +181,11 @@ export const UpdateTab: Component = () => {
           >
             <div style={{ "margin-top": "14px", padding: "12px 14px", background: "var(--color-accent-subtle)", "border-radius": "8px", border: "1px solid var(--color-accent)" }}>
               <div style={{ "font-size": "13px", "font-weight": "600", color: "var(--color-text)" }}>
-                {t("update.app.new_version", { version: appInfo()!.latest ?? "" })}
+                {t("update.app.new_version", { version: update()!.version })}
               </div>
-              <Show when={appInfo()!.notes}>
+              <Show when={update()!.body}>
                 <pre style={{ margin: "8px 0 0 0", "font-size": "11px", color: "var(--color-text-2)", "white-space": "pre-wrap", "max-height": "160px", overflow: "auto", "font-family": "inherit" }}>
-                  {appInfo()!.notes}
+                  {update()!.body}
                 </pre>
               </Show>
               <div style={{ display: "flex", gap: "8px", "align-items": "center", "flex-wrap": "wrap", "margin-top": "10px" }}>
@@ -215,7 +207,7 @@ export const UpdateTab: Component = () => {
                 <button
                   data-testid="update-open-download"
                   style={btn(false)}
-                  onClick={() => appInfo()!.release_url && ipc.openExternal(appInfo()!.release_url!).catch(console.error)}
+                  onClick={() => ipc.openExternal(`${RELEASES_URL}/tag/v${update()!.version}`).catch(console.error)}
                 >
                   {t("update.app.open_download")}
                 </button>
@@ -247,7 +239,7 @@ export const UpdateTab: Component = () => {
 
         <Show when={appState() === "error"}>
           <div style={{ "margin-top": "12px", "font-size": "12px", color: "var(--color-status-waiting, #e5a23d)" }}>
-            {appRateLimited() ? t("update.app.rate_limited") : t("update.app.error")}
+            {t("update.app.error")}
             <Show when={appErr()}>
               <span style={{ color: "var(--color-text-2)", "margin-left": "6px", "font-family": "monospace", "font-size": "11px" }}>{appErr()}</span>
             </Show>

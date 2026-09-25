@@ -45,7 +45,6 @@ _Toutes les fonctions habituelles d'un terminal, plus la détection d'état et l
 ### Agents
 
 - **Voit ce que fait un agent** — En cours, en attente, bloqué ou terminé — déduit sans toucher à votre config.
-- **Détection de blocage + tri par urgence** — Écran rempli d'agents ? Les bloqués et ceux qui vous attendent remontent tout en haut.
 - **Usage en direct** — Contexte restant, quota 5h/7d, vitesse de consommation, cache — tout sur une seule barre.
 
 ### Terminal

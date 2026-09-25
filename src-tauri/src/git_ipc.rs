@@ -73,27 +73,12 @@ pub(crate) async fn git_list_branches(repo_path: String) -> IpcResult<Vec<String
 pub(crate) async fn git_add_worktree(
     repo_path: String,
     new_path: String,
-    spec: vibeterm_ipc::BranchSpecDto,
+    spec: vibeterm_git::BranchSpec,
 ) -> IpcResult<vibeterm_ipc::WorktreeRef> {
     let repo = git_repo_dir(&repo_path)?;
     let repo = repo.as_path();
     let new = std::path::Path::new(&new_path);
-    let bs = match spec {
-        vibeterm_ipc::BranchSpecDto::Existing { branch } => {
-            vibeterm_git::BranchSpec::Existing(branch)
-        }
-        vibeterm_ipc::BranchSpecDto::NewFromHead { branch } => {
-            vibeterm_git::BranchSpec::NewFromHead(branch)
-        }
-        vibeterm_ipc::BranchSpecDto::NewFromRef {
-            branch,
-            start_point,
-        } => vibeterm_git::BranchSpec::NewFromRef {
-            name: branch,
-            start_point,
-        },
-    };
-    let _entry = vibeterm_git::add_worktree(repo, new, bs)
+    let _entry = vibeterm_git::add_worktree(repo, new, spec)
         .await
         .map_err(map_git_err)?;
     build_worktree_ref(repo, new).await.map_err(map_git_err)

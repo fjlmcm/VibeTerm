@@ -49,8 +49,6 @@
   "features.group.productivity": "Flujo",
   "features.sniff.label": "Ve qué hace un agente",
   "features.sniff.desc": "En curso, esperando, atascado o listo — averiguado sin tocar tu config.",
-  "features.urgency.label": "Detección de atascos + orden por urgencia",
-  "features.urgency.desc": "¿Pantalla llena de agentes? Los atascados y los que te esperan se van arriba.",
   "features.monitor.label": "Uso en vivo",
   "features.monitor.desc": "Contexto restante, cuota 5h/7d, ritmo de gasto, caché — todo en una barra.",
   "features.split.label": "Divisiones + worktrees",

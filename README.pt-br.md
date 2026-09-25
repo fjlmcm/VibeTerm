@@ -45,7 +45,6 @@ _Todos os recursos comuns de terminal, mais percepção de estado e orquestraç�
 ### Agentes
 
 - **Vê o que um agente está fazendo** — Rodando, aguardando, travado ou pronto — descoberto sem tocar na sua config.
-- **Detecção de travamento + ordem por urgência** — Tela cheia de agentes? Os travados e os que te esperam sobem pro topo.
 - **Uso ao vivo** — Contexto restante, cota 5h/7d, velocidade de consumo, cache — tudo numa barra.
 
 ### Terminal

@@ -190,17 +190,12 @@ fn multiple_tasks_isolated_terminals() {
 }
 
 #[test]
-fn pin_rename_reorder_persistence_in_dto() {
+fn rename_reorder_persistence_in_dto() {
     let _cfg = isolated_config();
     let tasks = TaskRegistry::new();
     let t1 = tasks.create("a".into(), None, None).unwrap();
     let t2 = tasks.create("b".into(), None, None).unwrap();
     let t3 = tasks.create("c".into(), None, None).unwrap();
-
-    // Pin t2
-    tasks.pin(t2, true).unwrap();
-    assert!(tasks.task_dto(t2).unwrap().unwrap().pinned);
-    assert!(!tasks.task_dto(t1).unwrap().unwrap().pinned);
 
     // Rename t1
     tasks.rename(t1, "a-renamed".into()).unwrap();

@@ -25,7 +25,6 @@ mod agent_ipc;
 mod background;
 mod clipboard_files;
 mod config_ipc;
-mod events;
 mod git_ipc;
 mod menu;
 mod notify;
@@ -34,24 +33,21 @@ mod state;
 mod tasks_ipc;
 #[cfg(test)]
 mod ts_export;
-mod updates;
 mod window_ipc;
 
 // pub(crate) glob 重导出各模块项:main.rs 原有调用点 / generate_handler! 列表零改动,
-// 跨模块的 `crate::xxx` 路径(如 events.rs 用 crate::atomic_write)也经重导出继续成立。
+// 跨模块的 `crate::xxx` 路径也经重导出继续成立。
 pub(crate) use agent_ipc::*;
 pub(crate) use config_ipc::*;
-pub(crate) use events::*;
 pub(crate) use git_ipc::*;
 pub(crate) use menu::*;
 pub(crate) use notify::*;
 pub(crate) use pty_ipc::*;
 pub(crate) use state::*;
 pub(crate) use tasks_ipc::*;
-pub(crate) use updates::*;
 pub(crate) use window_ipc::*;
 
-/// 仓库主页(菜单 GitHub / Issues / 隐私说明链接的公共前缀;updates.rs 的发布 URL 同源)。
+/// 仓库主页(菜单 GitHub / Issues / 隐私说明链接的公共前缀)。
 const GH_REPO_URL: &str = "https://github.com/fjlmcm/VibeTerm";
 
 // ============================
@@ -200,13 +196,11 @@ fn main() {
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             // Terminal
-            start_pty,
             write_pty,
             resize_pty,
             close_pty,
             spawn_terminal_in_task,
             detach_terminal,
-            get_scrollback,
             terminal_size,
             paste_clipboard,
             write_clipboard_text,
@@ -218,7 +212,6 @@ fn main() {
             create_task,
             close_task,
             rename_task,
-            pin_task,
             reorder_tasks,
             set_active_task,
             set_task_split_tree,
@@ -254,7 +247,6 @@ fn main() {
             save_prompts,
             // Custom Actions
             get_actions,
-            save_actions,
             execute_action,
             // layout snapshot
             get_active_task,
@@ -268,7 +260,6 @@ fn main() {
             set_menu_lang,
             // AI CLI 检测
             detect_ai_clis,
-            debug_log,
             // Agent watch (v1+v2+v3) — Claude usage_cache + Claude session + Codex session
             get_claude_usage_cache,
             get_claude_session,
@@ -295,16 +286,10 @@ fn main() {
             save_statusline_config,
             // 打开外部 URL / 文件
             open_external,
-            // 软件版本检查
-            check_app_update,
         ])
         .setup(|app| {
             // agent 状态走纯嗅探(OSC 标题 spinner + 输出时序)+ 只读文件监听, 不再装/起任何
             // hook server, 零侵入: 默认不碰 ~/.claude / ~/.codex, 也不会被外部会话污染.
-
-            // G7 事件流:启动期预热 EventLog(在此同步线程做一次性文件截尾/打开),
-            // 避免首条 record_event 在 PTY 读线程 / tick 上触发同步 I/O.
-            let _ = EventLog::global();
 
             background::start_background_tasks(&app.handle().clone());
 

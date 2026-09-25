@@ -83,7 +83,7 @@ export const PromptPicker: Component<PromptPickerProps> = (props) => {
       ipc
         .detectAgentForTerminal(props.terminalId)
         .then((r) => {
-          setDetectedKind(r.agent_kind ? "agent" : "terminal");
+          setDetectedKind(r ? "agent" : "terminal");
         })
         .catch((e) => console.warn("[prompt-picker] detect agent failed", e));
     } else {

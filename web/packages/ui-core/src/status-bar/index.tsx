@@ -39,11 +39,11 @@ import {
   onStatusLineConfigChanged,
 } from "../ipc";
 import type {
-  ClaudeActiveBlock,
-  ClaudeUsageCache,
+  ActiveBlock,
+  UsageCache,
   ClaudeSession,
   CodexSnapshot,
-  GitStatusBrief,
+  WorktreeStatus,
   TaskDto,
   TerminalId,
   StatusLineFile,
@@ -115,13 +115,13 @@ const SLOW_REFRESH_MS = 30000;
 
 export const StatusBar: Component<StatusBarProps> = (props) => {
   // ---- 数据信号 ----
-  const [cache, setCache] = createSignal<ClaudeUsageCache | null>(null);
+  const [cache, setCache] = createSignal<UsageCache | null>(null);
   const [session, setSession] = createSignal<ClaudeSession | null>(null);
-  const [block, setBlock] = createSignal<ClaudeActiveBlock | null>(null);
+  const [block, setBlock] = createSignal<ActiveBlock | null>(null);
   const [codex, setCodex] = createSignal<CodexSnapshot | null>(null);
-  const [codexBlock, setCodexBlock] = createSignal<ClaudeActiveBlock | null>(null);
+  const [codexBlock, setCodexBlock] = createSignal<ActiveBlock | null>(null);
   const [cwd, setCwd] = createSignal<string | null>(null);
-  const [git, setGit] = createSignal<GitStatusBrief | null>(null);
+  const [git, setGit] = createSignal<WorktreeStatus | null>(null);
   const [stash, setStash] = createSignal<number>(0);
   const [tokensToday, setTokensToday] = createSignal<number>(0);
   const [claudePlan, setClaudePlan] = createSignal<string | null>(null);
@@ -197,7 +197,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
       }
       const det = await detectAgentForTerminal(tid);
       if (gen !== currentGen) return;
-      setAgentKind(det.agent_kind ?? null);
+      setAgentKind(det);
       await refreshSession(gen, c);
     } catch (e) {
       console.warn("[status-bar] fast refresh failed", e);

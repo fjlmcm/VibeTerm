@@ -49,8 +49,6 @@
   "features.group.productivity": "Workflow",
   "features.sniff.label": "Voit ce que fait un agent",
   "features.sniff.desc": "En cours, en attente, bloqué ou terminé — déduit sans toucher à votre config.",
-  "features.urgency.label": "Détection de blocage + tri par urgence",
-  "features.urgency.desc": "Écran rempli d'agents ? Les bloqués et ceux qui vous attendent remontent tout en haut.",
   "features.monitor.label": "Usage en direct",
   "features.monitor.desc": "Contexte restant, quota 5h/7d, vitesse de consommation, cache — tout sur une seule barre.",
   "features.split.label": "Divisions + worktrees",

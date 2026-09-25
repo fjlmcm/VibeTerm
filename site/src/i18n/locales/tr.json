@@ -49,8 +49,6 @@
   "features.group.productivity": "Akış",
   "features.sniff.label": "Bir ajanın ne yaptığını görür",
   "features.sniff.desc": "Çalışıyor, bekliyor, takıldı ya da bitti — yapılandırmana dokunmadan anlaşılır.",
-  "features.urgency.label": "Takılma algılama + aciliyet sıralaması",
-  "features.urgency.desc": "Ekran ajanlarla mı dolu? Takılanlar ve seni bekleyenler en üste çıkar.",
   "features.monitor.label": "Canlı kullanım",
   "features.monitor.desc": "Kalan bağlam, 5h/7d kota, yakma hızı, önbellek — hepsi tek barda.",
   "features.split.label": "Bölmeler + worktree",

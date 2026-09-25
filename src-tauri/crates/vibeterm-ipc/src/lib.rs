@@ -1,7 +1,7 @@
 //! IPC schema
 //!
 //! 本 crate 只定义跨 Rust/Web 的数据结构与统一错误类型,不依赖任何业务 crate。
-//! Web 侧(packages/ipc-types)对应类型当前**首期手写**,**未来用 specta 自动生成**。
+//! Web 侧(packages/ipc-types/src/generated.ts)由 specta 自动生成(见 src/ts_export.rs)。
 
 use serde::{Deserialize, Serialize};
 
@@ -15,7 +15,6 @@ pub struct TaskDto {
     pub id: TaskId,
     pub name: String,
     pub cwd: Option<String>,
-    pub pinned: bool,
     pub status: TaskStatus,
     pub terminal_ids: Vec<TerminalId>,
     /// 任务在哪显示("main" / "floating-<label>" / "nowhere")
@@ -37,10 +36,6 @@ pub struct TaskDto {
     /// 通知静音. true 时该 task 不弹系统通知 (持久化到 tasks.json).
     #[serde(default)]
     pub notify_muted: bool,
-    /// hook: agent 当前 permission mode (claude/codex hook 携带).
-    /// "default" | "acceptEdits" | "plan" | "dontAsk" | "bypassPermissions". None = 未知.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub permission_mode: Option<String>,
     /// agent 当前 reasoning effort 等级 (low/medium/high/xhigh/max). None = 未知.
     /// 来源:嗅探 claude 工作动画 "thinking with <effort> effort"(零侵入)。
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -131,15 +126,6 @@ pub struct CreateTaskOpts {
     pub worktree: Option<WorktreeRef>,
 }
 
-/// `git worktree add` 的分支策略(IPC 层 mirror,与 vibeterm-git::BranchSpec 对齐)
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-#[serde(tag = "mode", rename_all = "snake_case")]
-pub enum BranchSpecDto {
-    Existing { branch: String },
-    NewFromHead { branch: String },
-    NewFromRef { branch: String, start_point: String },
-}
-
 // ---- Spawn ----
 #[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
 pub struct SpawnPtyOpts {
@@ -174,13 +160,6 @@ pub enum IpcError {
 
     #[error("pty spawn failed: {reason}")]
     PtySpawnFailed { reason: String },
-
-    #[error("config invalid: {path}:{line} — {message}")]
-    ConfigInvalid {
-        path: String,
-        line: u32,
-        message: String,
-    },
 
     /// panic 在 IPC handler 内被捕获 / 未分类错误。trace_id 关联日志。
     #[error("internal error (trace_id={trace_id})")]

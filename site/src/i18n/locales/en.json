@@ -49,8 +49,6 @@
   "features.group.productivity": "Workflow",
   "features.sniff.label": "Sees what an agent's doing",
   "features.sniff.desc": "Working, waiting, stalled, or done — figured out without touching your config.",
-  "features.urgency.label": "Stall detection + urgency sort",
-  "features.urgency.desc": "Screen full of agents? The stuck ones and the ones waiting on you go to the top.",
   "features.monitor.label": "Live usage",
   "features.monitor.desc": "Context left, 5h/7d quota, burn rate, cache — all on one bar.",
   "features.split.label": "Splits + worktrees",

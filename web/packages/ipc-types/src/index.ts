@@ -3,44 +3,15 @@
 // 自 specta 接入起,镜像主体由 Rust 类型**自动生成**(./generated.ts,
 // src-tauri 下 `VIBETERM_UPDATE_TS=1 cargo test --bin vibeterm ts_mirror` 重新生成;
 // CI 上同名测试做逐字节比对,Rust 类型改了没再生成会直接红)。
-// 本文件只保留:纯前端别名 / 事件 payload(非 Rust 类型)/ 历史命名的兼容别名。
+// 本文件只保留:纯前端 ID 别名 / 事件 payload(非 Rust 类型)/ 小工具函数。
 
 export * from "./generated";
-
-import type {
-  ActiveBlock,
-  BranchSpecDto,
-  ExtraUsage,
-  QuotaWindow,
-  RateLimit,
-  SplitNode,
-  UsageCache,
-  WorktreeStatus,
-} from "./generated";
-
-// ---- 历史命名兼容别名(前端调用点零改动) ----
-export type SplitTreeNode = SplitNode;
-export type BranchSpec = BranchSpecDto;
-export type ClaudeUsageCache = UsageCache;
-export type ClaudeQuotaWindow = QuotaWindow;
-export type ClaudeExtraUsage = ExtraUsage;
-export type ClaudeActiveBlock = ActiveBlock;
-export type CodexRateLimit = RateLimit;
-export type GitStatusBrief = WorktreeStatus;
 
 // ---- 纯手写部分(非 Rust 镜像) ----
 // ---- IDs ----
 export type TerminalId = number;
 
 export type TaskId = number;
-
-/** hook:claude/codex 的 permission_mode 字段值 */
-export type PermissionMode =
-  | "default"
-  | "acceptEdits"
-  | "plan"
-  | "dontAsk"
-  | "bypassPermissions";
 
 /** 系统通知权限状态 — Tauri NotificationPermissionState 序列化为小写 string */
 export type NotifyPermissionState = "granted" | "denied" | "default";

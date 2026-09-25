@@ -8,6 +8,7 @@ import { render } from "solid-js/web";
 
 import { Terminal, TaskList, Titlebar, theme as themeMod, ipc, t, SplitView, singleLeaf, splitLeaf, removeLeaf, newSlotId, bumpSlotIdAtLeast, collectSlots, setRatiosAt, initKeybindings, createKeybindingDispatcher, focusTerminal, rightmostBottomSlot, StatusBar, playNotifySound, shouldConfirmCloseTask, loadSavedScrollback, startScrollbackAutosave, modKeyLabel, isWindowsPlatform, type SplitNode } from "@vibeterm/ui-core";
 import { Plus, X, Settings as SettingsIcon, SplitSquareHorizontal, SplitSquareVertical } from "lucide-solid";
+import { check as checkUpdate } from "@tauri-apps/plugin-updater";
 import type { TaskDto, Theme, LayoutTemplate } from "@vibeterm/ipc-types";
 import { CommandPalette } from "./command-palette";
 import { DiffViewer } from "./diff-viewer";
@@ -193,13 +194,6 @@ function App() {
 
   // 启动:加载主题 + 任务 + 监听变化
   onMount(async () => {
-    // 旧版本(画布视图)残留的 localStorage 键,一次性清理。
-    try {
-      localStorage.removeItem("vibeterm.view_mode");
-      localStorage.removeItem("vibeterm.canvas.cards");
-    } catch {
-      /* private mode — 忽略 */
-    }
     // G5:先载入 scrollback 快照(必须早于任何终端 mount 调 takeScrollback),再起自动保存。
     await loadSavedScrollback();
     startScrollbackAutosave();
@@ -210,12 +204,11 @@ function App() {
       themeMod.applyShellTheme(th);
       setCurrentTheme(th);
 
-      // 自动检查更新(默认开,可在设置关闭)。仅比对版本号:只读、不上传、零遥测、不自动下载安装。
-      // 发现新版只在设置按钮显示角标;下载安装永远是用户手动点 + 运行中二次确认。
+      // 自动检查更新(可在设置关闭)。updater 插件 check() 只拉 latest.json 比对版本:
+      // 不上传、零遥测、不自动下载安装。发现新版只在设置按钮显示角标;安装永远是用户手动点。
       if (cfg.auto_check_updates) {
-        ipc
-          .checkAppUpdate()
-          .then((info) => setUpdateAvailable(!!info.has_update))
+        checkUpdate()
+          .then((u) => setUpdateAvailable(u !== null))
           .catch((e) => console.error("[main] auto update check failed", e));
       }
     } catch (e) {

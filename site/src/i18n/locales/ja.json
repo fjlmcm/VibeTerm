@@ -49,8 +49,6 @@
   "features.group.productivity": "効率",
   "features.sniff.label": "agent が何してるか見える",
   "features.sniff.desc": "実行中、入力待ち、停止、完了。設定に触らず判別します。",
-  "features.urgency.label": "停止検出 + 緊急度ソート",
-  "features.urgency.desc": "画面いっぱいの agent でも、停止したものと入力待ちのものが上に来ます。",
   "features.monitor.label": "使用量をリアルタイムで",
   "features.monitor.desc": "コンテキスト残量、5h/7d クォータ、消費ペース、キャッシュ。1 本のバーに。",
   "features.split.label": "分割 + worktree",

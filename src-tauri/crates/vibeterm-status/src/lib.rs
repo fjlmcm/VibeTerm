@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use vibeterm_ipc::TaskStatus;
 
 pub mod agent;
-pub use agent::{detect_agent_with_diagnostics, AgentKind, Diagnostics, ProcessTable};
+pub use agent::{AgentKind, ProcessTable};
 
 const RING_SIZE: usize = 16 * 1024; // 16KB
 const IDLE_TIMEOUT_MS: u64 = 800; // N 秒无输出 → idle
@@ -41,12 +41,8 @@ pub struct StatusDetector {
     osc_window_start: Instant,
     agent_rules: Option<&'static agent::AgentDef>,
     /// 跨 chunk OSC 序列缓存(上次 chunk 末尾的不完整 `\x1b]<id>;<kind>;<payload>` 片段)
-    /// 上限 OSC_CARRY_MAX 字节,足够承载 cwd / commandline 等长 payload
+    /// 上限 OSC_CARRY_MAX 字节,足够承载 cwd 等长 payload
     osc_carry: Vec<u8>,
-    /// OSC 133/633 D 携带的退出码(最近一次 command 结束)
-    last_exit_code: Option<i32>,
-    /// OSC 633 E 携带的命令行文本(VSCode shell integration)
-    last_command_line: Option<String>,
     /// OSC 633 P;Cwd= 携带的当前工作目录
     current_cwd: Option<String>,
     /// 当 current == Idle 时, 标记这个 Idle 是否由 OSC 133/633 D 触发(真完成)
@@ -102,8 +98,6 @@ impl StatusDetector {
             osc_window_start: Instant::now(),
             agent_rules: pick_rules(command),
             osc_carry: Vec::new(),
-            last_exit_code: None,
-            last_command_line: None,
             current_cwd: None,
             idle_finalized_by_osc: false,
             stall_enabled: false,
@@ -172,16 +166,6 @@ impl StatusDetector {
     /// 最近从 claude 工作动画嗅探到的 reasoning effort 等级(high/xhigh/max…). 无则 None.
     pub fn last_effort(&self) -> Option<&str> {
         self.last_effort.as_deref()
-    }
-
-    /// 最近一次 OSC 133/633;D 携带的退出码(无则 None)
-    pub fn last_exit_code(&self) -> Option<i32> {
-        self.last_exit_code
-    }
-
-    /// 最近一次 OSC 633;E 携带的命令行(VSCode shell integration)
-    pub fn last_command_line(&self) -> Option<&str> {
-        self.last_command_line.as_deref()
     }
 
     /// 最近一次 OSC 633;P;Cwd= 上报的工作目录
@@ -330,10 +314,8 @@ impl StatusDetector {
     /// OSC 133/633 完整 parser
     /// 形如 `\x1b]<133|633>;<kind>[;<payload>]<ST>` ,ST = `\x1b\\` 或 BEL `\x07`。
     ///
-    /// 在识别 type byte 之外,**捕获 payload**:
-    ///   - `133;D[;<exit>]` / `633;D[;<exit>]` → `last_exit_code`
-    ///   - `633;E;<commandline>` → `last_command_line`
-    ///   - `633;P;Cwd=<path>` → `current_cwd`
+    /// 在识别 type byte 之外,**捕获 payload**:`633;P;Cwd=<path>` → `current_cwd`。
+    /// `133;D[;<exit>]` 的退出码不使用,仅识别 kind。
     ///
     /// 支持跨 chunk 重组:本次未找到终结符的完整 OSC 头会原样进 `osc_carry`,
     /// 下次 chunk 头部拼接后再解析。
@@ -513,22 +495,6 @@ impl StatusDetector {
                 self.idle_finalized_by_osc = true;
                 // 同上: 命令结束转 Idle 时清空 ring, 防残留确认提示误命中.
                 self.ring.clear();
-                // payload 形如 `0` 或 `0;...`,取首字段为退出码
-                if !payload.is_empty() {
-                    if let Ok(s) = std::str::from_utf8(payload) {
-                        let first = s.split(';').next().unwrap_or("").trim();
-                        if let Ok(code) = first.parse::<i32>() {
-                            self.last_exit_code = Some(code);
-                        }
-                    }
-                }
-                true
-            }
-            b'E' if is_633 => {
-                // 633;E;<commandline>
-                if let Ok(s) = std::str::from_utf8(payload) {
-                    self.last_command_line = Some(s.to_owned());
-                }
                 true
             }
             b'P' if is_633 => {
@@ -1007,24 +973,6 @@ mod tests {
         assert!(!d.idle_by_osc(), "新命令后 timeout 不应继承上次 OSC D 标记");
     }
 
-    /// OSC 133;D 退出码 payload 被捕获
-    #[test]
-    fn osc_133_d_captures_exit_code() {
-        let mut d = StatusDetector::new("zsh");
-        let _ = d.feed(b"\x1b]133;D;42\x1b\\");
-        assert_eq!(d.current(), TaskStatus::Idle);
-        assert_eq!(d.last_exit_code(), Some(42));
-    }
-
-    /// OSC 133;D 无 payload 也合法,不污染 exit_code
-    #[test]
-    fn osc_133_d_without_payload_leaves_exit_code_none() {
-        let mut d = StatusDetector::new("zsh");
-        let _ = d.feed(b"\x1b]133;D\x1b\\");
-        assert_eq!(d.current(), TaskStatus::Idle);
-        assert_eq!(d.last_exit_code(), None);
-    }
-
     /// OSC 633;P;Cwd= 捕获 cwd
     #[test]
     fn osc_633_p_cwd_captured() {
@@ -1033,21 +981,12 @@ mod tests {
         assert_eq!(d.current_cwd(), Some("/Users/demo/dev/VibeTerm"));
     }
 
-    /// OSC 633;E 捕获命令行
-    #[test]
-    fn osc_633_e_captures_commandline() {
-        let mut d = StatusDetector::new("zsh");
-        let _ = d.feed(b"\x1b]633;E;ls -la /tmp\x1b\\");
-        assert_eq!(d.last_command_line(), Some("ls -la /tmp"));
-    }
-
     /// BEL 终结符也支持(替代 ST)
     #[test]
     fn osc_terminated_by_bel() {
         let mut d = StatusDetector::new("zsh");
         let _ = d.feed(b"\x1b]133;D;7\x07");
         assert_eq!(d.current(), TaskStatus::Idle);
-        assert_eq!(d.last_exit_code(), Some(7));
     }
 
     /// 跨 chunk 携带 cwd payload(carry 容量足够)
@@ -1058,15 +997,6 @@ mod tests {
         assert_eq!(d.current_cwd(), None, "未见 ST,不应过早 commit");
         let _ = d.feed(b"workspace\x1b\\");
         assert_eq!(d.current_cwd(), Some("/Users/demo/workspace"));
-    }
-
-    /// 正常输出后跟 OSC,exit_code 仅被 D kind 触发
-    #[test]
-    fn osc_133_c_does_not_set_exit_code() {
-        let mut d = StatusDetector::new("zsh");
-        let _ = d.feed(b"\x1b]133;C\x1b\\");
-        assert_eq!(d.current(), TaskStatus::Running);
-        assert_eq!(d.last_exit_code(), None);
     }
 
     // ---- OSC 0/2 标题 spinner 状态信号(claude/codex 实测) ----

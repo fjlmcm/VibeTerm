@@ -43,24 +43,14 @@ version rule in `claude/models.rs` — no external model table is bundled or fet
 
 ---
 
-## ureq
-
-App-version checks use **ureq** for synchronous HTTPS GET requests to GitHub.
-
-- Project: https://github.com/algesten/ureq
-- License: MIT OR Apache-2.0
-
----
-
 ## Network
 
 VibeTerm checks for software updates from **Settings → Update**, and at startup
 when automatic update checks are enabled. Version checks read these endpoints:
 
 - `https://github.com/fjlmcm/VibeTerm/releases/latest/download/latest.json` — latest app version
-- `https://api.github.com/repos/fjlmcm/VibeTerm/releases/latest` — release notes when an update is available
 
-These checks use plain `GET`s with a `User-Agent: VibeTerm` header. Downloading and
+These checks go through tauri-plugin-updater (a plain `GET`; the manifest is signature-verified). Downloading and
 installing a signed update requires a user action. No telemetry or user data is
 uploaded, and there is no background polling or automatic installation.
 Agent configuration and session files are only read locally; VibeTerm does not

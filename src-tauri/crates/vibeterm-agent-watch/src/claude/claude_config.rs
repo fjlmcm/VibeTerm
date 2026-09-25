@@ -1,15 +1,6 @@
-//! 读 `~/.claude.json` — Claude Code CLI 全局 state 文件.
+//! 读 `~/.claude.json` — Claude Code CLI 全局 state 文件(只读).
 //!
-//! 用途: 确定性识别某个 project 是否启用了 1M context (`[1m]` 变体).
-//! 关键字段 (实测):
-//!   - `sonnet1m45MigrationComplete: bool`  — 全局开关, 帐号开通了 1M Sonnet
-//!   - `projects.<cwd>.lastModelUsage`      — 该 project 累计的 model usage,
-//!     key 形如 `"claude-opus-4-7"` 或 `"claude-opus-4-7[1m]"`.
-//!     带 `[1m]` 后缀的 key 出现过 → 该 project 跑过 1M 变体
-//!
-//! 注意: `.jsonl` 文件里的 `message.model` 永远是裸 model id, 不带 `[1m]`.
-//! 业界共识 ([1m] 后缀只出现在 cmdline / .claude.json / statusline hook),
-//! 见 ccusage / claude-hud / orbit / forge 等开源项目的实现.
+//! 用途: 解析用户订阅 plan 显示名(`plan_label`),数据来自 `oauthAccount`.
 
 use std::path::PathBuf;
 
@@ -37,12 +28,6 @@ fn read_config() -> Option<serde_json::Value> {
     let bytes = std::fs::read(&path).ok()?;
     serde_json::from_slice(&bytes).ok()
 }
-
-// 历史移除: `is_1m_variant_recorded` / `sonnet_1m_enabled` —
-// 用 `~/.claude.json.projects[cwd].lastModelUsage` keys 含 `<model>[1m]`
-// 推断 1M 是**错的**: 该字段是历史累积记录, 不反映当前 session 的 model 状态.
-// 用户在该 cwd 用过 1M 后, 切回 200k, 这个 key 仍然存在 → 误判.
-// 现在统一在 `project::context_window_for` 用 GA 1M model prefix 列表判断 (跟 openclaw 对齐).
 
 /// 解析用户 Claude 订阅 plan, 返回简短显示名 (例如 `Max 20x` / `Pro` / `Free`).
 /// 数据来自 `~/.claude.json.oauthAccount.{organizationType, organizationRateLimitTier}`.

@@ -8,7 +8,6 @@ use vibeterm_config::NotifyFile;
 use vibeterm_core::TaskRegistry;
 use vibeterm_ipc::{IpcError, IpcResult, TaskStatus, TerminalId};
 
-use crate::events::record_event;
 use crate::{
     emit_tasks_changed, main_window_focused, AppState, NotifySoundData, AGENT_COMPLETED_COOLDOWN,
     AGENT_COMPLETION_OUTPUT_WINDOW_MS,
@@ -261,7 +260,6 @@ pub(crate) fn poll_agent_turn_for_terminal(
             "agent_terminal_completed",
             serde_json::json!({ "task_id": task_id, "terminal_id": term_id }),
         );
-        record_event("agent_completed", task_id, Some(term_id), None);
         let last = tasks
             .task_dto(task_id)
             .ok()
@@ -423,7 +421,6 @@ pub(crate) fn notify_status_transition(
                 "agent_terminal_completed",
                 serde_json::json!({ "task_id": task_id, "terminal_id": terminal_id }),
             );
-            record_event("agent_completed", task_id, Some(terminal_id), None);
             let last = app
                 .try_state::<AppState>()
                 .and_then(|s| {
@@ -726,17 +723,6 @@ pub(crate) fn sound_is_file_path(s: &str) -> bool {
         || drive_abs
 }
 
-/// 把 `~/...`(或 Windows 习惯的 `~\...`)展开到 home, 其它路径原样.
-/// 不读 $HOME 环境变量 —— Windows 默认没有, dirs::home_dir() 两边都对.
-pub(crate) fn expand_tilde(s: &str) -> std::path::PathBuf {
-    if let Some(rest) = s.strip_prefix("~/").or_else(|| s.strip_prefix("~\\")) {
-        if let Some(home) = dirs::home_dir() {
-            return home.join(rest);
-        }
-    }
-    std::path::PathBuf::from(s)
-}
-
 /// 把 NotifyPrefs.sound 字段解析为可读的本地音频文件.
 /// 返回 None 表示走系统默认(空字符串 / "default" / 没匹配到任何声音文件).
 ///
@@ -751,7 +737,7 @@ pub(crate) fn resolve_sound_to_path(app: &AppHandle, sound: &str) -> Option<std:
         return None;
     }
     if sound_is_file_path(s) {
-        let p = expand_tilde(s);
+        let p = vibeterm_config::expand_user_path(s);
         if !p.is_file() {
             return None;
         }
@@ -1013,17 +999,5 @@ mod tests {
         assert!(!sound_is_file_path("default"));
         assert!(!sound_is_file_path(""));
         assert!(!sound_is_file_path("C:")); // 裸盘符不算
-    }
-
-    /// 波浪号展开:`~/` 与 `~\` 都展开到 home;非波浪号原样
-    #[test]
-    fn expand_tilde_uses_home_dir() {
-        let home = dirs::home_dir().expect("home dir");
-        assert_eq!(expand_tilde("~/x/y.mp3"), home.join("x/y.mp3"));
-        assert_eq!(expand_tilde("~\\x\\y.wav"), home.join("x\\y.wav"));
-        assert_eq!(
-            expand_tilde("/abs/p.mp3"),
-            std::path::PathBuf::from("/abs/p.mp3")
-        );
     }
 }

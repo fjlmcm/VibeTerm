@@ -379,11 +379,6 @@ impl Terminal {
         }
     }
 
-    /// ring buffer 当前字节数(不复制内容)。
-    pub fn scrollback_len(&self) -> usize {
-        self.scrollback.lock().map(|sb| sb.len()).unwrap_or(0)
-    }
-
     /// 写字节到 PTY stdin。并发安全(内部 Mutex)。
     pub fn write(&self, data: &[u8]) -> Result<(), PtyError> {
         let mut w = self

@@ -33,7 +33,7 @@ python3 scripts/gen-readme.py                # ⑤ 仅当改了官网 i18n 文�
 
 ## 2. 版本号(何时 bump)
 
-权威源 `src-tauri/tauri.conf.json`,`scripts/bump-version.py` 一处改、lockstep 同步 6 个 package.json + Cargo workspace。
+权威源 `src-tauri/tauri.conf.json`,`scripts/bump-version.py` 一处改、同步 Cargo workspace 与官网 site.ts(私有 package.json 不再带版本)。
 
 ```bash
 python3 scripts/bump-version.py            # patch  x.y.z → x.y.(z+1)

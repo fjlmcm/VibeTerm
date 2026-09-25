@@ -1,6 +1,6 @@
 # CI — PR + main 推送时跑
 #
-# - lint           :typecheck + eslint + cargo fmt --check + clippy -D warnings
+# - lint           :typecheck + eslint + cargo fmt --check + ts_mirror + clippy -D warnings
 # - test           :cargo test 含集成测试(子 crate,不链 tauri runtime)
 # - bench-smoke    :criterion --quick,防 perf 回归
 # - playwright-web :ubuntu,vite dev server(playwright webServer 自动拉起)+ chromium,跑 7 用例
@@ -42,6 +42,9 @@ jobs:
       - name: cargo fmt
         working-directory: src-tauri
         run: cargo fmt --all -- --check
+      - name: ts 镜像逐字节比对(generated.ts 与 Rust IPC 类型一致)
+        working-directory: src-tauri
+        run: cargo test --bin vibeterm ts_mirror
       - name: cargo clippy
         working-directory: src-tauri
         run: cargo clippy --workspace --all-targets -- -D warnings
@@ -130,11 +133,8 @@ jobs:
           path: .smoke/
 
   build-smoke:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+    # 只跑 windows:macOS 的 cargo check + vite build 被 app-smoke 的完整 tauri build 严格覆盖
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

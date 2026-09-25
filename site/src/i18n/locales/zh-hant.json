@@ -49,8 +49,6 @@
   "features.group.productivity": "效率",
   "features.sniff.label": "看出 agent 在幹嘛",
   "features.sniff.desc": "在跑、等輸入、卡住、跑完 —— 不碰你的設定,直接認出來。",
-  "features.urgency.label": "卡住偵測 + 緊急排序",
-  "features.urgency.desc": "一螢幕 agent,卡住的和等你的自動排最前。",
   "features.monitor.label": "用量即時看",
   "features.monitor.desc": "上下文用了多少、5h/7d 額度、燒得多快、快取,一螢幕看完。",
   "features.split.label": "分割 + worktree",

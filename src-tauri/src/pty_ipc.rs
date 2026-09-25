@@ -13,25 +13,14 @@ use vibeterm_pty::{ChunkSink, ExitInfo, SpawnOpts};
 use vibeterm_status::StatusDetector;
 
 use crate::clipboard_files;
-use crate::events::record_event;
 use crate::{
-    atomic_write, emit_tasks_changed, expand_and_validate_cwd, notify_status_transition,
-    refresh_dock_badge, AppState,
+    emit_tasks_changed, expand_and_validate_cwd, notify_status_transition, refresh_dock_badge,
+    AppState,
 };
 
 // ============================
 // IPC commands — Terminal
 // ============================
-
-#[tauri::command]
-pub(crate) async fn start_pty(
-    opts: SpawnPtyOpts,
-    channel: Channel<Vec<u8>>,
-    state: tauri::State<'_, AppState>,
-    app: AppHandle,
-) -> IpcResult<SpawnPtyResult> {
-    spawn_inner(opts, channel, None, &state, &app)
-}
 
 // 在指定 task 下 spawn(可选 slot_id 做幂等)
 #[tauri::command]
@@ -330,7 +319,7 @@ pub(crate) async fn save_scrollback(entries: Vec<ScrollbackEntry>) -> IpcResult<
         })
         .collect();
     let json = serde_json::to_vec(&map).unwrap_or_default();
-    let _ = atomic_write(&path, &json);
+    let _ = vibeterm_config::atomic_write(&path, &json);
     Ok(())
 }
 
@@ -409,12 +398,6 @@ impl ChunkSink for LazyChannelSink {
                     let _ = self.app.emit(
                         "task_status_changed",
                         serde_json::json!({"task_id": task_id, "status": s}),
-                    );
-                    record_event(
-                        "status_changed",
-                        task_id,
-                        Some(id),
-                        serde_json::to_value(s).ok(),
                     );
                     tasks_dirty = true;
                     notify_status_transition(
@@ -740,23 +723,6 @@ pub(crate) async fn write_clipboard_text(app: AppHandle, text: String) -> IpcRes
         })
 }
 
-// 读 scrollback 快照(独立查询,不订阅;给搜索/导出/调试用)
-#[tauri::command]
-pub(crate) async fn get_scrollback(
-    id: TerminalId,
-    state: tauri::State<'_, AppState>,
-) -> IpcResult<Vec<u8>> {
-    state.terminals.scrollback(id).map_err(|e| match e {
-        vibeterm_core::TerminalRegistryError::NotFound(id) => IpcError::NotFound {
-            resource: "terminal".into(),
-            id: id.to_string(),
-        },
-        other => IpcError::Unknown {
-            trace_id: format!("get_scrollback:{other}"),
-        },
-    })
-}
-
 // 读 PTY 当前生效尺寸 (rows, cols)。前端在视图变可见时用它判断 PTY 是否被别的视图
 // (浮窗)改过尺寸 → 不一致说明隐藏期按别的宽度消费了 TUI 重绘、buffer 已污染,需清屏重绘。
 #[tauri::command]
@@ -913,49 +879,5 @@ pub(crate) async fn get_terminal_cwd(
     terminal_id: TerminalId,
     state: tauri::State<'_, AppState>,
 ) -> IpcResult<Option<String>> {
-    // 路径 1: OSC 633
-    if let Ok(map) = state.status_detectors.lock() {
-        if let Some(det) = map.get(&terminal_id) {
-            if let Ok(det) = det.lock() {
-                if let Some(cwd) = det.current_cwd() {
-                    return Ok(Some(cwd.to_string()));
-                }
-            }
-        }
-    }
-    // 路径 2: 内核 lsof — 找 PTY 进程的最深后裔 (跑着的命令), 没后裔就用 shell 自己
-    let Some(shell_pid) = state.terminals.pid_of(terminal_id) else {
-        return Ok(None);
-    };
-    // 嗅探的 cmdlines 副产物里只有命令字符串, 不带 pid; 这里简单点直接用 shell_pid 的 cwd.
-    // shell 的 cwd 在用户 `cd` 后会更新, 通常就是 prompt 上下文.
-    Ok(kernel_cwd_of(shell_pid))
-}
-
-/// 调试用 — 把前端 console 信息追加到 <temp_dir>/vibeterm-tasklist-debug.log,
-/// 方便从主机直接 tail 文件诊断 webview 行为。
-/// 仅 debug 构建落盘:temp 世界可读 + 写任意前端内容, release 下为 no-op.
-#[tauri::command]
-pub(crate) async fn debug_log(msg: String) -> IpcResult<()> {
-    #[cfg(debug_assertions)]
-    {
-        use std::io::Write;
-        let path = std::env::temp_dir().join("vibeterm-tasklist-debug.log");
-        let mut f = match std::fs::OpenOptions::new()
-            .append(true)
-            .create(true)
-            .open(path)
-        {
-            Ok(f) => f,
-            Err(_) => return Ok(()),
-        };
-        let ts = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0);
-        let _ = writeln!(f, "{ts} {msg}");
-    }
-    #[cfg(not(debug_assertions))]
-    let _ = msg;
-    Ok(())
+    Ok(terminal_cwd_for(&state, terminal_id))
 }

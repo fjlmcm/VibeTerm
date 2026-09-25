@@ -45,7 +45,6 @@ _Đủ các tính năng terminal thường thấy, cộng thêm nhận biết tr
 ### Agent
 
 - **Thấy agent đang làm gì** — Đang chạy, đang chờ, kẹt hay xong — nhận ra mà không đụng cấu hình của bạn.
-- **Phát hiện kẹt + sắp xếp theo độ gấp** — Màn hình đầy agent? Cái kẹt và cái đang đợi bạn được đẩy lên đầu.
 - **Mức dùng thời gian thực** — Ngữ cảnh còn lại, hạn mức 5h/7d, tốc độ tiêu, cache — tất cả trên một thanh.
 
 ### Terminal

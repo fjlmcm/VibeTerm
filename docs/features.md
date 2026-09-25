@@ -34,15 +34,6 @@ split = "h"                   # 在上一个 pane 右侧劈开
 cwd = "packages/api"         # 该 pane 单独 cwd(命令前自动 cd)
 ```
 
-## 事件流 `events.jsonl`
-
-task 状态变更 / agent 完成会 append 到配置目录的 `events.jsonl`(append-only,超限自动截尾),外部脚本可订阅:
-
-```bash
-tail -f "~/Library/Application Support/VibeTerm/events.jsonl"
-# 每行: {"seq":N,"ts_ms":..,"kind":"status_changed"|"agent_completed","task_id":..,"terminal_id":..,"status":..}
-```
-
 ## 会话 scrollback 恢复(自动)
 
 各终端的可见缓冲会定期 + 退出前快照,重启后按 task/slot 回放旧历史(旧 shell 进程已不在,纯展示;布局 / cwd 本就持久化)。回放前剥离主题色序列,防换主题后串色。

@@ -1,7 +1,7 @@
 //! 任务持久化
 //!
 //! 范围:
-//!   - Task struct(id / name / cwd / pinned / terminal_ids)
+//!   - Task struct(id / name / cwd / terminal_ids)
 //!   - 读写 tasks.json(atomic,通过 vibeterm-config::atomic_write)
 //!   - 不做 5s 去抖;每次 mutate 立刻 save
 
@@ -29,7 +29,6 @@ pub struct TaskSnapshot {
     pub id: TaskId,
     pub name: String,
     pub cwd: Option<String>,
-    pub pinned: bool,
     /// 持久化时记录"曾经存在过"的 terminal id;
     /// 重启时 PTY 不自动 rerun,此列表用作"上次有哪些终端"参考。
     pub last_terminal_ids: Vec<TerminalId>,
@@ -43,11 +42,6 @@ pub struct TaskSnapshot {
     /// 旧文件默认 false (不静音).
     #[serde(default)]
     pub notify_muted: bool,
-    /// hook auto-naming: 任务名是否还能被 UserPromptSubmit hook 自动重命名.
-    /// 新建 task 默认 true; 用户手动改名 / 自动改过 一次后 → false.
-    /// 旧文件缺此字段默认 false (老 task 名已是用户手设).
-    #[serde(default)]
-    pub auto_namable: bool,
 }
 
 fn default_split_tree() -> SplitNode {

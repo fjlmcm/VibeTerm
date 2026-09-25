@@ -45,7 +45,6 @@ _Tutte le solite funzioni di un terminale, più consapevolezza dello stato e orc
 ### Agenti
 
 - **Vede cosa fa un agente** — In corso, in attesa, bloccato o fatto — capito senza toccare la tua config.
-- **Rilevamento blocchi + ordine per urgenza** — Schermo pieno di agenti? Quelli bloccati e quelli che ti aspettano salgono in cima.
 - **Uso in tempo reale** — Contesto rimasto, quota 5h/7d, ritmo di consumo, cache — tutto su una barra.
 
 ### Terminale

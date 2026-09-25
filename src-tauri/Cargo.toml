@@ -2,7 +2,7 @@
 #
 # 结构:
 #   src-tauri          —— Tauri app 入口(本 Cargo.toml + src/main.rs)
-#   crates/vibeterm-*  —— 6 个业务 crate,单向依赖图
+#   crates/vibeterm-*  —— 8 个业务 crate,单向依赖图
 
 [workspace]
 resolver = "2"
@@ -152,16 +152,6 @@ features = ["clock", "std"]
 # 通知声音预览:返回 base64 字节给前端播放. tauri 间接拉了 0.22, 复用版本.
 [dependencies.base64]
 version = "0.22"
-
-# 软件版本检查 —— 只读 GitHub 发布信息,无上传或后台轮询。
-# 选 ureq(同步 + rustls, 依赖树极小)
-# 而非 reqwest(async + 重). 默认 features 已含 rustls tls.
-[dependencies.ureq]
-version = "2"
-
-# 通用原子写(events.jsonl / scrollback.json 的 atomic_write).
-[dependencies.tempfile]
-version = "3"
 
 # 打开外部 URL / 文件 / Finder 定位:三平台统一走 opener 的 Rust API(macOS NSWorkspace /
 # Windows ShellExecuteW / Linux xdg-open),不经过 cmd.exe 等 shell —— URL 里的 & | ^ 不会被

@@ -11,13 +11,13 @@
 
 import { Show, type Accessor, type Component, type JSX } from "solid-js";
 import type {
-  ClaudeActiveBlock,
-  ClaudeQuotaWindow,
+  ActiveBlock,
+  QuotaWindow,
   ClaudeSession,
-  ClaudeUsageCache,
-  CodexRateLimit,
+  UsageCache,
+  RateLimit,
   CodexSnapshot,
-  GitStatusBrief,
+  WorktreeStatus,
   StatusLineItemDetail,
   TaskDto,
 } from "@vibeterm/ipc-types";
@@ -122,7 +122,7 @@ export function shortenCwd(cwd: string, max: number = 200): string {
 
 export interface RenderContext {
   cwd: Accessor<string | null>;
-  git: Accessor<GitStatusBrief | null>;
+  git: Accessor<WorktreeStatus | null>;
   /** 当前 cwd 的 stash 数, 没 git 仓库为 0 */
   gitStashCount: Accessor<number>;
   /** 跨所有 Claude project 今天累计 token 用量 (过去 24h) */
@@ -133,11 +133,11 @@ export interface RenderContext {
   prStatus: Accessor<string | null>;
   agentKind: Accessor<string | null>;
   claudeSession: Accessor<ClaudeSession | null>;
-  claudeUsage: Accessor<ClaudeUsageCache | null>;
-  claudeBlock: Accessor<ClaudeActiveBlock | null>;
+  claudeUsage: Accessor<UsageCache | null>;
+  claudeBlock: Accessor<ActiveBlock | null>;
   codexSnap: Accessor<CodexSnapshot | null>;
   /** Codex 5h 滑动块 (ccusage 算法本地移植到 codex rollout); optional 给老代码兜底 */
-  codexBlock?: Accessor<ClaudeActiveBlock | null>;
+  codexBlock?: Accessor<ActiveBlock | null>;
   /** 当前活跃 task — task-status / task-name / worktree-name widget 用 */
   task: Accessor<TaskDto | null>;
 }
@@ -430,7 +430,7 @@ const claudeCtxWidget: WidgetRenderer = (item, ctx) => {
   );
 };
 
-const claudeQuotaPill = (label: string, w: ClaudeQuotaWindow | null, item: StatusLineItemDetail) => {
+const claudeQuotaPill = (label: string, w: QuotaWindow | null, item: StatusLineItemDetail) => {
   if (!w) return null;
   const pct = Math.round(w.utilization);
   const threshold = parseInt(item.metadata?.hideUnderThreshold ?? "0", 10);
@@ -674,7 +674,7 @@ const codexCtxWidget: WidgetRenderer = (item, ctx) => {
   );
 };
 
-const codexLimitPill = (label: string | null, l: CodexRateLimit | null, item: StatusLineItemDetail) => {
+const codexLimitPill = (label: string | null, l: RateLimit | null, item: StatusLineItemDetail) => {
   if (!l) return null;
   const pct = Math.round(l.used_percent);
   const threshold = parseInt(item.metadata?.hideUnderThreshold ?? "0", 10);
@@ -712,7 +712,7 @@ const codexLimitPill = (label: string | null, l: CodexRateLimit | null, item: St
 // 短/长窗, 对未来再变窗(如 14d)也鲁棒. window_minutes / used_percent / resets_at 均服务端权威.
 const CODEX_LONG_WINDOW_MIN_MINUTES = 1440; // >= 1 天算长窗
 
-type CodexLimitWithWindow = CodexRateLimit & { window_minutes: number };
+type CodexLimitWithWindow = RateLimit & { window_minutes: number };
 
 function codexLimitsWithWindow(snap: CodexSnapshot | null): CodexLimitWithWindow[] {
   if (!snap) return [];
@@ -723,7 +723,7 @@ function codexLimitsWithWindow(snap: CodexSnapshot | null): CodexLimitWithWindow
 }
 
 /** 短窗 (< 1 天, 如 5h=300) —— pro 计划才有; free 计划无短窗 → null. 多个取最短. */
-export function pickCodexShortWindow(snap: CodexSnapshot | null): CodexRateLimit | null {
+export function pickCodexShortWindow(snap: CodexSnapshot | null): RateLimit | null {
   return (
     codexLimitsWithWindow(snap)
       .filter((l) => l.window_minutes < CODEX_LONG_WINDOW_MIN_MINUTES)
@@ -732,7 +732,7 @@ export function pickCodexShortWindow(snap: CodexSnapshot | null): CodexRateLimit
 }
 
 /** 长窗 (>= 1 天) —— 周(10080)或月(43200), 多个取最长. free 计划唯一的窗口. */
-export function pickCodexLongWindow(snap: CodexSnapshot | null): CodexRateLimit | null {
+export function pickCodexLongWindow(snap: CodexSnapshot | null): RateLimit | null {
   return (
     codexLimitsWithWindow(snap)
       .filter((l) => l.window_minutes >= CODEX_LONG_WINDOW_MIN_MINUTES)
@@ -1066,46 +1066,44 @@ export const WIDGETS: Record<string, WidgetRenderer> = {
 
 export interface WidgetMeta {
   id: string;
-  display_name: string;
-  description: string;
   category: "core" | "git" | "claude" | "codex" | "layout";
 }
 
 /** 所有可用 widget 元数据 — 给配置 UI / docs 用 */
 export const WIDGET_LIST: WidgetMeta[] = [
-  { id: "current-dir", display_name: "Current Dir", description: "当前工作目录 (短路径)", category: "core" },
-  { id: "git-branch", display_name: "Git Branch", description: "分支 / dirty / ahead / behind", category: "git" },
-  { id: "git-staged", display_name: "Git Staged", description: "已 stage 文件数 (隐藏 0)", category: "git" },
-  { id: "git-unstaged", display_name: "Git Unstaged", description: "已修改未 stage 文件数 (隐藏 0)", category: "git" },
-  { id: "git-untracked", display_name: "Git Untracked", description: "未跟踪文件数 (隐藏 0)", category: "git" },
-  { id: "git-stash-count", display_name: "Git Stash", description: "stash 数 (隐藏 0)", category: "git" },
-  { id: "pr-status", display_name: "PR Status", description: "当前分支 PR 状态 (需 gh CLI)", category: "git" },
-  { id: "claude-model", display_name: "Claude Model", description: "Claude 模型简写 (opus 4.7 / sonnet 4.5)", category: "claude" },
-  { id: "claude-ctx", display_name: "Claude Context %", description: "当前上下文百分比", category: "claude" },
-  { id: "claude-5h", display_name: "Claude 5h", description: "5 小时块配额 (服务端)", category: "claude" },
-  { id: "claude-7d", display_name: "Claude 7d", description: "7 天总配额 (服务端)", category: "claude" },
-  { id: "claude-block-pct", display_name: "Claude Block %", description: "本地 5h 块已用时间百分比 (ccusage 算法)", category: "claude" },
-  { id: "claude-block-tokens", display_name: "Claude Block Tokens", description: "5h 块累计 token 数", category: "claude" },
-  { id: "claude-block-remaining", display_name: "Claude Block Remaining", description: "5h 块剩余时间倒计时", category: "claude" },
-  { id: "claude-burn-rate", display_name: "Claude Burn Rate", description: "最近 tokens/min (normal/moderate/high)", category: "claude" },
-  { id: "claude-cache-ttl", display_name: "Claude Cache TTL", description: "prompt cache 5m/1h 倒计时 (距过期还有多久)", category: "claude" },
-  { id: "claude-7d-sonnet", display_name: "Claude 7d Sonnet", description: "Sonnet 单独 7d 配额", category: "claude" },
-  { id: "claude-7d-opus", display_name: "Claude 7d Opus", description: "Opus 单独 7d 配额", category: "claude" },
-  { id: "codex-model", display_name: "Codex Model", description: "Codex 模型简写", category: "codex" },
-  { id: "codex-ctx", display_name: "Codex Context %", description: "当前上下文百分比", category: "codex" },
-  { id: "codex-5h", display_name: "Codex 5h", description: "短周期配额 (5h 窗口, 按 window_minutes 自动选)", category: "codex" },
-  { id: "codex-7d", display_name: "Codex 7d", description: "长周期配额 (周/月窗口自动选; free 计划现为月度 30d)", category: "codex" },
-  { id: "codex-burn-rate", display_name: "Codex Burn Rate", description: "token_count 事件累计 tokens/min", category: "codex" },
-  { id: "codex-effort", display_name: "Codex Effort", description: "reasoning effort (xhigh/high/normal/low)", category: "codex" },
-  { id: "claude-effort", display_name: "Claude Effort", description: "reasoning effort (low/medium/high/xhigh/max,需 hook 已装)", category: "claude" },
-  { id: "claude-tokens-today", display_name: "Claude Tokens 24h", description: "跨所有 project 过去 24h 累计 token", category: "claude" },
-  { id: "claude-plan", display_name: "Claude Plan", description: "订阅级别 (Free/Pro/Max 5x/Max 20x)", category: "claude" },
-  { id: "codex-plan", display_name: "Codex Plan", description: "订阅级别 (free/paid)", category: "codex" },
-  { id: "task-status", display_name: "Task Status", description: "状态点 (waiting_input 呼吸 / running / stalled)", category: "core" },
-  { id: "task-name", display_name: "Task Name", description: "当前 task 名", category: "core" },
-  { id: "worktree-name", display_name: "Worktree", description: "挂载的 git worktree 简名", category: "git" },
-  { id: "separator", display_name: "Separator", description: "竖线分隔 (metadata.char 自定义)", category: "layout" },
-  { id: "flex-separator", display_name: "Flex Separator", description: "占据剩余宽度,把后续 widget 推到右边", category: "layout" },
-  { id: "gauge-ctx", display_name: "Gauge Context", description: "当前 agent 上下文 % 用半圆 gauge 显示", category: "layout" },
-  { id: "custom-text", display_name: "Custom Text", description: "任意文本 (metadata.text 设)", category: "layout" },
+  { id: "current-dir", category: "core" },
+  { id: "git-branch", category: "git" },
+  { id: "git-staged", category: "git" },
+  { id: "git-unstaged", category: "git" },
+  { id: "git-untracked", category: "git" },
+  { id: "git-stash-count", category: "git" },
+  { id: "pr-status", category: "git" },
+  { id: "claude-model", category: "claude" },
+  { id: "claude-ctx", category: "claude" },
+  { id: "claude-5h", category: "claude" },
+  { id: "claude-7d", category: "claude" },
+  { id: "claude-block-pct", category: "claude" },
+  { id: "claude-block-tokens", category: "claude" },
+  { id: "claude-block-remaining", category: "claude" },
+  { id: "claude-burn-rate", category: "claude" },
+  { id: "claude-cache-ttl", category: "claude" },
+  { id: "claude-7d-sonnet", category: "claude" },
+  { id: "claude-7d-opus", category: "claude" },
+  { id: "codex-model", category: "codex" },
+  { id: "codex-ctx", category: "codex" },
+  { id: "codex-5h", category: "codex" },
+  { id: "codex-7d", category: "codex" },
+  { id: "codex-burn-rate", category: "codex" },
+  { id: "codex-effort", category: "codex" },
+  { id: "claude-effort", category: "claude" },
+  { id: "claude-tokens-today", category: "claude" },
+  { id: "claude-plan", category: "claude" },
+  { id: "codex-plan", category: "codex" },
+  { id: "task-status", category: "core" },
+  { id: "task-name", category: "core" },
+  { id: "worktree-name", category: "git" },
+  { id: "separator", category: "layout" },
+  { id: "flex-separator", category: "layout" },
+  { id: "gauge-ctx", category: "layout" },
+  { id: "custom-text", category: "layout" },
 ];

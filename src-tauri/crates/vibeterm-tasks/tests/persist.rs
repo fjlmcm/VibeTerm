@@ -40,12 +40,10 @@ fn save_then_load_roundtrips() {
                 id: 1,
                 name: "test-task".into(),
                 cwd: Some("/tmp".into()),
-                pinned: true,
                 last_terminal_ids: vec![10, 11],
                 split_tree: default_tree(),
                 worktree: None,
                 notify_muted: false,
-                auto_namable: false,
             }],
             order: vec![1],
             ..Default::default()
@@ -57,7 +55,6 @@ fn save_then_load_roundtrips() {
         assert_eq!(loaded.next_task_id, 42);
         assert_eq!(loaded.tasks.len(), 1);
         assert_eq!(loaded.tasks[0].name, "test-task");
-        assert!(loaded.tasks[0].pinned);
         assert_eq!(loaded.tasks[0].last_terminal_ids, vec![10, 11]);
         assert_eq!(loaded.order, vec![1]);
     });
@@ -84,12 +81,10 @@ fn save_overwrites_atomically() {
                 id: 1,
                 name: "v1".into(),
                 cwd: None,
-                pinned: false,
                 last_terminal_ids: vec![],
                 split_tree: default_tree(),
                 worktree: None,
                 notify_muted: false,
-                auto_namable: false,
             }],
             ..Default::default()
         };
@@ -102,12 +97,10 @@ fn save_overwrites_atomically() {
                 id: 99,
                 name: "v2-replaced".into(),
                 cwd: None,
-                pinned: false,
                 last_terminal_ids: vec![],
                 split_tree: default_tree(),
                 worktree: None,
                 notify_muted: false,
-                auto_namable: false,
             }],
             ..Default::default()
         };

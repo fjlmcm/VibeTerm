@@ -1,6 +1,6 @@
 // SolidJS xterm.js 封装
 //
-// 支持指定 taskId(在该任务下 spawn);可选 startInTask
+// 在指定 taskId 的任务下 spawn;(taskId, slotId) 为后端 spawn/attach 幂等键
 // 支持 theme prop(xterm options 立即应用)
 
 import { onCleanup, onMount, createEffect, createSignal, Show } from "solid-js";
@@ -39,7 +39,6 @@ import {
   resizePty,
   terminalSize,
   spawnTerminalInTask,
-  startPty,
   writePty,
   detachTerminal,
   pasteClipboard,
@@ -48,6 +47,7 @@ import {
 } from "../ipc";
 import { createKeybindingDispatcher as kbCreateDispatcher, registerTerminalFocus } from "../keybindings";
 import { shellQuotePaths } from "./shell-quote";
+import { graphemes } from "../text";
 import {
   terminalFontFamily,
   terminalLineHeight,
@@ -55,6 +55,8 @@ import {
   terminalCursorBlink,
   terminalPaddingX,
   terminalPaddingY,
+  readNum,
+  write,
 } from "./prefs";
 
 // 复用 TextEncoder 单例 — onData/drag-drop/粘贴热路径每次构造产生无谓 GC 压力
@@ -67,18 +69,7 @@ const FONT_MAX = 32;
 const FONT_DEFAULT = 13;
 const FONT_KEY = "vibeterm.terminal.fontSize";
 
-function readFontSize(): number {
-  try {
-    const raw = localStorage.getItem(FONT_KEY);
-    const n = raw ? parseInt(raw, 10) : FONT_DEFAULT;
-    if (!Number.isFinite(n) || n < FONT_MIN || n > FONT_MAX) return FONT_DEFAULT;
-    return n;
-  } catch {
-    return FONT_DEFAULT;
-  }
-}
-
-const [fontSize, setFontSize] = createSignal<number>(readFontSize());
+const [fontSize, setFontSize] = createSignal<number>(readNum(FONT_KEY, FONT_DEFAULT, FONT_MIN, FONT_MAX));
 
 const isLoneSurrogate = (s: string) => s.length === 1 && s >= "\uD800" && s <= "\uDFFF";
 
@@ -86,32 +77,12 @@ const isLoneSurrogate = (s: string) => s.length === 1 && s >= "\uD800" && s <= "
  * CJK 复制守门: xterm.js 选区在极端 case 切在代理对 / ZWJ 序列中间时的兜底 ——
  * 丢弃孤立的 lone surrogate(Segmenter 下即长度为 1 且落在 D800–DFFF 的段),
  * 并去掉整串尾部悬空的 U+200D(半截 emoji ZWJ sequence)。
- *
- * 无 Intl.Segmenter(老 WebView)时按 code point 迭代做同样的孤立代理过滤。
  */
 function normalizeGraphemes(input: string): string {
-  let out = "";
-  let segments: Iterable<string> = input; // String 迭代器按 code point 产出,孤立代理为单 code unit
-  if (typeof (Intl as { Segmenter?: unknown }).Segmenter === "function") {
-    try {
-      const seg = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-      segments = Array.from(seg.segment(input), (s) => s.segment);
-    } catch {
-      /* 退化为 code point 迭代 */
-    }
-  }
-  for (const g of segments) {
-    if (!isLoneSurrogate(g)) out += g;
-  }
-  return out.replace(/\u200D+$/, "");
-}
-
-function persistFontSize(n: number) {
-  try {
-    localStorage.setItem(FONT_KEY, String(n));
-  } catch {
-    /* private mode — 忽略 */
-  }
+  return graphemes(input)
+    .filter((g) => !isLoneSurrogate(g))
+    .join("")
+    .replace(/\u200D+$/, "");
 }
 
 export function getTerminalFontSize(): number {
@@ -121,7 +92,7 @@ export function getTerminalFontSize(): number {
 export function setTerminalFontSize(n: number) {
   const clamped = Math.max(FONT_MIN, Math.min(FONT_MAX, Math.round(n)));
   setFontSize(clamped);
-  persistFontSize(clamped);
+  write(FONT_KEY, String(clamped));
 }
 
 // 文件路径 link matcher — 绝对路径 / ~ 开头(后端 open_external 只接受这两种,会展开 ~;
@@ -195,15 +166,14 @@ try {
 }
 
 export interface TerminalProps {
-  /** 在指定 task 下 spawn;不给则用 start_pty(独立) */
-  taskId?: TaskId;
+  /** 在该 task 下 spawn */
+  taskId: TaskId;
   /** (task, slot) 幂等键:后端按它判断 spawn vs attach,前端无需自己判断
    *  主窗和浮窗传同一 slotId,后端保证只 spawn 一个 PTY,另一次自动 attach */
   slotId?: number;
   /** 主题(改变时立即重新 apply xterm.options.theme) */
   theme?: Theme;
   onReady?: (id: number) => void;
-  onError?: (e: unknown) => void;
 }
 
 export function Terminal(props: TerminalProps) {
@@ -347,7 +317,6 @@ export function Terminal(props: TerminalProps) {
     resizePty(terminalId, rows, cols)
       .catch((err) => {
         console.error("[terminal] resizePty failed", err);
-        props.onError?.(err);
       })
       .finally(() => {
         resizeInflight = false;
@@ -691,10 +660,6 @@ export function Terminal(props: TerminalProps) {
   const setHostAttrs = (id: number | null) => {
     if (hostEl) {
       if (id !== null) hostEl.setAttribute("data-terminal-id", String(id));
-      hostEl.setAttribute(
-        "data-mode",
-        props.taskId !== undefined ? "task-spawn" : "standalone",
-      );
       // E2E 直读 xterm buffer(WebglAddon 渲染到 canvas,DOM 不带文本)
       (hostEl as unknown as { __vibeterm_term__: XTerm | null }).__vibeterm_term__ = term;
     }
@@ -703,12 +668,12 @@ export function Terminal(props: TerminalProps) {
   // 三态 PTY 清理 — onCleanup 与异步 spawn 续体(竞态发现已卸载时)共用:
   //   1. slot attach 命中(sinkId 非 null)→ 只 detach 本视图的订阅,不杀 PTY(主视图还在用)
   //   2. slot 全新 spawn → 不动 PTY(任务切走只是 display:none;关 pane 走 closeActiveSlot)
-  //   3. 独立 spawn → 杀 PTY
+  //   3. 无 slot 的 spawn → 杀 PTY
   const teardownPty = () => {
     if (terminalId === null) return;
     if (sinkId !== null) {
       detachTerminal(terminalId, sinkId).catch(console.error);
-    } else if (props.slotId !== undefined && props.taskId !== undefined) {
+    } else if (props.slotId !== undefined) {
       // slot 全新 spawn:不调任何 close/detach,PTY 保留
     } else {
       closePty(terminalId).catch(console.error);
@@ -857,18 +822,13 @@ export function Terminal(props: TerminalProps) {
       };
 
       try {
-        // 两种模式
-        //   1. taskId 给定 → spawn 新 terminal 关联到该 task(slot 幂等:后端已绑则 attach)
-        //   2. 不给 → start_pty(独立)
+        // spawn 新 terminal 关联到该 task(slot 幂等:后端已绑则 attach)
         // 捕获当前实例:new Channel() 等调用会重置 TS 对闭包 let 的 narrowing
         const xt = term;
         // G5:重启后回放该 task/slot 的旧 scrollback。peek 不消费——spawn 成功且组件
         // 仍存活后才 commit,避免「spawn await 期间被卸载 → 内容已消费却没人看到」永久丢失。
         // 在新 PTY 输出前写:旧历史在上、新 shell prompt 在下。
-        const snapKey =
-          props.taskId !== undefined && props.slotId !== undefined
-            ? `${props.taskId}:${props.slotId}`
-            : null;
+        const snapKey = props.slotId !== undefined ? `${props.taskId}:${props.slotId}` : null;
         const restored = snapKey ? peekScrollback(snapKey) : null;
         if (restored) {
           xt.write(restored);
@@ -882,10 +842,7 @@ export function Terminal(props: TerminalProps) {
           args: null,
           env: null,
         };
-        const r =
-          props.taskId !== undefined
-            ? await spawnTerminalInTask(props.taskId, props.slotId ?? null, opts, channel)
-            : await startPty(opts, channel);
+        const r = await spawnTerminalInTask(props.taskId, props.slotId ?? null, opts, channel);
         terminalId = r.terminal_id;
         sinkId = r.sink_id ?? null;
         if (sinkId !== null) {
@@ -917,7 +874,7 @@ export function Terminal(props: TerminalProps) {
         });
 
         // G5:注册 scrollback 序列化(仅 task 终端 + 主 spawn 视图;attach 副本不重复存)。
-        if (sinkId === null && props.taskId !== undefined && props.slotId !== undefined) {
+        if (sinkId === null && props.slotId !== undefined) {
           unregisterSnapshot = registerScrollbackSnapshot(
             `${props.taskId}:${props.slotId}`,
             () => serialize?.serialize({ scrollback: 1000 }) ?? "",
@@ -928,7 +885,6 @@ export function Terminal(props: TerminalProps) {
           if (terminalId === null) return;
           writePty(terminalId, ENCODER.encode(data)).catch((err) => {
             console.error("[terminal] writePty failed", err);
-            props.onError?.(err);
           });
         });
         onResizeDispose = xterm.onResize(() => {
@@ -975,7 +931,6 @@ export function Terminal(props: TerminalProps) {
         // /代理对/ZWJ 中间,normalizeGraphemes 防撕裂(CJK 一等公民红线)。
         hostEl.addEventListener("copy", onHostCopy, true);
       } catch (e) {
-        props.onError?.(e);
         console.error("[terminal] spawn failed", e);
       }
     });

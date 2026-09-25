@@ -49,8 +49,6 @@
   "features.group.productivity": "Alur",
   "features.sniff.label": "Melihat agent sedang apa",
   "features.sniff.desc": "Berjalan, menunggu, macet, atau selesai — diketahui tanpa menyentuh konfigmu.",
-  "features.urgency.label": "Deteksi macet + urut berdasarkan urgensi",
-  "features.urgency.desc": "Layar penuh agent? Yang macet dan yang menunggumu naik ke atas.",
   "features.monitor.label": "Pemakaian langsung",
   "features.monitor.desc": "Sisa konteks, kuota 5h/7d, laju pemakaian, cache — semua dalam satu bar.",
   "features.split.label": "Split panel + worktree",

@@ -1,15 +1,8 @@
 // 用户可见文本的 grapheme 级工具(CJK 一等公民:按 code unit 截断会撕裂代理对 / ZWJ 序列)。
 
-function graphemes(s: string): string[] {
-  if (typeof (Intl as { Segmenter?: unknown }).Segmenter === "function") {
-    try {
-      const seg = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-      return Array.from(seg.segment(s), (x) => x.segment);
-    } catch {
-      /* 退化为 code point 切分 */
-    }
-  }
-  return Array.from(s);
+export function graphemes(s: string): string[] {
+  const seg = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+  return Array.from(seg.segment(s), (x) => x.segment);
 }
 
 /** 按 grapheme 截到最多 n 个;fromEnd 时保留尾部。不足 n 个原样返回。 */

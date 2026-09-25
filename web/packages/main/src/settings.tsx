@@ -8,7 +8,7 @@
 
 import { For, Show, createSignal, createMemo, onMount, type Component } from "solid-js";
 import { ArrowLeft, Check, Eye, EyeOff, RotateCcw, RefreshCw, Trash2, Plus } from "lucide-solid";
-import { ipc, t, Titlebar, IMPLEMENTED_COMMANDS, promptDisplayName, isMacPlatform, truncateGraphemes } from "@vibeterm/ui-core";
+import { ipc, t, Titlebar, promptDisplayName, isMacPlatform, truncateGraphemes } from "@vibeterm/ui-core";
 import type { Theme, EnvFile, KeybindingsFile, CliStatus, PromptsFile, PromptEntry, PromptKind } from "@vibeterm/ipc-types";
 import { StatuslineTab } from "./settings-statusline";
 import { NotifyTab } from "./settings-notify";
@@ -562,17 +562,6 @@ const KeysTab: Component = () => {
                   <span style={{ "font-family": "inherit", color: "var(--color-text)", "font-size": "12px" }}>
                     {t(`kb.command.${b.command}`)}
                   </span>
-                  <Show when={!IMPLEMENTED_COMMANDS.has(b.command)}>
-                    <span style={{
-                      "font-size": "9px",
-                      color: "var(--color-status-stalled, #d97757)",
-                      "padding": "1px 4px",
-                      border: "1px solid var(--color-status-stalled, #d97757)",
-                      "border-radius": "3px",
-                    }}>
-                      {t("settings.keys.status_pending")}
-                    </span>
-                  </Show>
                 </div>
                 <Show
                   when={recording() === i()}

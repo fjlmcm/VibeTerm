@@ -15,7 +15,6 @@ export const FEATURE_GROUPS: FeatureGroup[] = ['agent', 'terminal', 'productivit
 
 export const FEATURES: Feature[] = [
   { id: 'sniff', group: 'agent', icon: 'radar' },
-  { id: 'urgency', group: 'agent', icon: 'list-ordered' },
   { id: 'monitor', group: 'agent', icon: 'activity' },
   { id: 'split', group: 'terminal', icon: 'columns' },
   { id: 'floating', group: 'terminal', icon: 'picture-in-picture' },

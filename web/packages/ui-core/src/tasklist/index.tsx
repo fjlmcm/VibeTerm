@@ -23,14 +23,11 @@ import {
 import { t } from "../i18n";
 import { modKeyLabel } from "../keybindings";
 import { menuClampRef } from "../menu-clamp";
-import { urgencyColorVar } from "../urgency";
 
 export interface TaskListProps {
   tasks: TaskDto[];
   activeTaskId: number | null;
   onActivate: (id: number) => void;
-  /** urgency 视图开启时传入 score map,行尾渲染分数 badge */
-  urgencyScores?: Map<TaskId, number>;
   /** 右键 close 改回调上层,弹自定义模态(WKWebView 禁 confirm()) */
   onRequestClose?: (task: TaskDto) => void;
   /** 拖拽排序 — 列表回传新顺序 id[] */
@@ -528,30 +525,6 @@ export const TaskList: Component<TaskListProps> = (props) => {
                             </span>
                           );
                         }}
-                      </Show>
-                      <Show when={props.urgencyScores?.has(task().id)}>
-                        {(() => {
-                          const score = Math.round(
-                            props.urgencyScores!.get(task().id)!,
-                          );
-                          return (
-                            <span
-                              data-testid={`task-urgency-badge-${task().id}`}
-                              data-urgency-score={score}
-                              style={{
-                                "font-size": "10px",
-                                "font-weight": "600",
-                                color: urgencyColorVar(score),
-                                "flex-shrink": 0,
-                                "min-width": "20px",
-                                "text-align": "right",
-                                "font-variant-numeric": "tabular-nums",
-                              }}
-                            >
-                              {score}
-                            </span>
-                          );
-                        })()}
                       </Show>
                       {/* 行尾:#序号(替代原 terminal_count);1..9 与 Mod+1..9 一致 */}
                       <Show when={orderNum() <= 9}>
