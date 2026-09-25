@@ -47,12 +47,10 @@ _Semua fitur terminal biasa, plus kesadaran status dan orkestrasi untuk layar pe
 - **Melihat agent sedang apa** — Berjalan, menunggu, macet, atau selesai — diketahui tanpa menyentuh konfigmu.
 - **Deteksi macet + urut berdasarkan urgensi** — Layar penuh agent? Yang macet dan yang menunggumu naik ke atas.
 - **Pemakaian langsung** — Sisa konteks, kuota 5h/7d, laju pemakaian, cache, biaya — semua dalam satu bar.
-- **Statistik pemakaian** — Angka token dan biaya untuk Claude / Codex. Dihitung offline, bisa diekspor.
 
 ### Terminal
 
 - **Split panel + worktree** — Pasang git worktree, satu pohon terminal per tugas.
-- **Papan Canvas** — Tata tugas sebagai kartu, pilih dengan kotak, kirim satu perintah ke beberapa terminal.
 - **Jendela mengambang** — Lepas tugas mana pun ke jendelanya sendiri dan terus awasi.
 - **Render GPU** — Dipercepat WebGL, dan CJK tetap tak menjatuhkan glyph atau tersendat.
 
@@ -102,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## Di atas bahu proyek-proyek ini.
 
-Terima kasih khusus untuk ccusage dari ryoppippi (MIT). Statistik pemakaian, harga model, dan blok 5 jam berasal dari sana; data harga dari LiteLLM dan angka resmi Anthropic.
+Terima kasih khusus untuk ccusage dari ryoppippi (MIT). Harga model dan blok 5 jam berasal dari sana; data harga dari LiteLLM dan angka resmi Anthropic.
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

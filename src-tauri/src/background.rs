@@ -74,13 +74,15 @@ pub(crate) fn start_background_tasks(app: &tauri::AppHandle) {
     });
 
     // agent 进程识别轮询(每 3s)
-    //   扫每个 task 的 terminals 的 shell pid → detect_agent_for_shell。
-    //   有变化 emit tasks_changed。pgrep 在前台 idle 时也会运行,~1ms 量级,可接受。
+    //   每轮拉一次全进程表(一次 ps),对每个 task 的 terminals 的 shell pid 做后代识别。
+    //   有变化 emit tasks_changed。
+    //   独立 std 线程而非 tokio task:轮询体是同步 I/O(spawn ps + 逐终端读 transcript,
+    //   claude 单文件可到 64MB / codex 16MB 的解析),放 tokio worker 上会把 runtime 卡住。
     let app_for_agent = app.clone();
-    tauri::async_runtime::spawn(async move {
-        let interval = std::time::Duration::from_secs(3);
-        loop {
-            tokio::time::sleep(interval).await;
+    let spawned = std::thread::Builder::new()
+        .name("agent-poll".into())
+        .spawn(move || loop {
+            std::thread::sleep(std::time::Duration::from_secs(3));
             let state = match app_for_agent.try_state::<AppState>() {
                 Some(s) => s,
                 None => continue,
@@ -89,6 +91,10 @@ pub(crate) fn start_background_tasks(app: &tauri::AppHandle) {
                 Ok(v) => v,
                 Err(_) => continue,
             };
+            if pairs.is_empty() {
+                continue;
+            }
+            let procs = vibeterm_status::ProcessTable::snapshot();
             let mut any_changed = false;
             for (task_id, term_ids) in pairs {
                 // **per-terminal**:一个 task 可分屏多个 agent,逐终端独立识别 + 独立完成检测,
@@ -99,7 +105,7 @@ pub(crate) fn start_background_tasks(app: &tauri::AppHandle) {
                     let kind = state
                         .terminals
                         .pid_of(*term_id)
-                        .and_then(vibeterm_status::detect_agent_for_shell)
+                        .and_then(|pid| procs.detect_agent_for_shell(pid))
                         .map(|k| k.as_str().to_string());
                     agent_per_term.push((*term_id, kind.clone()));
                     // per-terminal 写入该终端的 agent kind。
@@ -126,29 +132,38 @@ pub(crate) fn start_background_tasks(app: &tauri::AppHandle) {
                 // 按 per-terminal 嗅探到的 agent kind:
                 //   - 装对应授权框正则(set_agent_rules) → body 正则识别 WaitingInput;
                 //   - 真跑 agent 的 terminal 才开 stall 检测(辅助 idle shell 不开)。
-                if let Ok(detectors) = state.status_detectors.lock() {
-                    for (term_id, kind) in &agent_per_term {
-                        if let Some(d) = detectors.get(term_id) {
-                            let flipped = if let Ok(mut det) = d.lock() {
-                                det.set_agent_rules(kind.as_deref());
-                                if kind.is_some() {
-                                    det.enable_stall_detection(0);
-                                    None
-                                } else {
-                                    // agent 退出回 shell:Stalled→Idle 的返回值要回写
-                                    // registry,否则红橙描边环挂到下一个 PTY chunk 才消。
-                                    det.disable_stall_detection()
-                                }
-                            } else {
-                                None
-                            };
-                            if let Some(s) = flipped {
-                                if let Ok(Some(_)) =
-                                    state.tasks.update_terminal_status(*term_id, s, false)
-                                {
-                                    any_changed = true;
-                                }
-                            }
+                // 与 200ms tick 同样:先在 map 锁内快照 (kind, Arc<detector>),释放外锁后再
+                // 逐个取内锁 + 回写 registry,不在持 map 锁期间嵌套 detector 锁 / tasks 锁。
+                let detectors: Vec<(
+                    TerminalId,
+                    Option<String>,
+                    Arc<std::sync::Mutex<StatusDetector>>,
+                )> = match state.status_detectors.lock() {
+                    Ok(m) => agent_per_term
+                        .iter()
+                        .filter_map(|(tid, kind)| {
+                            m.get(tid).map(|d| (*tid, kind.clone(), d.clone()))
+                        })
+                        .collect(),
+                    Err(_) => continue,
+                };
+                for (term_id, kind, d) in detectors {
+                    let flipped = if let Ok(mut det) = d.lock() {
+                        det.set_agent_rules(kind.as_deref());
+                        if kind.is_some() {
+                            det.enable_stall_detection(0);
+                            None
+                        } else {
+                            // agent 退出回 shell:Stalled→Idle 的返回值要回写
+                            // registry,否则红橙描边环挂到下一个 PTY chunk 才消。
+                            det.disable_stall_detection()
+                        }
+                    } else {
+                        None
+                    };
+                    if let Some(s) = flipped {
+                        if let Ok(Some(_)) = state.tasks.update_terminal_status(term_id, s, false) {
+                            any_changed = true;
                         }
                     }
                 }
@@ -156,8 +171,10 @@ pub(crate) fn start_background_tasks(app: &tauri::AppHandle) {
             if any_changed {
                 emit_tasks_changed(&app_for_agent, &state.tasks);
             }
-        }
-    });
+        });
+    if let Err(e) = spawned {
+        tracing::error!(err = %e, "agent-poll 线程启动失败:agent 识别 / 完成检测不可用");
+    }
 
     // last_output 节流轮询(750ms/轮)
     //   每个 task 取 terminal_ids.last() 的末行,与上轮快照比较,

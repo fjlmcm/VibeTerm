@@ -9,11 +9,12 @@
 //! VibeTerm 只需要"当前活跃 block"统计 (累积 token + 剩余时间), 不需要历史块.
 //! 所以这里做了简化版: 单遍扫 jsonl 求 active block, O(N).
 
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use serde::Serialize;
 
-use super::project::projects_root;
+use super::project::{newest_jsonl_under, projects_root, JSONL_MAX_BYTES};
 
 const FIVE_HOURS_MS: i64 = 5 * 60 * 60 * 1000;
 
@@ -67,10 +68,11 @@ struct Entry {
 }
 
 /// 解析 jsonl 文件, 算当前活跃 5h block. 文件不存在或全空返回 None.
+/// BufReader 逐行流式读, 不整读进内存(调用方负责大小守门, 见 `active_block_for_cwd`).
 pub fn active_block_for_file(path: &Path) -> Option<ActiveBlock> {
-    let content = std::fs::read_to_string(path).ok()?;
+    let reader = BufReader::new(std::fs::File::open(path).ok()?);
     let mut entries: Vec<Entry> = Vec::new();
-    for line in content.lines() {
+    for line in reader.lines().map_while(Result::ok) {
         let trimmed = line.trim();
         if !trimmed.starts_with('{') || !trimmed.contains("\"type\":\"assistant\"") {
             continue;
@@ -235,7 +237,8 @@ pub fn active_block_for_file(path: &Path) -> Option<ActiveBlock> {
     })
 }
 
-/// 按 cwd 取 active block — 找该 project 下 mtime 最新 jsonl, 跑算法.
+/// 按 cwd 取 active block — 找该 project 下 mtime 最新、且 ≤ `JSONL_MAX_BYTES` 的 jsonl, 跑算法.
+/// (超限的巨型会话跳过, 与 `project::read_for_cwd` 同一守门, 不整读几百 MB.)
 ///
 /// **安全**: canonicalize 后必须仍在 `projects_root()` 内, 防止前端构造路径
 /// + symlink 把读取引向 ~/.ssh 等敏感目录 (与 `project::read_for_cwd` 同一防护).
@@ -253,7 +256,7 @@ pub fn active_block_for_cwd(cwd: &str) -> Option<ActiveBlock> {
         );
         return None;
     }
-    let (jsonl, _) = super::project::latest_jsonl_in(&canon_dir)?;
+    let jsonl = newest_jsonl_under(&canon_dir, JSONL_MAX_BYTES)?;
     active_block_for_file(&jsonl)
 }
 
@@ -278,6 +281,15 @@ pub(crate) fn chrono_parse_iso(s: &str) -> Option<i64> {
     let hour: u32 = std::str::from_utf8(&bytes[11..13]).ok()?.parse().ok()?;
     let minute: u32 = std::str::from_utf8(&bytes[14..16]).ok()?.parse().ok()?;
     let sec: u32 = std::str::from_utf8(&bytes[17..19]).ok()?.parse().ok()?;
+    // 字段范围校验:month/day 为 0 会让 days_from_civil 的 `d - 1` 下溢 panic(u64)。
+    if !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || hour > 23
+        || minute > 59
+        || sec > 60
+    {
+        return None;
+    }
     // 可选小数秒
     let mut idx = 19usize;
     let mut frac_ms: i64 = 0;
@@ -369,6 +381,18 @@ mod tests {
         let a = chrono_parse_iso("2026-01-01T08:00:00+08:00").unwrap();
         let b = chrono_parse_iso("2026-01-01T00:00:00Z").unwrap();
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn iso_parse_rejects_out_of_range_fields() {
+        // day=00 曾让 days_from_civil 的 u64 减法下溢 panic
+        assert!(chrono_parse_iso("2026-01-00T00:00:00Z").is_none());
+        assert!(chrono_parse_iso("2026-00-01T00:00:00Z").is_none());
+        assert!(chrono_parse_iso("2026-13-01T00:00:00Z").is_none());
+        assert!(chrono_parse_iso("2026-01-32T00:00:00Z").is_none());
+        assert!(chrono_parse_iso("2026-01-01T24:00:00Z").is_none());
+        assert!(chrono_parse_iso("2026-01-01T00:60:00Z").is_none());
+        assert!(chrono_parse_iso("2026-12-31T23:59:59Z").is_some());
     }
 
     #[test]

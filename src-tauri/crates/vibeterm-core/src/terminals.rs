@@ -1,11 +1,13 @@
 //! 终端注册表 — 管理活的 Terminal 实例的生命周期(Rust 是 truth)
 //!
 //!   - 单调递增 TerminalId
-//!   - Mutex<HashMap> 包裹(并发 IPC 命令安全)
-//!   - close 时 Terminal 自动走 Drop 路径
+//!   - Mutex<HashMap<_, Arc<Terminal>>> 包裹(并发 IPC 命令安全);阻塞 I/O(write)
+//!     先 clone Arc 释放 map 锁再做,一个终端的 PTY 输入队列满不会卡住其他终端的
+//!     spawn / close / resize
+//!   - close 时 Terminal 自动走 Drop 路径(最后一个 Arc 释放时)
 
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use vibeterm_ipc::TerminalId;
 use vibeterm_pty::sinks::{TailSink, TailSinkHandle};
@@ -26,7 +28,7 @@ pub enum TerminalRegistryError {
 
 pub struct TerminalRegistry {
     next_id: Mutex<TerminalId>,
-    terminals: Mutex<HashMap<TerminalId, Terminal>>,
+    terminals: Mutex<HashMap<TerminalId, Arc<Terminal>>>,
     /// 任务名下状态行:每个 terminal 一个 TailSinkHandle,
     /// spawn 时 attach 一个 TailSink,后续读末行非空可见文本用。
     tail_handles: Mutex<HashMap<TerminalId, TailSinkHandle>>,
@@ -69,7 +71,7 @@ impl TerminalRegistry {
         self.terminals
             .lock()
             .map_err(|_| TerminalRegistryError::Poisoned)?
-            .insert(id, term);
+            .insert(id, Arc::new(term));
         if let Ok(mut map) = self.tail_handles.lock() {
             map.insert(id, tail_handle);
         }
@@ -77,12 +79,16 @@ impl TerminalRegistry {
         Ok(id)
     }
 
+    /// 写 PTY stdin。阻塞 I/O:前台进程不读 stdin 且输入队列满时 write_all 会挂住,
+    /// 所以只在 map 锁内取 Arc,写在锁外做;调用方应在 blocking 线程上调用。
     pub fn write(&self, id: TerminalId, data: &[u8]) -> Result<(), TerminalRegistryError> {
-        let map = self
+        let t = self
             .terminals
             .lock()
-            .map_err(|_| TerminalRegistryError::Poisoned)?;
-        let t = map.get(&id).ok_or(TerminalRegistryError::NotFound(id))?;
+            .map_err(|_| TerminalRegistryError::Poisoned)?
+            .get(&id)
+            .cloned()
+            .ok_or(TerminalRegistryError::NotFound(id))?;
         t.write(data)?;
         Ok(())
     }

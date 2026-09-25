@@ -47,12 +47,10 @@ _여느 터미널 기능은 그대로, 화면 가득한 AI 에이전트를 위�
 - **에이전트가 뭐 하는지 파악** — 실행 중, 대기, 멈춤, 완료 — 설정을 건드리지 않고 알아냅니다.
 - **멈춤 감지 + 긴급도 정렬** — 화면 가득한 에이전트에서, 멈춘 것과 당신을 기다리는 게 위로 올라옵니다.
 - **사용량 실시간** — 남은 컨텍스트, 5h/7d 쿼터, 소모 속도, 캐시, 비용 — 한 줄에.
-- **사용량 통계** — Claude / Codex의 토큰과 비용. 오프라인 집계, 내보내기 가능.
 
 ### 터미널
 
 - **분할 + worktree** — git worktree를 마운트, 작업마다 독립된 터미널 트리.
-- **Canvas 보드** — 작업을 카드로 배치, 드래그 선택, 한 명령을 여러 터미널로.
 - **플로팅 창** — 아무 작업이나 별도 창으로 띄워 지켜보기.
 - **GPU 렌더링** — WebGL 가속, 그래도 CJK는 글자를 빠뜨리거나 버벅이지 않음.
 
@@ -102,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## 이들의 어깨 위에서.
 
-ryoppippi의 ccusage(MIT)에 특별히 감사. 사용량 집계, 모델 가격, 5시간 블록은 여기서 참고했습니다. 가격 데이터는 LiteLLM과 Anthropic 공식 수치에서.
+ryoppippi의 ccusage(MIT)에 특별히 감사. 모델 가격, 5시간 블록은 여기서 참고했습니다. 가격 데이터는 LiteLLM과 Anthropic 공식 수치에서.
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

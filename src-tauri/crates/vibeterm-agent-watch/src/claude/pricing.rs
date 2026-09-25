@@ -1,14 +1,10 @@
-//! Claude 模型数据表(价格 + 上下文窗口)— 按模型 id 匹配 + 运行时可覆盖.
+//! Claude 内置模型数据表(价格 + 上下文窗口)— 按模型 id 匹配.
 //!
 //! 数据源是 LiteLLM 社区表(model_prices_and_context_window.json, ccusage 同源),
 //! 不内嵌它的全量 JSON(300KB+, 绝大部分用不上), 只抽 anthropic 原生 claude 条目:
 //!
-//! **两层数据**:
-//!   1. `builtin()` —— 内嵌快照 `litellm_snapshot.json`(编译进二进制, 永远兜底).
-//!      由 `scripts/update-model-data.py` 生成, **每次发版前刷新一次**(发版流程约定).
-//!   2. `OVERRIDE` —— 运行时覆盖表, 设置·更新页"更新模型价格"拉取同一数据源后
-//!      `set_pricing_override` 注入(主 app 落 `config_dir/pricing.json`). 按模型命中
-//!      优先于 builtin; 覆盖表里没有的模型仍回落 builtin.
+//! 内嵌快照 `litellm_snapshot.json` 编译进二进制,运行时只读。
+//! 由 `scripts/update-model-data.py` 生成,每次发版前刷新一次。
 //!
 //! **匹配规则**(代替旧版 opus/sonnet/haiku 三档子串匹配 —— 那个区分不出 deprecated
 //! 旧价, 也分不出 4.1 与 4.5+ 的 3 倍价差):
@@ -16,14 +12,14 @@
 //!   - 先精确命中, 再最长前缀命中(条目 key 是 model id 的前缀且边界处非字母数字,
 //!     处理 `claude-opus-4-8-20991231` 这类带日期后缀的 id)
 //!
-//! 未匹配的模型返回 None — widget 显示 "—" 而非乱估.
+//! 未匹配的模型返回 None,由调用方决定降级策略.
 
 use std::collections::BTreeMap;
-use std::sync::{OnceLock, RwLock};
+use std::sync::OnceLock;
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Copy)]
 pub struct Pricing {
     pub input_per_mtok: f64,
     pub output_per_mtok: f64,
@@ -37,69 +33,14 @@ pub struct Pricing {
 }
 
 /// 单模型条目: 价格 + 上下文窗口.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Clone, Copy)]
 pub struct ModelInfo {
     pub pricing: Pricing,
     /// 上下文窗口上限 (tokens), 来自 LiteLLM `max_input_tokens`. 缺数据时 None.
     pub context_window: Option<u64>,
 }
 
-// ---- 数据表 + 运行时覆盖 ----
-
-/// 模型数据表 — 也是 `config_dir/pricing.json` 的 schema(v2, 按模型 id 存).
-/// v1(opus/sonnet/haiku 三档)的旧 pricing.json 会反序列化失败 → 启动时忽略并
-/// 回落 builtin, 用户点一次"更新模型价格"即重建为 v2.
-#[derive(Debug, Clone, Serialize, Deserialize, specta::Type)]
-pub struct PricingTable {
-    /// 数据快照日期, 如 "2026-06-13".
-    pub updated_at: String,
-    /// 数据来源描述 (展示用), 如 "LiteLLM (BerriAI/litellm)".
-    pub source: String,
-    pub models: BTreeMap<String, ModelInfo>,
-}
-
-/// 当前价格来源状态 — 给设置·更新页显示.
-#[derive(Debug, Clone, Serialize, specta::Type)]
-pub struct PricingStatus {
-    /// "builtin" | "override"
-    pub source: String,
-    /// override 表的 updated_at (builtin 时 None)
-    pub updated_at: Option<String>,
-    /// override 表的 source 描述 (builtin 时 None)
-    pub origin: Option<String>,
-}
-
-/// 运行时覆盖表. None = 用内置快照. `RwLock::new` 是 const fn → 可直接 static.
-static OVERRIDE: RwLock<Option<PricingTable>> = RwLock::new(None);
-
-/// 注入/替换覆盖表 (主 app 加载 `config_dir/pricing.json` 或更新成功后调用).
-pub fn set_pricing_override(table: PricingTable) {
-    *OVERRIDE.write().unwrap_or_else(|e| e.into_inner()) = Some(table);
-}
-
-/// 清除覆盖, 回退内置快照 (设置·更新页"还原内置默认").
-pub fn clear_pricing_override() {
-    *OVERRIDE.write().unwrap_or_else(|e| e.into_inner()) = None;
-}
-
-/// 当前价格来源状态.
-pub fn pricing_status() -> PricingStatus {
-    let g = OVERRIDE.read().unwrap_or_else(|e| e.into_inner());
-    match g.as_ref() {
-        Some(t) => PricingStatus {
-            source: "override".into(),
-            updated_at: Some(t.updated_at.clone()),
-            origin: Some(t.source.clone()),
-        },
-        None => PricingStatus {
-            source: "builtin".into(),
-            updated_at: None,
-            origin: None,
-        },
-    }
-}
-
-// ---- LiteLLM 解析(builtin 快照与运行时更新共用同一转换器) ----
+// ---- LiteLLM 内嵌快照解析 ----
 
 /// LiteLLM 单条目里我们用得到的字段. 其余字段忽略; 个别异形条目 (如 sample_spec)
 /// 反序列化失败直接跳过.
@@ -161,46 +102,22 @@ fn convert_entries(
     out
 }
 
-/// 解析 LiteLLM 原始全表(运行时"更新模型价格"用). 抽出的模型数过少视为源格式变更.
-pub fn parse_litellm(body: &str, source: &str, updated_at: String) -> Result<PricingTable, String> {
-    let map: serde_json::Map<String, serde_json::Value> =
-        serde_json::from_str(body).map_err(|e| format!("json: {e}"))?;
-    let models = convert_entries(&map);
-    if models.len() < 10 {
-        return Err(format!(
-            "only {} anthropic claude entries — source format changed?",
-            models.len()
-        ));
-    }
-    Ok(PricingTable {
-        updated_at,
-        source: source.to_string(),
-        models,
-    })
-}
-
 // ---- 内嵌快照(scripts/update-model-data.py 生成, 发版前刷新) ----
 
 /// 内嵌快照文件的包装格式.
 #[derive(Deserialize)]
 struct SnapshotFile {
-    snapshot_date: String,
-    source: String,
     entries: serde_json::Map<String, serde_json::Value>,
 }
 
 /// 内置数据表 — 解析内嵌快照, 进程内只做一次. 快照损坏(不应发生, 有测试守门)时 None.
-fn builtin_table() -> Option<&'static PricingTable> {
-    static BUILTIN: OnceLock<Option<PricingTable>> = OnceLock::new();
+fn builtin_table() -> Option<&'static BTreeMap<String, ModelInfo>> {
+    static BUILTIN: OnceLock<Option<BTreeMap<String, ModelInfo>>> = OnceLock::new();
     BUILTIN
         .get_or_init(|| {
             let snap: SnapshotFile =
                 serde_json::from_str(include_str!("litellm_snapshot.json")).ok()?;
-            Some(PricingTable {
-                updated_at: snap.snapshot_date,
-                source: snap.source,
-                models: convert_entries(&snap.entries),
-            })
+            Some(convert_entries(&snap.entries))
         })
         .as_ref()
 }
@@ -233,14 +150,10 @@ fn lookup_in(models: &BTreeMap<String, ModelInfo>, norm: &str) -> Option<ModelIn
         .map(|(_, mi)| *mi)
 }
 
-/// 模型 id → 条目. 覆盖表按模型命中优先; 覆盖表里没有的模型回落内置快照.
+/// 模型 id → 内嵌快照条目.
 pub fn model_info_for(model: &str) -> Option<ModelInfo> {
     let norm = normalize(model);
-    let from_override = {
-        let g = OVERRIDE.read().unwrap_or_else(|e| e.into_inner());
-        g.as_ref().and_then(|t| lookup_in(&t.models, &norm))
-    };
-    from_override.or_else(|| builtin_table().and_then(|t| lookup_in(&t.models, &norm)))
+    builtin_table().and_then(|models| lookup_in(models, &norm))
 }
 
 /// 模型 id → 定价.
@@ -290,24 +203,17 @@ pub fn cost_of(model: &str, u: Usage, context_size_at_call: u64) -> Option<f64> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
-
-    // OVERRIDE 是全局可变 state;cargo test 默认多线程并行, 用串行锁避免互相干扰.
-    static TEST_GUARD: Mutex<()> = Mutex::new(());
 
     /// 内嵌快照必须可解析且条目充足 — 守门 scripts/update-model-data.py 的产物.
     #[test]
     fn builtin_snapshot_parses() {
         let t = builtin_table().expect("builtin snapshot must parse");
-        assert!(t.models.len() >= 10, "got {} models", t.models.len());
-        assert!(!t.updated_at.is_empty());
+        assert!(t.len() >= 10, "got {} models", t.len());
     }
 
     /// 按模型区分价格 — 旧版 substring 匹配做不到的 (4.1 与 4.5+ 差 3 倍).
     #[test]
     fn per_model_prices_match_anthropic() {
-        let _g = TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner());
-        clear_pricing_override();
         let opus48 = pricing_for("claude-opus-4-8").unwrap();
         assert_eq!(opus48.input_per_mtok, 5.0);
         assert_eq!(opus48.output_per_mtok, 25.0);
@@ -325,8 +231,6 @@ mod tests {
     /// 上下文窗口来自数据 — fable/opus-4.8/sonnet-4.6 是 1M, sonnet-4.5/opus-4.5 是 200k.
     #[test]
     fn context_windows_from_data() {
-        let _g = TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner());
-        clear_pricing_override();
         assert_eq!(context_window_of("claude-fable-5"), Some(1_000_000));
         assert_eq!(context_window_of("claude-opus-4-8"), Some(1_000_000));
         assert_eq!(context_window_of("claude-sonnet-4-6"), Some(1_000_000));
@@ -338,8 +242,6 @@ mod tests {
     /// 日期后缀 id 走最长前缀命中; 边界检查防误中.
     #[test]
     fn prefix_and_suffix_matching() {
-        let _g = TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner());
-        clear_pricing_override();
         // 精确条目本就存在
         assert_eq!(
             pricing_for("claude-haiku-4-5-20251001")
@@ -366,8 +268,6 @@ mod tests {
 
     #[test]
     fn sonnet_below_200k_normal_rate() {
-        let _g = TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner());
-        clear_pricing_override();
         let u = Usage {
             input_tokens: 1_000_000,
             ..Usage::default()
@@ -378,8 +278,6 @@ mod tests {
 
     #[test]
     fn sonnet_above_200k_double_rate() {
-        let _g = TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner());
-        clear_pricing_override();
         let u = Usage {
             input_tokens: 1_000_000,
             ..Usage::default()
@@ -391,8 +289,6 @@ mod tests {
     /// fable 1M 窗口全程标准价 — 300k 上下文也不得套 above-200k 档.
     #[test]
     fn fable_no_long_context_surcharge() {
-        let _g = TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner());
-        clear_pricing_override();
         let u = Usage {
             input_tokens: 1_000_000,
             ..Usage::default()
@@ -403,66 +299,13 @@ mod tests {
 
     #[test]
     fn unknown_model_returns_none() {
-        let _g = TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner());
-        clear_pricing_override();
         assert!(pricing_for("some-future-model").is_none());
         assert!(cost_of("some-future-model", Usage::default(), 0).is_none());
     }
 
-    fn test_table(model: &str, input_per_mtok: f64) -> PricingTable {
-        let mut models = BTreeMap::new();
-        models.insert(
-            model.to_string(),
-            ModelInfo {
-                pricing: Pricing {
-                    input_per_mtok,
-                    output_per_mtok: input_per_mtok * 2.0,
-                    cache_creation_per_mtok: 1.0,
-                    cache_read_per_mtok: 1.0,
-                    input_above_200k_per_mtok: None,
-                    output_above_200k_per_mtok: None,
-                    cache_creation_above_200k_per_mtok: None,
-                    cache_read_above_200k_per_mtok: None,
-                },
-                context_window: Some(500_000),
-            },
-        );
-        PricingTable {
-            updated_at: "2099-01".into(),
-            source: "test".into(),
-            models,
-        }
-    }
-
-    /// 覆盖表按模型命中优先; 覆盖表没有的模型回落 builtin, 不得被整表吞掉.
+    /// 内嵌快照条目转换:跳过异形条目与非 Anthropic 模型.
     #[test]
-    fn override_per_model_with_builtin_fallback() {
-        let _g = TEST_GUARD.lock().unwrap_or_else(|e| e.into_inner());
-        clear_pricing_override();
-        set_pricing_override(test_table("claude-opus-4-7", 99.0));
-        assert_eq!(pricing_for("claude-opus-4-7").unwrap().input_per_mtok, 99.0);
-        assert_eq!(context_window_of("claude-opus-4-7"), Some(500_000));
-        // override 缺 fable → 回落 builtin
-        assert_eq!(pricing_for("claude-fable-5").unwrap().input_per_mtok, 10.0);
-        assert_eq!(context_window_of("claude-fable-5"), Some(1_000_000));
-        assert_eq!(pricing_status().source, "override");
-        assert_eq!(pricing_status().updated_at.as_deref(), Some("2099-01"));
-
-        clear_pricing_override();
-        assert_eq!(pricing_for("claude-opus-4-7").unwrap().input_per_mtok, 5.0);
-        assert_eq!(pricing_status().source, "builtin");
-    }
-
-    /// 旧 v1 pricing.json(opus/sonnet/haiku 三档)必须解析失败 → 启动时忽略回落 builtin.
-    #[test]
-    fn v1_pricing_json_fails_to_parse() {
-        let v1 = r#"{"updated_at":"2026-05-01","source":"LiteLLM","models":{"opus":{"input_per_mtok":15.0,"output_per_mtok":75.0,"cache_creation_per_mtok":18.75,"cache_read_per_mtok":1.5,"input_above_200k_per_mtok":null,"output_above_200k_per_mtok":null,"cache_creation_above_200k_per_mtok":null,"cache_read_above_200k_per_mtok":null},"sonnet":{},"haiku":{}}}"#;
-        assert!(serde_json::from_str::<PricingTable>(v1).is_err());
-    }
-
-    /// 运行时解析 LiteLLM 原始全表(含异形条目)— 与内嵌快照同一转换器.
-    #[test]
-    fn parse_litellm_raw_body() {
+    fn converts_litellm_entries() {
         let body = r#"{
             "sample_spec": {"max_tokens": "set to max output tokens"},
             "claude-test-9": {
@@ -479,7 +322,6 @@ mod tests {
             },
             "gpt-x": {"litellm_provider": "openai", "input_cost_per_token": 1e-06, "output_cost_per_token": 2e-06}
         }"#;
-        // 条目过少会被拒 — 这里直接测转换器
         let map: serde_json::Map<String, serde_json::Value> = serde_json::from_str(body).unwrap();
         let models = convert_entries(&map);
         assert_eq!(models.len(), 1, "只收 anthropic 原生 claude 条目");
@@ -487,7 +329,5 @@ mod tests {
         assert_eq!(mi.pricing.input_per_mtok, 10.0);
         assert_eq!(mi.pricing.cache_read_per_mtok, 1.0);
         assert_eq!(mi.context_window, Some(1_000_000));
-        // 全表入口: 条目不足报错
-        assert!(parse_litellm(body, "test", "2026-06-13".into()).is_err());
     }
 }

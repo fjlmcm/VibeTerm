@@ -2,14 +2,15 @@
 //!
 //! 输入:shell 子进程 pid。
 //! 流程:
-//!   1. 枚举 pid 子孙进程(unix:`ps -o pid,command --ppid <pgid>`;先 `ps -o pgid= -p <pid>` 取 pgid)
+//!   1. 每轮拉一次全进程表 `ProcessTable::snapshot()`(unix:`ps -ax -o pid=,ppid=,command=`),
+//!      对各 shell pid 做 PPID 链 DFS 枚举子孙进程
 //!   2. 取每行 command 第一个 token,小写归一
-//!   3. 对照 AGENT_NAMES 表识别 → 返回 AgentKind
+//!   3. 对照 AGENT_DEFS 表识别 → 返回 AgentKind
 //!
-//! 跨 chunk 性能:这函数被 status crate 周期(~5s)调一次,不必 hot path。
+//! 性能:上层 3s 轮询每轮只 spawn 一次 ps(而非每终端两次),不是 hot path。
 //!
 //! 当前简化版本:
-//!   - 不缓存 — 每次 fresh 跑 ps(macOS 上 < 5ms,Linux 类似)
+//!   - 不跨轮缓存 — 每轮 fresh 跑一次 ps(macOS 上 < 5ms,Linux 类似)
 //!   - 不打分(Prowl 用打分应对 wrapped runtimes 如 npm-exec 启动 claude;
 //!     这里先做基础识别,后续如有需要再加候选打分)
 //!   - Windows 走 sysinfo 枚举进程表(pid/ppid/cmdline),后裔 DFS 与 unix 共用;
@@ -276,9 +277,52 @@ fn token_to_name(token: &str) -> Option<String> {
     Some(base.to_string())
 }
 
-/// 给 shell pid,返回识别到的 agent;无前台命令或不在 agent 表中返回 None
-pub fn detect_agent_for_shell(shell_pid: u32) -> Option<AgentKind> {
-    detect_agent_with_diagnostics(shell_pid).0
+/// 一次拉取的全进程表快照 (pid, ppid, cmdline) + ppid → 子进程索引。
+/// 上层每轮识别拉一次, 对所有 shell pid 共享, 避免每终端各 spawn 一次 ps。
+pub struct ProcessTable {
+    procs: Vec<(u32, u32, String)>,
+    children: std::collections::HashMap<u32, Vec<usize>>,
+}
+
+impl ProcessTable {
+    /// 拉一次全进程表. 拿不到(ps 失败 / 不支持的平台)则为空表 → 一律识别为 None.
+    pub fn snapshot() -> Self {
+        let procs = list_all_processes().unwrap_or_default();
+        let mut children: std::collections::HashMap<u32, Vec<usize>> =
+            std::collections::HashMap::new();
+        for (i, (_, ppid, _)) in procs.iter().enumerate() {
+            children.entry(*ppid).or_default().push(i);
+        }
+        Self { procs, children }
+    }
+
+    /// 给 shell pid,返回识别到的 agent;无前台命令或不在 agent 表中返回 None
+    pub fn detect_agent_for_shell(&self, shell_pid: u32) -> Option<AgentKind> {
+        detect_agent_in_cmdlines(&self.descendant_commands(shell_pid))
+    }
+
+    /// 列 shell_pid 的所有后裔进程 cmdline (DFS via PPID).
+    /// 穿透 process group 边界 — codex / node 等用 setsid 起新 pgid 时仍能找到.
+    fn descendant_commands(&self, shell_pid: u32) -> Vec<String> {
+        // visited 防御 ppid 环导致死循环.
+        let mut frontier = vec![shell_pid];
+        let mut visited = std::collections::HashSet::new();
+        visited.insert(shell_pid);
+        let mut found = Vec::<String>::new();
+        while let Some(parent) = frontier.pop() {
+            let Some(kids) = self.children.get(&parent) else {
+                continue;
+            };
+            for &i in kids {
+                let (pid, _, cmd) = &self.procs[i];
+                if visited.insert(*pid) {
+                    found.push(cmd.clone());
+                    frontier.push(*pid);
+                }
+            }
+        }
+        found
+    }
 }
 
 /// `kw` 是否在 cmdline(已 lowercase)里作为**路径 basename 或独立 token**出现:
@@ -303,7 +347,7 @@ fn mentions_binary(hay: &str, kw: &str) -> bool {
     false
 }
 
-/// 调试版: 返回 (识别结果, 诊断信息)
+/// 调试版(按需 IPC 调用, 非周期轮询): 返回 (识别结果, 诊断信息)
 ///   diagnostics 包含 pgid + 该 shell 的所有后裔进程 cmdlines (任意深度).
 ///
 /// 关键设计:用 PPID 链追溯 descendants 而非 PGID. 原因:
@@ -312,7 +356,7 @@ fn mentions_binary(hay: &str, kw: &str) -> bool {
 ///   能穿透 process group 边界, 找到任意嵌套深度的子进程.
 /// 进程表来源平台分支(unix: ps;Windows: sysinfo),匹配逻辑共用.
 pub fn detect_agent_with_diagnostics(shell_pid: u32) -> (Option<AgentKind>, Diagnostics) {
-    let cmdlines = list_descendant_commands(shell_pid).unwrap_or_default();
+    let cmdlines = ProcessTable::snapshot().descendant_commands(shell_pid);
     #[cfg(unix)]
     let pgid = get_pgid(shell_pid);
     #[cfg(not(unix))]
@@ -390,25 +434,6 @@ fn get_pgid(pid: u32) -> Option<u32> {
         .ok()
 }
 
-#[cfg(unix)]
-#[allow(dead_code)] // 保留, fallback 用得到
-fn list_commands_in_pgid(pgid: u32) -> Option<Vec<String>> {
-    let out = std::process::Command::new("ps")
-        .args(["-g", &pgid.to_string(), "-o", "command="])
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    Some(
-        String::from_utf8_lossy(&out.stdout)
-            .lines()
-            .map(|l| l.trim().to_string())
-            .filter(|l| !l.is_empty())
-            .collect(),
-    )
-}
-
 /// 全进程表 (pid, ppid, cmdline) —— unix 走 ps 文本解析
 #[cfg(unix)]
 fn list_all_processes() -> Option<Vec<(u32, u32, String)>> {
@@ -468,26 +493,6 @@ fn list_all_processes() -> Option<Vec<(u32, u32, String)>> {
 #[cfg(not(any(unix, windows)))]
 fn list_all_processes() -> Option<Vec<(u32, u32, String)>> {
     None
-}
-
-/// 列 shell_pid 的所有后裔进程 cmdline (DFS via PPID).
-/// 穿透 process group 边界 — codex / node 等用 setsid 起新 pgid 时仍能找到.
-fn list_descendant_commands(shell_pid: u32) -> Option<Vec<String>> {
-    let all = list_all_processes()?;
-    // DFS: 从 shell_pid 找所有后裔. visited 防御 ppid 环导致死循环.
-    let mut frontier = vec![shell_pid];
-    let mut visited = std::collections::HashSet::new();
-    visited.insert(shell_pid);
-    let mut found = Vec::<String>::new();
-    while let Some(parent) = frontier.pop() {
-        for (pid, ppid, cmd) in &all {
-            if *ppid == parent && visited.insert(*pid) {
-                found.push(cmd.clone());
-                frontier.push(*pid);
-            }
-        }
-    }
-    Some(found)
 }
 
 #[cfg(test)]
@@ -576,6 +581,32 @@ mod tests {
             r"type c:\users\demo\.codex\config.toml",
             "codex"
         ));
+    }
+
+    #[test]
+    fn process_table_descendants_follow_ppid_chain() {
+        let table = ProcessTable {
+            procs: vec![
+                (100, 1, "zsh".into()),
+                (101, 100, "node /usr/local/bin/claude".into()),
+                (102, 101, "claude-helper".into()),
+                (200, 1, "zsh".into()),
+                (201, 200, "vim".into()),
+                // ppid 环(防御)
+                (300, 301, "a".into()),
+                (301, 300, "b".into()),
+            ],
+            children: Default::default(),
+        };
+        let mut children: std::collections::HashMap<u32, Vec<usize>> = Default::default();
+        for (i, (_, ppid, _)) in table.procs.iter().enumerate() {
+            children.entry(*ppid).or_default().push(i);
+        }
+        let table = ProcessTable { children, ..table };
+        assert_eq!(table.detect_agent_for_shell(100), Some(AgentKind::Claude));
+        assert_eq!(table.detect_agent_for_shell(200), None);
+        assert_eq!(table.detect_agent_for_shell(999), None);
+        assert_eq!(table.descendant_commands(300), vec!["b".to_string()]);
     }
 
     #[test]

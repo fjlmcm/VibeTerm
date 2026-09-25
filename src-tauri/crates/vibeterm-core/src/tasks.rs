@@ -44,7 +44,7 @@ struct TaskRuntime {
     agent_kinds: HashMap<TerminalId, String>,
     /// 关键:slot_id → terminal_id 映射(后端做幂等,前端无需判断 spawn/attach)。
     /// 同一 (task, slot) 第二次 spawn 直接返回已有 terminal_id + add_sink。
-    /// Canvas 和 Normal 视图同时挂载时,这是避免"开两个独立 PTY"的唯一防线。
+    /// 主窗和浮窗同时挂载时,确保它们共享同一个 PTY。
     slot_terminals: HashMap<u32, TerminalId>,
     /// 通知静音 (持久化). 通知层每次弹之前查它.
     notify_muted: bool,
@@ -133,9 +133,12 @@ type SlotLockMap = HashMap<(TaskId, u32), Arc<Mutex<()>>>;
 pub struct TaskRegistry {
     inner: Mutex<Inner>,
     /// 每 (task, slot) 一个 mutex,用于序列化"查 + spawn + bind"避免并发 race。
-    /// Normal 和 Canvas 同 task+slot 并发挂载时,后到的请求会等先到的完成 bind,
+    /// 同 task+slot 并发挂载时,后到的请求会等先到的完成 bind,
     /// 然后查到 existing 走 attach 路径。
     slot_locks: Mutex<SlotLockMap>,
+    /// 启动时 tasks.json 读失败(I/O 错误,内容未知)→ 只读模式:本进程所有 save 变 no-op,
+    /// 绝不用空注册表覆盖用户可能完好的文件。
+    read_only: bool,
 }
 
 struct Inner {
@@ -157,16 +160,28 @@ impl Default for TaskRegistry {
 
 impl TaskRegistry {
     pub fn new() -> Self {
-        let inner = match vibeterm_tasks::load() {
-            Ok(f) => Inner::from_file(f),
+        let (inner, read_only) = match vibeterm_tasks::load() {
+            Ok(f) => (Inner::from_file(f), false),
             Err(e) => {
-                tracing::warn!(err = %e, "tasks.json load failed, starting empty");
-                Inner::empty()
+                tracing::warn!(err = %e, "tasks.json load failed, starting empty (read-only, 不落盘)");
+                (Inner::empty(), true)
             }
         };
         Self {
             inner: Mutex::new(inner),
             slot_locks: Mutex::new(HashMap::new()),
+            read_only,
+        }
+    }
+
+    /// 写盘 tasks.json;只读模式下 no-op + warn(见 `read_only`)。
+    fn save(&self, snap: &TasksFile) {
+        if self.read_only {
+            tracing::warn!("tasks.json 只读模式(启动时读失败),跳过保存");
+            return;
+        }
+        if let Err(e) = vibeterm_tasks::save(snap) {
+            tracing::warn!(err = %e, "tasks.json save failed");
         }
     }
 
@@ -229,9 +244,7 @@ impl TaskRegistry {
         }
         let snap = inner.snapshot();
         drop(inner);
-        if let Err(e) = vibeterm_tasks::save(&snap) {
-            tracing::warn!(err = %e, "tasks.json save failed");
-        }
+        self.save(&snap);
         Ok(id)
     }
 
@@ -251,9 +264,7 @@ impl TaskRegistry {
             Ok(mut map) => map.retain(|(tid, _), _| *tid != id),
             Err(_) => tracing::warn!("slot_locks poisoned, skipping cleanup on close"),
         }
-        if let Err(e) = vibeterm_tasks::save(&snap) {
-            tracing::warn!(err = %e, "tasks.json save failed");
-        }
+        self.save(&snap);
         Ok(term_ids)
     }
 
@@ -265,9 +276,7 @@ impl TaskRegistry {
         t.auto_namable = false;
         let snap = inner.snapshot();
         drop(inner);
-        if let Err(e) = vibeterm_tasks::save(&snap) {
-            tracing::warn!(err = %e, "tasks.json save failed");
-        }
+        self.save(&snap);
         Ok(())
     }
 
@@ -297,9 +306,7 @@ impl TaskRegistry {
         t.pinned = pinned;
         let snap = inner.snapshot();
         drop(inner);
-        if let Err(e) = vibeterm_tasks::save(&snap) {
-            tracing::warn!(err = %e, "tasks.json save failed");
-        }
+        self.save(&snap);
         Ok(())
     }
 
@@ -310,9 +317,7 @@ impl TaskRegistry {
         t.notify_muted = muted;
         let snap = inner.snapshot();
         drop(inner);
-        if let Err(e) = vibeterm_tasks::save(&snap) {
-            tracing::warn!(err = %e, "tasks.json save failed");
-        }
+        self.save(&snap);
         Ok(())
     }
 
@@ -343,9 +348,7 @@ impl TaskRegistry {
         inner.order = [valid, missing].concat();
         let snap = inner.snapshot();
         drop(inner);
-        if let Err(e) = vibeterm_tasks::save(&snap) {
-            tracing::warn!(err = %e, "tasks.json save failed");
-        }
+        self.save(&snap);
         Ok(())
     }
 
@@ -369,9 +372,7 @@ impl TaskRegistry {
         if changed {
             let snap = inner.snapshot();
             drop(inner);
-            if let Err(e) = vibeterm_tasks::save(&snap) {
-                tracing::warn!(err = %e, "tasks.json save failed");
-            }
+            self.save(&snap);
         }
         Ok(())
     }
@@ -728,9 +729,7 @@ impl TaskRegistry {
         t.split_tree = tree;
         let snap = inner.snapshot();
         drop(inner);
-        if let Err(e) = vibeterm_tasks::save(&snap) {
-            tracing::warn!(err = %e, "tasks.json save failed");
-        }
+        self.save(&snap);
         Ok(())
     }
 

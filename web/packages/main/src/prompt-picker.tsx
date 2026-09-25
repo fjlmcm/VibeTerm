@@ -8,7 +8,7 @@
 // 焦点: 显式 ref + onMount focus, 同时 window-level keydown 兜底 (input 失焦也能用).
 
 import { For, Show, createMemo, createSignal, onMount, onCleanup, type Component } from "solid-js";
-import { ipc, t, focusTerminal, promptDisplayName, promptDisplayContent } from "@vibeterm/ui-core";
+import { ipc, t, focusTerminal, promptDisplayName, promptDisplayContent, truncateGraphemes } from "@vibeterm/ui-core";
 import type { PromptEntry, PromptKind, TerminalId } from "@vibeterm/ipc-types";
 
 // {{cursor}} 回退用的终端显示列宽 — ESC[nD (CUB) 按"列"左移光标, 不是按 UTF-16
@@ -310,7 +310,7 @@ export const PromptPicker: Component<PromptPickerProps> = (props) => {
                   </span>
                 </div>
                 <div style={{ color: "var(--color-text-2)", "font-size": "10px", "margin-top": "2px", "white-space": "nowrap", overflow: "hidden", "text-overflow": "ellipsis" }}>
-                  {promptDisplayContent(p).replace(/\n/g, " ").slice(0, 80)}
+                  {truncateGraphemes(promptDisplayContent(p).replace(/\n/g, " "), 80)}
                 </div>
               </div>
             )}

@@ -1,13 +1,11 @@
-// 更新页 — 两个独立的手动检查:软件本身(仅版本对比 + release 链接)、模型价格(下载并应用)。
-//
-// 🔴 零侵入:两块都仅在用户点按钮时联网(后端 ureq GET 固定端点),无后台轮询、无上传。
+// 更新页 — 软件版本检查、自动检查开关与用户触发的下载安装。
 import { type Component, Show, createSignal, onMount } from "solid-js";
-import { Package, DollarSign, RefreshCw, Download, RotateCcw, Check } from "lucide-solid";
+import { Package, RefreshCw, Download, Check } from "lucide-solid";
 import { ipc, t } from "@vibeterm/ui-core";
 import { getVersion } from "@tauri-apps/api/app";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import type { AppUpdateInfo, PricingStatus } from "@vibeterm/ipc-types";
+import type { AppUpdateInfo } from "@vibeterm/ipc-types";
 
 const card = (): Record<string, string> => ({
   background: "var(--color-bg)",
@@ -149,45 +147,6 @@ export const UpdateTab: Component = () => {
     await downloadAndInstall();
   };
 
-  // ---- 模型价格 ----
-  const [pricing, setPricing] = createSignal<PricingStatus | null>(null);
-  const [priceState, setPriceState] = createSignal<"idle" | "updating">("idle");
-  const [priceMsg, setPriceMsg] = createSignal("");
-  const [priceErr, setPriceErr] = createSignal(false);
-
-  const loadPricing = async () => {
-    try {
-      setPricing(await ipc.getPricingStatus());
-    } catch (e) {
-      console.error("[update] getPricingStatus", e);
-    }
-  };
-  const updatePricing = async () => {
-    setPriceState("updating");
-    setPriceMsg("");
-    setPriceErr(false);
-    try {
-      const s = await ipc.updateModelPricing();
-      setPricing(s);
-      setPriceMsg(t("update.price.updated", { date: s.updated_at ?? "" }));
-    } catch (e) {
-      setPriceErr(true);
-      setPriceMsg(t("update.price.failed"));
-      console.error("[update] updateModelPricing", e);
-    } finally {
-      setPriceState("idle");
-    }
-  };
-  const resetPricing = async () => {
-    try {
-      setPricing(await ipc.resetModelPricing());
-      setPriceMsg("");
-      setPriceErr(false);
-    } catch (e) {
-      console.error("[update] resetModelPricing", e);
-    }
-  };
-
   onMount(async () => {
     try {
       setVersion(await getVersion());
@@ -202,7 +161,6 @@ export const UpdateTab: Component = () => {
     } catch (e) {
       console.error("[update] getConfig", e);
     }
-    await loadPricing();
   });
 
   return (
@@ -314,59 +272,6 @@ export const UpdateTab: Component = () => {
             </span>
           </span>
         </label>
-      </section>
-
-      {/* ===== 模型价格 ===== */}
-      <section style={card()}>
-        <h3 style={sectionTitle()}>
-          <DollarSign size={15} /> {t("update.price.title")}
-        </h3>
-
-        {/* 用途说明(显著) */}
-        <div
-          style={{
-            "font-size": "12px",
-            color: "var(--color-text)",
-            "line-height": 1.6,
-            background: "var(--color-surface)",
-            padding: "10px 12px",
-            "border-radius": "8px",
-            border: "1px solid var(--color-border)",
-            "margin-bottom": "14px",
-          }}
-        >
-          {t("update.price.purpose")}
-        </div>
-
-        <div style={{ "font-size": "12px", color: "var(--color-text-2)", "margin-bottom": "12px" }}>
-          {t("update.price.current")}:{" "}
-          <Show
-            when={pricing()?.source === "override"}
-            fallback={<span style={{ color: "var(--color-text)" }}>{t("update.price.builtin")}</span>}
-          >
-            <span style={{ color: "var(--color-text)" }}>
-              {t("update.price.updated_label", { date: pricing()?.updated_at ?? "" })}
-            </span>
-          </Show>
-        </div>
-
-        <div style={{ display: "flex", gap: "8px", "align-items": "center", "flex-wrap": "wrap" }}>
-          <button data-testid="update-pricing" style={btn(true)} onClick={updatePricing} disabled={priceState() === "updating"}>
-            <RefreshCw size={13} /> {priceState() === "updating" ? t("update.price.updating") : t("update.price.check")}
-          </button>
-          <Show when={pricing()?.source === "override"}>
-            <button data-testid="reset-pricing" style={btn(false)} onClick={resetPricing}>
-              <RotateCcw size={13} /> {t("update.price.reset")}
-            </button>
-          </Show>
-          <Show when={priceMsg()}>
-            <span style={{ "font-size": "12px", color: priceErr() ? "var(--color-status-waiting, #e5a23d)" : "var(--color-text-2)" }}>
-              {priceMsg()}
-            </span>
-          </Show>
-        </div>
-
-        <p style={note()}>{t("update.price.note")}</p>
       </section>
     </div>
   );

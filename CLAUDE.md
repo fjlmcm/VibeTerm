@@ -9,7 +9,7 @@
 
 ## 技术栈与架构
 
-**Tauri 2 + Rust(workspace)+ SolidJS + xterm.js(WebglAddon GPU 渲染);pnpm monorepo。** 当前版本 0.3.0,标识 `com.vibeterm.desktop`,macOS 11+。
+**Tauri 2 + Rust(workspace)+ SolidJS + xterm.js(WebglAddon GPU 渲染);pnpm monorepo。** 当前版本 1.1.6,标识 `com.vibeterm.desktop`,macOS 11+。
 
 ### Rust 侧(`src-tauri/`)— 主 app + 8 个业务 crate(单向依赖分层)
 | crate | 职责 |
@@ -28,8 +28,8 @@
 ### Web 侧(`web/packages/`)
 | 包 | 职责 |
 |---|---|
-| `@vibeterm/main` | 根 SolidJS app(`main.tsx`):任务列表(侧栏)+ 工作区(终端网格 / canvas 卡片)+ 浮窗 + 设置 / 命令面板 / prompt picker |
-| `@vibeterm/ui-core` | 组件库:`Terminal`(xterm+Webgl)/ `TaskList` / `SplitView`(n 叉分屏树)/ `StatusBar`(widget registry)/ `CanvasViewport` / keybindings / i18n / theme / ipc bridge |
+| `@vibeterm/main` | 根 SolidJS app(`main.tsx`):任务列表(侧栏)+ 工作区(终端网格)+ 浮窗 + 设置 / 命令面板 / prompt picker |
+| `@vibeterm/ui-core` | 组件库:`Terminal`(xterm+Webgl)/ `TaskList` / `SplitView`(n 叉分屏树)/ `StatusBar`(widget registry)/ keybindings / i18n / theme / ipc bridge |
 | `@vibeterm/ipc-types` | Rust IPC schema 的 TS 镜像 |
 | `e2e` | Playwright(开发 smoke)+ WebdriverIO(Windows 真 Tauri E2E) |
 
@@ -62,10 +62,11 @@
 pnpm dev          # tauri dev(Vite :1420 热重载)
 pnpm build        # tauri build(typecheck + cargo + web bundle + 打包)
 pnpm typecheck    # web 子包递归 tsc
+pnpm lint         # eslint(typescript-eslint + solid recommended;CI lint job 必跑)
 
 # Rust(在 src-tauri/ 下)
 cargo build --release
-cargo test -p vibeterm-{config,core,ipc,pty,status,tasks}   # 排除 tauri 主包
+cargo test -p vibeterm-{config,core,ipc,pty,status,tasks,agent-watch,git}   # 排除 tauri 主包
 cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all
 
@@ -76,7 +77,7 @@ scripts/build-sounds.py          # ffmpeg 压缩提示音 → src-tauri/resource
 scripts/update-model-data.py     # 拉 LiteLLM 刷新内嵌模型快照(价格+ctx 窗口);每次发版前必跑
 ```
 
-CI(`.github/workflows/ci.yml`):lint + cargo test(6 子 crate)+ Playwright + app-smoke + build-smoke。发布(`release.yml`)为 `workflow_dispatch` 手动触发(tag 自动发布已禁用)。
+CI(`.github/workflows/ci.yml`):lint + cargo test(全部 8 个子 crate)+ Playwright + app-smoke + build-smoke。发布(`release.yml`):推 `v*` tag 自动签名公证并 publish(也可 `workflow_dispatch` 手动触发),流程见 `/release` skill。
 
 ---
 

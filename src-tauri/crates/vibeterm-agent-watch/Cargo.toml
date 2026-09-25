@@ -13,14 +13,3 @@ tokio       = { workspace = true }
 tracing     = { workspace = true }
 notify      = "6"
 dirs        = "5"
-
-# 历史统计聚合按本地时区分天 — 用 chrono::Local (内部 localtime_r 线程安全),
-# 不用 time crate 的 local-offset (多线程不 sound). 与主 crate 同特性集.
-[dependencies.chrono]
-version = "0.4"
-default-features = false
-features = ["clock", "std"]
-
-[dev-dependencies]
-# stats 聚合单测:tempdir 造 fixture, 隔离真实 ~/.claude / ~/.codex (零侵入红线).
-tempfile = "3"

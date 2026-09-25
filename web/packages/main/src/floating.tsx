@@ -109,6 +109,13 @@ function FloatingApp() {
     };
   }
 
+  // onMount 内 await 之后注册的 onCleanup 会被 Solid 丢弃,故在同步上下文注册,
+  // 句柄在 await 后逐个推入。
+  const unlisteners: (() => void)[] = [];
+  onCleanup(() => {
+    for (const off of unlisteners.splice(0)) off();
+  });
+
   onMount(async () => {
     try {
       const cfg = await ipc.getConfig();
@@ -148,7 +155,7 @@ function FloatingApp() {
       }
     };
     window.addEventListener("keydown", onKey);
-    onCleanup(() => window.removeEventListener("keydown", onKey));
+    unlisteners.push(() => window.removeEventListener("keydown", onKey));
 
     const applyTask = (t: TaskDto) => {
       setTask(t);
@@ -182,10 +189,7 @@ function FloatingApp() {
       themeMod.applyShellTheme(th);
       setTheme(th);
     });
-    onCleanup(() => {
-      off();
-      offTheme();
-    });
+    unlisteners.push(off, offTheme);
   });
 
   createEffect(() => {

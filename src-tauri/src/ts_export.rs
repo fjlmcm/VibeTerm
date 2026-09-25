@@ -40,9 +40,6 @@ mod tests {
         t.register::<vibeterm_agent_watch::ClaudeSession>();
         t.register::<vibeterm_agent_watch::CodexSnapshot>();
         t.register::<vibeterm_agent_watch::claude::blocks::ActiveBlock>();
-        t.register::<vibeterm_agent_watch::stats::UsageStats>();
-        t.register::<vibeterm_agent_watch::claude::pricing::PricingStatus>();
-        t.register::<vibeterm_agent_watch::provider::AgentUsage>();
         // vibeterm-status / git
         t.register::<vibeterm_status::AgentKind>();
         t.register::<vibeterm_git::WorktreeStatus>();

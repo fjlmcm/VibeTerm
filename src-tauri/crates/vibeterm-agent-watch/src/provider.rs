@@ -251,14 +251,6 @@ pub fn providers() -> Vec<Box<dyn AgentProvider>> {
     vec![Box::new(ClaudeProvider), Box::new(CodexProvider)]
 }
 
-/// 解析指定 agent 在某 cwd 的统一用量(给 IPC / /doctor)。
-pub fn resolve(kind: AgentKind, cwd: &str) -> Option<AgentUsage> {
-    providers()
-        .into_iter()
-        .find(|p| p.kind() == kind)
-        .and_then(|p| p.resolve_by_cwd(cwd))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -47,12 +47,10 @@ _Đủ các tính năng terminal thường thấy, cộng thêm nhận biết tr
 - **Thấy agent đang làm gì** — Đang chạy, đang chờ, kẹt hay xong — nhận ra mà không đụng cấu hình của bạn.
 - **Phát hiện kẹt + sắp xếp theo độ gấp** — Màn hình đầy agent? Cái kẹt và cái đang đợi bạn được đẩy lên đầu.
 - **Mức dùng thời gian thực** — Ngữ cảnh còn lại, hạn mức 5h/7d, tốc độ tiêu, cache, chi phí — tất cả trên một thanh.
-- **Thống kê mức dùng** — Số token và chi phí cho Claude / Codex. Tính ngoại tuyến, xuất được.
 
 ### Terminal
 
 - **Chia ô + worktree** — Gắn một git worktree, mỗi tác vụ một cây terminal riêng.
-- **Bảng Canvas** — Xếp tác vụ thành thẻ, chọn bằng khung, gửi một lệnh tới nhiều terminal.
 - **Cửa sổ nổi** — Tách bất kỳ tác vụ nào ra cửa sổ riêng và tiếp tục trông chừng.
 - **Dựng hình bằng GPU** — Tăng tốc WebGL, mà CJK vẫn không rớt glyph hay giật.
 
@@ -102,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## Đứng trên vai những dự án này.
 
-Cảm ơn đặc biệt ccusage của ryoppippi (MIT). Thống kê mức dùng, giá mô hình và khối 5 giờ đều từ đó mà ra; dữ liệu giá đến từ LiteLLM và các con số chính thức của Anthropic.
+Cảm ơn đặc biệt ccusage của ryoppippi (MIT). Giá mô hình và khối 5 giờ đều từ đó mà ra; dữ liệu giá đến từ LiteLLM và các con số chính thức của Anthropic.
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

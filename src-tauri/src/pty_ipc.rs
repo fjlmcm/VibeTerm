@@ -504,15 +504,23 @@ pub(crate) async fn write_pty(
             }
         }
     }
-    state.terminals.write(id, &data).map_err(|e| match e {
-        vibeterm_core::TerminalRegistryError::NotFound(id) => IpcError::NotFound {
-            resource: "terminal".into(),
-            id: id.to_string(),
-        },
-        other => IpcError::Unknown {
-            trace_id: format!("write_pty:{other}"),
-        },
-    })
+    // 阻塞 I/O 走 spawn_blocking:前台进程不读 stdin 且 PTY 输入队列满时 write_all 挂住,
+    // 不能占死 tokio worker(否则其他终端的 spawn/close/resize IPC 一起卡)。
+    let terminals = state.terminals.clone();
+    tokio::task::spawn_blocking(move || terminals.write(id, &data))
+        .await
+        .map_err(|e| IpcError::Unknown {
+            trace_id: format!("write_pty:join:{e}"),
+        })?
+        .map_err(|e| match e {
+            vibeterm_core::TerminalRegistryError::NotFound(id) => IpcError::NotFound {
+                resource: "terminal".into(),
+                id: id.to_string(),
+            },
+            other => IpcError::Unknown {
+                trace_id: format!("write_pty:{other}"),
+            },
+        })
 }
 
 #[tauri::command]

@@ -47,12 +47,10 @@ _Her zamanki terminal özellikleri, artı ekranı dolduran yapay zekâ ajanları
 - **Bir ajanın ne yaptığını görür** — Çalışıyor, bekliyor, takıldı ya da bitti — yapılandırmana dokunmadan anlaşılır.
 - **Takılma algılama + aciliyet sıralaması** — Ekran ajanlarla mı dolu? Takılanlar ve seni bekleyenler en üste çıkar.
 - **Canlı kullanım** — Kalan bağlam, 5h/7d kota, yakma hızı, önbellek, maliyet — hepsi tek barda.
-- **Kullanım istatistikleri** — Claude / Codex için token ve maliyet rakamları. Çevrimdışı hesaplanır, dışa aktarılabilir.
 
 ### Terminal
 
 - **Bölmeler + worktree** — Bir git worktree bağla, görev başına bir terminal ağacı.
-- **Canvas panosu** — Görevleri kart olarak diz, çerçeveyle seç, tek komutu birden çok terminale gönder.
 - **Yüzen pencereler** — Herhangi bir görevi kendi penceresine çıkar ve izlemeye devam et.
 - **GPU ile çizim** — WebGL hızlandırmalı, yine de CJK gliflerini düşürmez ve takılmaz.
 
@@ -102,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## Bunların omuzlarında.
 
-ryoppippi'nin ccusage'ına (MIT) özel teşekkürler. Kullanım istatistikleri, model fiyatları ve 5 saatlik bloklar oradan geldi; fiyat verileri LiteLLM ve Anthropic'in resmi rakamlarından.
+ryoppippi'nin ccusage'ına (MIT) özel teşekkürler. Model fiyatları ve 5 saatlik bloklar oradan geldi; fiyat verileri LiteLLM ve Anthropic'in resmi rakamlarından.
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

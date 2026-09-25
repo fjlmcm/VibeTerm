@@ -18,7 +18,7 @@
 //
 // 每个 profile card 自管 add-popover 状态. 没有右侧固定 catalog 列.
 
-import { For, Show, createMemo, createSignal, onCleanup, onMount, type Component } from "solid-js";
+import { For, Show, createMemo, createSignal, onCleanup, onMount, type Component, type JSX } from "solid-js";
 import { GripVertical, Plus, RotateCcw, Search, Trash2, X } from "lucide-solid";
 import {
   DragDropProvider,
@@ -153,8 +153,17 @@ const MOCK_TASK: TaskDto = {
   status: "running",
   terminal_ids: [],
   location: { kind: "MainWorkspace" },
-  split_tree: { kind: "leaf", slot_id: 0 } as any,
-  worktree: { repo_path: "/Users/example/dev", worktree_path: "/Users/example/dev/wt-feature", branch: "feature-branch", head: "" } as any,
+  split_tree: { kind: "leaf", slot_id: 0 },
+  worktree: {
+    repo_path: "/Users/example/dev",
+    worktree_path: "/Users/example/dev/wt-feature",
+    branch: "feature-branch",
+    head: "",
+    is_dirty: false,
+    ahead: 0,
+    behind: 0,
+    status_updated_at: 0,
+  },
 };
 
 function mockCtxFor(profileKey: string): MockCtx {
@@ -614,7 +623,7 @@ const ProfileCard: Component<{
             when={renderedPreview().length > 0}
             fallback={<span style={{ opacity: 0.4 }}>{t("statusbar.empty_preview")}</span>}
           >
-            <For each={renderedPreview()}>{(node) => node as any}</For>
+            <For each={renderedPreview()}>{(node) => node}</For>
           </Show>
         </div>
       </div>
@@ -1112,7 +1121,7 @@ const ItemEditor: Component<{
   );
 };
 
-const Field: Component<{ label: string; children: any }> = (props) => (
+const Field: Component<{ label: string; children: JSX.Element }> = (props) => (
   <div style={{ display: "flex", "align-items": "center", gap: "6px" }}>
     <span style={{ "min-width": "60px", "font-size": "10px", color: "var(--color-text-2)" }}>
       {props.label}

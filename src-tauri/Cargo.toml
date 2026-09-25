@@ -19,7 +19,7 @@ members = [
 ]
 
 [workspace.package]
-version = "1.1.5"
+version = "1.1.6"
 edition = "2021"
 publish = false
 license = "MIT"
@@ -153,21 +153,36 @@ features = ["clock", "std"]
 [dependencies.base64]
 version = "0.22"
 
-# 手动更新检查(软件版本 / 模型价格)—— 仅用户点按钮时 GET 两个固定 HTTPS 端点,
-# 纯读取、无上传、绝不后台轮询(零侵入红线). 选 ureq(同步 + rustls, 依赖树极小)
+# 软件版本检查 —— 只读 GitHub 发布信息,无上传或后台轮询。
+# 选 ureq(同步 + rustls, 依赖树极小)
 # 而非 reqwest(async + 重). 默认 features 已含 rustls tls.
 [dependencies.ureq]
 version = "2"
 
-# 通用原子写(events.jsonl / pricing.json / scrollback.json 的 atomic_write).
+# 通用原子写(events.jsonl / scrollback.json 的 atomic_write).
 [dependencies.tempfile]
 version = "3"
 
+# 打开外部 URL / 文件 / Finder 定位:三平台统一走 opener 的 Rust API(macOS NSWorkspace /
+# Windows ShellExecuteW / Linux xdg-open),不经过 cmd.exe 等 shell —— URL 里的 & | ^ 不会被
+# 当命令分隔符。只在 Rust 侧调用,不注册插件、不给前端权限。
+[dependencies.tauri-plugin-opener]
+version = "2"
+
 # macOS:读 NSPasteboard 里的文件 URL(剪贴板含文件时 → 路径直插,跳过 bitmap icon 陷阱)
-# 模式 1:1 借鉴 references/wezterm/window/src/os/macos/clipboard.rs:21-31
-# cocoa 0.26 全面 deprecate 但 API 仍工作;模块内用 #[allow(deprecated)] 局部豁免
-[target.'cfg(target_os = "macos")'.dependencies]
-cocoa = "0.26"
+# 用 objc2-* 系列(与 tauri 同版本),cocoa 0.26 会拉入已被标 future-incompat 的 block 0.1。
+[target.'cfg(target_os = "macos")'.dependencies.objc2]
+version = "0.6"
+
+[target.'cfg(target_os = "macos")'.dependencies.objc2-app-kit]
+version = "0.3"
+default-features = false
+features = ["std", "NSPasteboard"]
+
+[target.'cfg(target_os = "macos")'.dependencies.objc2-foundation]
+version = "0.3"
+default-features = false
+features = ["std", "NSArray", "NSString", "NSURL"]
 
 [dev-dependencies]
 # ts_export 生成器的可选字段后处理

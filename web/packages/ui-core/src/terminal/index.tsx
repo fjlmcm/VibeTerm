@@ -80,27 +80,30 @@ function readFontSize(): number {
 
 const [fontSize, setFontSize] = createSignal<number>(readFontSize());
 
+const isLoneSurrogate = (s: string) => s.length === 1 && s >= "\uD800" && s <= "\uDFFF";
+
 /**
- * CJK 复制守门: 用 Intl.Segmenter 按 grapheme cluster 切片重组,
- * 自动丢弃孤立的 lone surrogate / 半截 emoji ZWJ sequence. 适用于 xterm.js
- * 选区在极端 case 跨过半个宽字符时的兜底.
+ * CJK 复制守门: xterm.js 选区在极端 case 切在代理对 / ZWJ 序列中间时的兜底 ——
+ * 丢弃孤立的 lone surrogate(Segmenter 下即长度为 1 且落在 D800–DFFF 的段),
+ * 并去掉整串尾部悬空的 U+200D(半截 emoji ZWJ sequence)。
  *
- * 浏览器不支持 Intl.Segmenter (老 WebView) 时退化为原样返回.
+ * 无 Intl.Segmenter(老 WebView)时按 code point 迭代做同样的孤立代理过滤。
  */
 function normalizeGraphemes(input: string): string {
-  if (typeof (Intl as { Segmenter?: unknown }).Segmenter !== "function") {
-    return input;
-  }
-  try {
-    const seg = new Intl.Segmenter(undefined, { granularity: "grapheme" });
-    let out = "";
-    for (const s of seg.segment(input)) {
-      out += s.segment;
+  let out = "";
+  let segments: Iterable<string> = input; // String 迭代器按 code point 产出,孤立代理为单 code unit
+  if (typeof (Intl as { Segmenter?: unknown }).Segmenter === "function") {
+    try {
+      const seg = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+      segments = Array.from(seg.segment(input), (s) => s.segment);
+    } catch {
+      /* 退化为 code point 迭代 */
     }
-    return out;
-  } catch {
-    return input;
   }
+  for (const g of segments) {
+    if (!isLoneSurrogate(g)) out += g;
+  }
+  return out.replace(/\u200D+$/, "");
 }
 
 function persistFontSize(n: number) {
@@ -121,12 +124,13 @@ export function setTerminalFontSize(n: number) {
   persistFontSize(clamped);
 }
 
-// 文件路径 link matcher — 绝对路径 / ~ 开头 / 相对 ./../
+// 文件路径 link matcher — 绝对路径 / ~ 开头(后端 open_external 只接受这两种,会展开 ~;
+// 相对路径 ./ ../ 不识别:前缀集不含 "."  → "/x" 前面紧跟 "." 时不命中)
 // 仅识别明显是 fs path 的形态,避免误匹配普通单词
-// CJK 一等公民:路径主体用 Unicode 属性转义 \p{L}\p{N} + /u flag,
-// 以匹配中/日/韩等目录名;\w 在非 Unicode 模式下只命中 ASCII,会截断 CJK 路径。
+// CJK 一等公民:路径主体用 Unicode 属性转义 \p{L}\p{M}\p{N} + /u flag,
+// 以匹配中/日/韩等目录名(含组合标记);\w 在非 Unicode 模式下只命中 ASCII,会截断 CJK 路径。
 const FILE_PATH_REGEX =
-  /(?:^|[\s'"`(])((?:~|\.{1,2})?\/[\p{L}\p{N}._\-/]+(?::\d+(?::\d+)?)?)/gu;
+  /(?:^|[\s'"`(])(~?\/[\p{L}\p{M}\p{N}._\-/]+(?::\d+(?::\d+)?)?)/gu;
 
 // WebGL 渲染层偶发损坏自愈。
 // 现象:部分字形画错/丢失(W、h、CJK 等画成错误方块或空白)但底层数据无损——选中
@@ -194,10 +198,8 @@ export interface TerminalProps {
   /** 在指定 task 下 spawn;不给则用 start_pty(独立) */
   taskId?: TaskId;
   /** (task, slot) 幂等键:后端按它判断 spawn vs attach,前端无需自己判断
-   *  Normal 和 Canvas 视图都传同一 slotId,后端保证只 spawn 一个 PTY,另一次自动 attach */
+   *  主窗和浮窗传同一 slotId,后端保证只 spawn 一个 PTY,另一次自动 attach */
   slotId?: number;
-  /** 字号覆盖(per-instance):Canvas 卡片缩放时用,不影响全局 Cmd+= 设置 */
-  fontSizeOverride?: number;
   /** 主题(改变时立即重新 apply xterm.options.theme) */
   theme?: Theme;
   onReady?: (id: number) => void;
@@ -403,8 +405,7 @@ export function Terminal(props: TerminalProps) {
   };
 
   // 聚焦对账:用户点进终端(focusin)或 app 窗口焦点回归时,重新 fit 并断言 PTY 尺寸。
-  // 兜住所有「可见终端的 PTY 被别的视图 / IPC 时序改走」的漏网路径(Canvas 模式浮窗
-  // 与主窗卡片同时可见互抢尺寸、乱序残留等)——把恢复动作从「手工开关分屏」变成
+  // 兜住浮窗切换或 IPC 乱序导致 PTY 尺寸过期的情况,把恢复动作从「手工开关分屏」变成
   // 交互瞬间自动完成。仲裁语义:谁被聚焦谁拥有 PTY 尺寸。幂等:尺寸未变时全程 no-op。
   const reconcileSize = () => {
     if (disposed || terminalId === null) return;
@@ -583,11 +584,21 @@ export function Terminal(props: TerminalProps) {
   // WKWebView 下拼音选词「提交候选的数字键 keydown」常不带这俩标记 → 漏进 PTY(打中文成 2112)。
   // 合成期间用本标志在 customKeyEventHandler 里一律拦下。
   let composing = false;
+  // compositionend 后 xterm CompositionHelper 要 setTimeout(0) 才读 textarea.value 提交合成结果;
+  // 这一拍内若又来了非合成 insertText(快速连打),清空 value 会把合成文本一起抹掉 → 丢字。
+  let finalizing = false;
+  let finalizingTimer: ReturnType<typeof setTimeout> | null = null;
   const onCompositionStart = () => {
     composing = true;
   };
   const onCompositionEnd = () => {
     composing = false;
+    finalizing = true;
+    if (finalizingTimer !== null) clearTimeout(finalizingTimer);
+    finalizingTimer = setTimeout(() => {
+      finalizing = false;
+      finalizingTimer = null;
+    }, 0);
   };
 
   // IME 直提交字符的事件驱动直送(v1.1.4 的 textarea 差分方案对第三方 IME 无效,复盘):
@@ -598,24 +609,32 @@ export function Terminal(props: TerminalProps) {
   //   系统拼音是同步落值所以差分能中 —— 时序赌博,不同 IME 结果不同。
   // 修法:彻底不赌时序。keydown 229 一律拦下(customKeyEventHandler,路径唯一化,
   //   xterm 的差分路径不再参与);字符到达的唯一可靠信号是 input 事件本身 ——
-  //   非合成态的 insertText 在此直接 term.input() 送 PTY,与到达时机无关。
-  //   与 xterm 原生 _inputEvent(emoji 面板等无 keydown 的路径)不双发:它处理过
-  //   会 preventDefault,检查 defaultPrevented 即可。合成态(拼音上屏)仍走 xterm
-  //   CompositionHelper 的 compositionend 原子提交,不经过这里。
-  const onTextareaInput = (ev: Event) => {
+  //   非合成态的 insertText 直接 term.input() 送 PTY,与到达时机无关。
+  // 必须挂 hostEl capture 而非 textarea(v1.1.5 双发复盘):xterm 原生 _inputEvent
+  //   也是 textarea capture 监听,条件 `!_keyDownSeen` —— 快速连敲时 insertText 落值
+  //   已晚于 keyup(_keyDownSeen 已清 false),它会自己 triggerDataEvent 发一次;
+  //   而它随后的 cancel(ev) 因 cancelEvents 默认 false 并不 preventDefault,
+  //   任何靠 defaultPrevented 判"xterm 已处理"的防线都扑空 → 敲一次出两个。
+  //   祖先 capture 必然先于 target 上的监听执行:在这里截走 + stopPropagation,
+  //   xterm 的 _inputEvent 永远收不到非合成 insertText(emoji 面板路径一并接管,
+  //   行为等价)。合成态(拼音上屏)放行,仍走 CompositionHelper 的 compositionend
+  //   原子提交。
+  const onHostInputCapture = (ev: Event) => {
     const ie = ev as InputEvent;
+    if (ie.target !== term?.textarea) return;
     if (ie.isComposing || composing) return;
     if (ie.inputType !== "insertText" || !ie.data) return;
-    if (ie.defaultPrevented) return;
+    ev.stopPropagation();
     term?.input(ie.data, true);
     // 字符已直送 PTY,清掉 textarea 里的副本 —— 留着会被 composition 差分类路径
     // 当作新增重复计入。非合成态清空无副作用(xterm 仅在合成/读屏时依赖 value)。
-    (ev.target as HTMLTextAreaElement).value = "";
+    // 例外:compositionend 后的 finalizing 一拍内不清,否则 xterm 读不到刚合成的文本。
+    if (!finalizing) (ie.target as HTMLTextAreaElement).value = "";
   };
 
   const onWinKeydown = (e: KeyboardEvent) => {
     // CJK IME 合成期间不拦截快捷键 — 让 IME 自己消费 Enter / Esc / 上下选词.
-    if (e.isComposing || e.keyCode === 229) return;
+    if (e.isComposing || e.keyCode === 229 || composing) return;
 
     if (!focusInHost()) return;
     if (terminalId === null || !term) return;
@@ -735,25 +754,24 @@ export function Terminal(props: TerminalProps) {
         if (!term) return callback(undefined);
         const line = term.buffer.active.getLine(bufferLineNumber - 1);
         if (!line) return callback(undefined);
-        const text = line.translateToString(true);
-        // CJK 一等公民:translateToString 对每个 CJK 宽字符只产 1 个 JS char,
-        // 但该字符在缓冲里占 2 个 cell;link provider 的 range.x 是 1-based 显示列(cell),
-        // 不是字符串偏移。逐 cell 累加宽度,把"字符串字符索引"映射到"1-based 显示列"。
-        // colStarts[charIndex] = 该字符首 cell 的 1-based 显示列。
-        const colStarts: number[] = [];
-        const colCells: number[] = []; // 同 index 字符占用的显示列宽(1 或 2)
-        for (let cell = 0; cell < line.length; ) {
+        // CJK 一等公民:link provider 的 range.x 是 1-based 显示列(cell),而正则的
+        // m.index 是 UTF-16 code unit 下标 —— CJK 宽字符 1 code unit 占 2 cell,emoji /
+        // 代理对 2 code unit 占 2 cell,ZWJ 序列多 code unit 占 1 个 cell。
+        // xterm 5.5 内部 BufferLine.translateToString 有 outColumns 参数正好给出这张
+        // "code unit → 0-based 起始 cell" 表,但公共 BufferLineApiView 不转发它,
+        // 故按同样逻辑自建:逐 cell 取 getChars()(空 cell 补空格),按 width 前进,
+        // 末尾推一个哨兵(= 行末 cell),使 cols[endIdx + 1] 恒为"最后 code unit 之后的 cell"。
+        const cols: number[] = [];
+        let text = "";
+        let cell = 0;
+        for (; cell < line.length; ) {
           const c = line.getCell(cell);
-          const width = c ? c.getWidth() : 1;
-          // width=0 是宽字符的占位 cell,不对应任何 JS char,跳过
-          if (width === 0) {
-            cell += 1;
-            continue;
-          }
-          colStarts.push(cell + 1); // 1-based 显示列
-          colCells.push(width);
-          cell += width;
+          const chars = c?.getChars() || " ";
+          text += chars;
+          for (let i = 0; i < chars.length; i++) cols.push(cell);
+          cell += (c?.getWidth() ?? 1) || 1; // 与 translateToString 一致:至少前进 1
         }
+        cols.push(cell);
         const links: {
           range: { start: { x: number; y: number }; end: { x: number; y: number } };
           text: string;
@@ -765,11 +783,10 @@ export function Terminal(props: TerminalProps) {
           // path 在字符串中的起始/结束字符索引
           const startCharIdx = (m.index ?? 0) + (m[0].length - path.length);
           const endCharIdx = startCharIdx + path.length - 1;
-          // 映射到显示列:start 取该字符首 cell;end 取最后字符末 cell(含宽字符的第 2 列)
-          const startCol = colStarts[startCharIdx] ?? startCharIdx + 1;
-          const endCol =
-            (colStarts[endCharIdx] ?? endCharIdx + 1) +
-            ((colCells[endCharIdx] ?? 1) - 1);
+          // 映射到 1-based 显示列:start 取首 code unit 所在 cell;end 取最后 code unit
+          // 之后的 cell 号(0-based)== 最后 cell 的 1-based 列(含宽字符的第 2 列)
+          const startCol = cols[startCharIdx] + 1;
+          const endCol = cols[endCharIdx + 1];
           // 去掉 `:line:col` 后缀传给 OS open(open 不识别这种语法)
           const fsPath = path.replace(/:\d+(?::\d+)?$/, "");
           links.push({
@@ -799,7 +816,7 @@ export function Terminal(props: TerminalProps) {
     //   修法: customKeyEventHandler 返回 false 时 xterm.js 跳过该 keydown,
     //   把字符交给 IME 完成合成. compositionend 由 xterm.js textarea 自身
     //   产生完整 input event 走 onData 路径 -> 一次性原子推到 PTY.
-    //   keyCode 229(IME 已吞键)也一律拦下:字符的实际投递统一走 onTextareaInput
+    //   keyCode 229(IME 已吞键)也一律拦下:字符的实际投递统一走 onHostInputCapture
     //   的事件驱动直送(见其注释),xterm 的 keydown 差分路径不再参与 —— 路径唯一,
     //   不存在双发,也不赌第三方 IME 异步 insertText 的落值时序。
     term.attachCustomKeyEventHandler((e) => {
@@ -807,15 +824,14 @@ export function Terminal(props: TerminalProps) {
       return true;
     });
     // compositionstart/end 在 xterm 自己的隐藏 textarea 上触发 — 在此订阅维护合成态。
-    // input 直送监听不用 capture:xterm 自身的 input listener 是 capture,同节点
-    // AT_TARGET 阶段 capture 先于 bubble 执行,保证 defaultPrevented 检查看得到
-    // xterm 的处理结果。
     const ta = term.textarea;
     if (ta) {
       ta.addEventListener("compositionstart", onCompositionStart);
       ta.addEventListener("compositionend", onCompositionEnd);
-      ta.addEventListener("input", onTextareaInput);
     }
+    // 直送监听挂 hostEl capture(不挂 textarea):见 onHostInputCapture 注释。
+    // 附带的好处:renderer 整层重建(repairTick)不触碰 hostEl,监听天然存活。
+    hostEl.addEventListener("input", onHostInputCapture, true);
 
     attachRenderer();
 
@@ -924,8 +940,7 @@ export function Terminal(props: TerminalProps) {
             const r = hostEl.getBoundingClientRect();
             const { x, y } = event.payload.position;
             if (x < r.left || x > r.right || y < r.top || y > r.bottom) return;
-            // 命中点最顶层的 terminal host 才接收:canvas 模式卡片可重叠,纯几何过滤会让
-            // 上下两个终端同时收到 drop,被遮住的终端被误注入路径文本。
+            // 命中点最顶层的 terminal host 才接收,避免被遮挡的终端误收路径文本。
             const topHost = document
               .elementsFromPoint(x, y)
               .find((el) => el.hasAttribute("data-terminal-id"));
@@ -1009,12 +1024,11 @@ export function Terminal(props: TerminalProps) {
   });
 
   // 字号变化时立即应用 + refit(字号变了 row/col 跟着变)
-  //  fontSizeOverride 优先(Canvas 卡片缩放传入),否则用全局 fontSize signal
-  //  字号变化常伴随容器尺寸变化(Canvas ↔ Normal 切换):reflow + glyph metrics
-  //  重新测量跨多 frame,单次 RAF fit 会拿到陈旧 char 宽度,导致文字挤在左侧.
+  //  reflow + glyph metrics 重新测量跨多 frame,
+  //  单次 RAF fit 会拿到陈旧 char 宽度,导致文字挤在左侧.
   //  多次延迟 fit 覆盖 reflow 不同阶段的稳定时点.
   createEffect(() => {
-    const px = props.fontSizeOverride ?? fontSize();
+    const px = fontSize();
     if (!term) return;
     term.options.fontSize = Math.max(4, Math.round(px));
     for (const ms of [0, 50, 200]) {
@@ -1074,7 +1088,8 @@ export function Terminal(props: TerminalProps) {
     hostEl?.removeEventListener("focusin", reconcileSize);
     term?.textarea?.removeEventListener("compositionstart", onCompositionStart);
     term?.textarea?.removeEventListener("compositionend", onCompositionEnd);
-    term?.textarea?.removeEventListener("input", onTextareaInput);
+    if (finalizingTimer !== null) clearTimeout(finalizingTimer);
+    hostEl?.removeEventListener("input", onHostInputCapture, true);
     resizeObserver?.disconnect();
     intersectionObserver?.disconnect();
     // 三态 PTY cleanup(见 teardownPty 注释):
@@ -1204,8 +1219,7 @@ export function Terminal(props: TerminalProps) {
       {/* keyed:每次右键都重建菜单 DOM,ref 里的视口夹取才会对新坐标重跑 */}
       <Show when={ctxMenu()} keyed>
         {(m) => (
-          // Portal 到 body:逃出 canvas 卡片的 transform 祖先(fixed 在 transform 内退化成
-          // 相对容器定位)与低层 stacking context,否则菜单会被侧栏/其他卡片遮挡。
+          // Portal 到 body:逃出容器的 stacking context,避免菜单被相邻面板遮挡。
           <Portal>
             {/* 全屏隐形 backdrop:点空白处或滚轮关闭 */}
             <div

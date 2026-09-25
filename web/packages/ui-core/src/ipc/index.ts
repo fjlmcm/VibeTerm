@@ -33,9 +33,7 @@ import type {
   NotifyPermissionState,
   NotifySoundData,
   BuiltinSound,
-  UsageStats,
   AppUpdateInfo,
-  PricingStatus,
   AgentTerminalCompleted,
 } from "@vibeterm/ipc-types";
 
@@ -282,16 +280,6 @@ export async function getClaudeUsageCache(): Promise<ClaudeUsageCache | null> {
   return invoke<ClaudeUsageCache | null>("get_claude_usage_cache");
 }
 
-/** 使用统计面板 — 全量聚合最近 days 天 (默认 30). 全量扫描可能慢. */
-export async function getUsageStats(days?: number): Promise<UsageStats> {
-  return invoke<UsageStats>("get_usage_stats", { days: days ?? null });
-}
-
-/** 把面板导出的 PNG (base64, 无 data: 前缀) 写到用户选定的路径 (.png). */
-export async function savePngFile(path: string, base64Png: string): Promise<void> {
-  return invoke<void>("save_png_file", { path, base64Png });
-}
-
 // ===== 错误格式化 =====
 
 /**
@@ -324,26 +312,11 @@ export function formatIpcError(e: unknown): string {
   return String(e);
 }
 
-// ===== 设置·更新页:软件版本检查 + 模型价格(手动, 仅点按钮时联网)=====
+// ===== 软件版本检查 =====
 
 /** 检查软件更新 — 主路径 GET updater latest.json(无 REST 限流)比较版本;仅展示, 不下载安装. */
 export async function checkAppUpdate(): Promise<AppUpdateInfo> {
   return invoke<AppUpdateInfo>("check_app_update");
-}
-
-/** 当前模型价格来源状态(内置快照 / 已手动更新的覆盖). */
-export async function getPricingStatus(): Promise<PricingStatus> {
-  return invoke<PricingStatus>("get_pricing_status");
-}
-
-/** 手动更新模型价格 — 拉取维护的最新价格表并应用(落本地 config). */
-export async function updateModelPricing(): Promise<PricingStatus> {
-  return invoke<PricingStatus>("update_model_pricing");
-}
-
-/** 还原内置默认价格(删除本地覆盖). */
-export async function resetModelPricing(): Promise<PricingStatus> {
-  return invoke<PricingStatus>("reset_model_pricing");
 }
 
 export function onClaudeUsageChanged(

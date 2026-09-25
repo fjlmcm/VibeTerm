@@ -47,12 +47,10 @@ _普通のターミナル機能は一通り、そこに画面いっぱいの AI 
 - **agent が何してるか見える** — 実行中、入力待ち、停止、完了。設定に触らず判別します。
 - **停止検出 + 緊急度ソート** — 画面いっぱいの agent でも、停止したものと入力待ちのものが上に来ます。
 - **使用量をリアルタイムで** — コンテキスト残量、5h/7d クォータ、消費ペース、キャッシュ、コスト。1 本のバーに。
-- **使用量の集計** — Claude / Codex のトークンとコスト。オフラインで計算、エクスポート可。
 
 ### ターミナル
 
 - **分割 + worktree** — git worktree をマウント、タスクごとに自分のターミナルツリー。
-- **Canvas ボード** — タスクをカードに並べて、範囲選択、1 つのコマンドを複数ターミナルへ。
 - **フローティング窓** — 好きなタスクを別窓に切り出して、走らせながら見張る。
 - **GPU レンダリング** — WebGL で高速、それでも CJK は文字を落とさず、もたつかない。
 
@@ -102,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## これらの上に立ってます。
 
-ryoppippi さんの ccusage(MIT)に感謝。使用量の集計、モデル価格、5 時間ブロックはここから参考にしました。価格データは LiteLLM と Anthropic 公式から。
+ryoppippi さんの ccusage(MIT)に感謝。モデル価格、5 時間ブロックはここから参考にしました。価格データは LiteLLM と Anthropic 公式から。
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

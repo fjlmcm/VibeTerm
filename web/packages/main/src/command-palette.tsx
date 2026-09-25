@@ -12,8 +12,6 @@ export interface CommandPaletteProps {
   onClose: () => void;
   onActivateTask: (id: number) => void;
   onOpenSettings?: () => void;
-  /** 打开使用统计面板 */
-  onOpenStats?: () => void;
   /** 打开当前任务的 diff 查看器 */
   onOpenDiff?: () => void;
   /** 应用布局模板(创建预设任务) */
@@ -142,14 +140,6 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
         props.onCreateTask?.();
       },
     });
-
-    if (props.onOpenStats) {
-      items.push({
-        id: "cmd:open-stats",
-        label: t("palette.cmd.open_stats"),
-        action: () => props.onOpenStats?.(),
-      });
-    }
 
     if (props.onOpenDiff) {
       items.push({

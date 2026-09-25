@@ -47,12 +47,10 @@ _Alle üblichen Terminal-Funktionen, dazu Zustandserkennung und Orchestrierung f
 - **Sieht, was ein Agent tut** — Läuft, wartet, hängt oder fertig — erkannt, ohne deine Config anzufassen.
 - **Hängt-Erkennung + Dringlichkeitssortierung** — Bildschirm voller Agents? Die hängenden und die, die auf dich warten, kommen nach oben.
 - **Live-Verbrauch** — Restkontext, 5h/7d-Kontingent, Burn-Rate, Cache, Kosten — alles in einer Leiste.
-- **Verbrauchsstatistik** — Token- und Kostenzahlen für Claude / Codex. Offline berechnet, exportierbar.
 
 ### Terminal
 
 - **Splitscreen + Worktrees** — Ein git-Worktree gemountet, ein Terminal-Baum pro Aufgabe.
-- **Canvas-Board** — Aufgaben als Karten anordnen, per Rahmen auswählen, einen Befehl an mehrere Terminals schicken.
 - **Schwebende Fenster** — Jede Aufgabe in ein eigenes Fenster lösen und weiter im Blick behalten.
 - **GPU-Rendering** — WebGL-beschleunigt, und CJK verliert trotzdem keine Glyphen und ruckelt nicht.
 
@@ -102,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## Auf den Schultern dieser Projekte.
 
-Besonderer Dank an ryoppippis ccusage (MIT). Verbrauchsstatistik, Modellpreise und die 5-Stunden-Blöcke stammen daher; die Preisdaten kommen von LiteLLM und Anthropics offiziellen Zahlen.
+Besonderer Dank an ryoppippis ccusage (MIT). Modellpreise und die 5-Stunden-Blöcke stammen daher; die Preisdaten kommen von LiteLLM und Anthropics offiziellen Zahlen.
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

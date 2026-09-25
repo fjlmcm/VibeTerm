@@ -193,8 +193,8 @@ pub(crate) fn is_trusted_local_http(url: &str) -> bool {
 #[cfg(target_os = "macos")]
 pub(crate) fn open_url_safe(_app: &AppHandle, url: &str) {
     if url.starts_with("https://") || is_trusted_local_http(url) {
-        if let Err(e) = std::process::Command::new("open").arg(url).spawn() {
-            tracing::warn!(url, err = %e, "open_url_safe spawn failed");
+        if let Err(e) = tauri_plugin_opener::open_url(url, None::<&str>) {
+            tracing::warn!(url, err = %e, "open_url_safe failed");
         }
     } else {
         tracing::warn!(url, "rejected URL not in whitelist");
@@ -214,52 +214,46 @@ pub(crate) fn chrono_label() -> String {
 //
 // 单一 command:open_external,先判断是 URL 还是 fs path:
 //   - URL 白名单:https:// / http://localhost / http://127.0.0.1
-//   - 文件路径必须实际存在(防注入 + 防误触发)
-// std::process::Command 是 execve 不走 shell,无需担心元字符注入。
+//   - 文件路径:只收绝对路径或 `~/` 前缀(后端展开 HOME),canonicalize 后必须实际存在。
+//     目录 → 系统文件管理器打开;普通文件 → 只在文件管理器里**定位**(reveal),不直接执行。
+//     终端输出可被 agent / 远程程序伪造,Cmd+Click 一个 .app/.dmg/.command 若直接 open 就是
+//     任意代码执行。
+// 三平台统一走 tauri_plugin_opener 的 Rust API(macOS NSWorkspace / Windows ShellExecuteW /
+// Linux xdg-open),不经过 cmd.exe 等 shell,URL 里的 & | ^ 不会被当命令分隔符。
 //
-// 不放行 file:// URL:终端输出里的链接是 agent/远程程序可伪造的内容,Cmd+Click 一个
-// file:///... 会直接交给 `open` 打开任意本地文件(.app/.dmg 等)。本地文件统一走下面的
-// fs path 分支(canonicalize + 存在性检查);确需 file:// 的调用方先剥前缀再传路径。
+// 不放行 file:// URL:确需 file:// 的调用方先剥前缀再传路径,走上面的 fs path 分支。
 #[tauri::command]
 pub(crate) async fn open_external(target: String) -> IpcResult<()> {
     // localhost/127.0.0.1 用精确 host 匹配,防 `http://localhost.evil.com` 前缀绕过.
-    let is_url = target.starts_with("https://") || is_trusted_local_http(&target);
-    // 非 URL 的 fs path:canonicalize 消除 `../` 穿越歧义,用真实绝对路径打开,
-    // 拒绝无法规范化的目标(不存在或非法).
-    let resolved_path = if is_url {
-        None
-    } else {
-        std::fs::canonicalize(&target).ok()
-    };
-    if !is_url && resolved_path.is_none() {
-        tracing::warn!(target, "rejected open_external — not in whitelist");
-        return Err(IpcError::PermissionDenied {
-            reason: "target not in whitelist (need https / localhost / existing fs path)".into(),
+    if target.starts_with("https://") || is_trusted_local_http(&target) {
+        return tauri_plugin_opener::open_url(&target, None::<&str>).map_err(|e| {
+            IpcError::Unknown {
+                trace_id: format!("open_external: {e}"),
+            }
         });
     }
-    // URL 用原始 target;fs path 用规范化后的绝对路径
-    let open_target: &std::ffi::OsStr = match &resolved_path {
-        Some(p) => p.as_os_str(),
-        None => std::ffi::OsStr::new(&target),
+    // fs path:`~/` 展开 HOME;相对路径拒绝(app 进程 cwd 与终端 cwd 无关,解析必错);
+    // canonicalize 消除 `../` 穿越歧义并要求目标真实存在。
+    let expanded = match target.strip_prefix("~/") {
+        Some(rest) => dirs::home_dir().map(|h| h.join(rest)),
+        None => Some(std::path::PathBuf::from(&target)),
     };
-    let spawn_result = if cfg!(target_os = "macos") {
-        std::process::Command::new("open").arg(open_target).spawn()
-    } else if cfg!(target_os = "linux") {
-        std::process::Command::new("xdg-open")
-            .arg(open_target)
-            .spawn()
+    let resolved = expanded
+        .filter(|p| p.is_absolute())
+        .and_then(|p| std::fs::canonicalize(p).ok());
+    let Some(path) = resolved else {
+        tracing::warn!(target, "rejected open_external — not in whitelist");
+        return Err(IpcError::PermissionDenied {
+            reason: "target not in whitelist (need https / localhost / existing absolute fs path)"
+                .into(),
+        });
+    };
+    let result = if path.is_dir() {
+        tauri_plugin_opener::open_path(&path, None::<&str>)
     } else {
-        // windows:cmd /c start "" "<target>" — "" 是 start 的 title 占位
-        std::process::Command::new("cmd")
-            .args([
-                std::ffi::OsStr::new("/c"),
-                std::ffi::OsStr::new("start"),
-                std::ffi::OsStr::new(""),
-                open_target,
-            ])
-            .spawn()
+        tauri_plugin_opener::reveal_item_in_dir(&path)
     };
-    spawn_result.map(|_| ()).map_err(|e| IpcError::Unknown {
+    result.map_err(|e| IpcError::Unknown {
         trace_id: format!("open_external: {e}"),
     })
 }

@@ -5,12 +5,14 @@
 //!   - read 用 try_clone_reader,write 走 take_writer + Mutex<Box<dyn Write>>
 //!   - 字节级原样写入,Bracketed Paste 由上层包裹
 //!   - 子进程退出 → child.wait → 通过 sink 推 EOF 标记,上层决定关 panel
-//!   - 关闭顺序:SIGHUP → 500ms 超时 → SIGKILL
+//!   - 关闭顺序(unix):置 closing(读线程转为 try_wait + 读空)→ killpg SIGHUP 整个进程组
+//!     → 500ms → killpg SIGKILL
 //!
 //! 本 crate 不知道 Tauri,不依赖 IPC schema。chunk sink 是注入的 trait,
 //! 上层(vibeterm-core / src-tauri main.rs)负责把 sink 绑到 Tauri Channel<Vec<u8>>。
 
 use std::io::{Read, Write};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
@@ -89,7 +91,12 @@ pub struct Terminal {
     child_pid: Option<u32>,
     /// 子进程是否已被读线程 wait() 收尸。Drop 的 kill 链以此守卫:已收尸的 pid 可能
     /// 已被系统复用,再补刀会误杀无关进程。
-    reaped: Arc<std::sync::atomic::AtomicBool>,
+    reaped: Arc<AtomicBool>,
+    /// Drop 置位 → 读线程进入收口模式(unix):非阻塞 try_wait 子进程 + 读空 master,
+    /// 子进程一退出就结束(≤200ms 轮询)。没有它,逃出进程组的后代(交互 shell 有
+    /// job control,`nohup x & disown` 的进程自成一组)仍持 slave fd,master read 永不
+    /// EOF,读线程 / master fd / sinks 链每关一个终端泄漏一份。
+    closing: Arc<AtomicBool>,
     /// 最近一次实际下发的 (rows, cols)。resize 幂等守卫:尺寸没变就跳过 TIOCSWINSZ,
     /// 避免普通切任务/返回可见时多余的 SIGWINCH 让 TUI agent 白白重绘。
     /// 初始 (0,0) 保证 spawn 后首次 resize 必定生效。
@@ -126,6 +133,19 @@ impl Terminal {
         // slave 在 spawn 后立即 drop(防 fd 泄漏)
         drop(pair.slave);
 
+        // unix:自己 dup 一个 master fd 当读端,拿得到 raw fd 才能 poll + closing 检查。
+        // Windows:沿用 portable-pty reader(ConPTY 无 poll,Drop 后靠 ConPTY 关闭收口)。
+        #[cfg(unix)]
+        let reader = {
+            let raw = pair
+                .master
+                .as_raw_fd()
+                .ok_or_else(|| PtyError::Spawn("master as_raw_fd".into()))?;
+            // SAFETY: raw 属于仍存活的 pair.master;仅借用来 dup 出独立 OwnedFd(cloexec)。
+            let fd = unsafe { std::os::fd::BorrowedFd::borrow_raw(raw) }.try_clone_to_owned()?;
+            std::fs::File::from(fd)
+        };
+        #[cfg(not(unix))]
         let reader = pair
             .master
             .try_clone_reader()
@@ -136,8 +156,10 @@ impl Terminal {
             .map_err(|e| PtyError::Spawn(format!("take_writer: {e}")))?;
         let killer = child.clone_killer();
         let child_pid = child.process_id();
-        let reaped = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let reaped = Arc::new(AtomicBool::new(false));
         let reaped_for_read = reaped.clone();
+        let closing = Arc::new(AtomicBool::new(false));
+        let closing_for_read = closing.clone();
 
         // 多 sink:初始 sink 进 vec
         let sinks: SinkList = Arc::new(Mutex::new(vec![(0, Box::new(initial_sink))]));
@@ -149,14 +171,44 @@ impl Terminal {
         let scrollback_for_read = scrollback.clone();
 
         // 阻塞 read 线程 — fan-out chunk 到所有 sinks + 追加 scrollback
-        std::thread::Builder::new()
+        let read_thread = std::thread::Builder::new()
             .name("pty-read".to_string())
             .spawn(move || {
                 let mut reader = reader;
                 let mut buf = [0u8; 8192];
+                // closing 后由 try_wait 抢先拿到的退出状态(此时不再阻塞 wait)
+                #[cfg(unix)]
+                let mut early_status = None;
+                #[cfg(not(unix))]
+                let early_status: Option<portable_pty::ExitStatus> = None;
                 loop {
+                    let closing = closing_for_read.load(Ordering::SeqCst);
+                    // unix:closing 后转为「非阻塞等子进程退出 + 继续读空 master(丢弃)」。
+                    // 不能停读:关最后一个 slave fd 的进程会在 ttywait 里等 master 把 outq
+                    // 读空(XNU ptsclose→ttywflush),停读 + 阻塞 wait() 会互相等死。
+                    // 逃出进程组、仍持 slave 的后代不会给 EOF,所以退出条件是 try_wait。
+                    #[cfg(unix)]
+                    {
+                        if closing {
+                            match child.try_wait() {
+                                Ok(Some(status)) => {
+                                    early_status = Some(status);
+                                    break;
+                                }
+                                Ok(None) => {}
+                                Err(e) => {
+                                    tracing::warn!(error = %e, "child.try_wait failed");
+                                    break;
+                                }
+                            }
+                        }
+                        if !poll_readable(&reader) {
+                            continue; // 200ms 超时,回到顶部重查 closing / try_wait
+                        }
+                    }
                     match reader.read(&mut buf) {
                         Ok(0) => break,
+                        Ok(_) if closing => {} // 收口中:只读空不分发
                         Ok(n) => {
                             let chunk = buf[..n].to_vec();
                             // 修复竞态:fan-out 与 scrollback 追加在同一把
@@ -192,10 +244,14 @@ impl Terminal {
                         }
                     }
                 }
-                let info = match child.wait() {
+                let waited = match early_status {
+                    Some(status) => Ok(status),
+                    None => child.wait(),
+                };
+                let info = match waited {
                     Ok(status) => {
                         // 已收尸:Drop 的 kill 链据此跳过(pid 此后可能被复用)
-                        reaped_for_read.store(true, std::sync::atomic::Ordering::SeqCst);
+                        reaped_for_read.store(true, Ordering::SeqCst);
                         let raw_code = status.exit_code();
                         // u32→i32:unix 上恒为 0-255,绝不溢出;仅 Windows 异常退出码
                         // (如 0xC0000005)可能 >= 2^31,此时记录警告而非静默丢失。
@@ -230,8 +286,25 @@ impl Terminal {
                         tracing::warn!("sinks mutex poisoned, 无法通知 sink finish");
                     }
                 }
-            })
-            .expect("spawn pty-read thread");
+            });
+        if let Err(e) = read_thread {
+            // 线程起不来但子进程已在跑:必须收口,否则 openpty + 子进程泄漏;
+            // 不能 panic(release panic=abort 会拖死整个 app)。
+            #[cfg(unix)]
+            if let Some(pid) = child_pid {
+                let pgid = pid as libc::pid_t;
+                // SAFETY: 纯 FFI;child 尚未 wait,pid/pgid 仍属本进程子进程。
+                unsafe {
+                    libc::killpg(pgid, libc::SIGKILL);
+                    libc::waitpid(pgid, std::ptr::null_mut(), 0);
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = killer.clone_killer().kill();
+            }
+            return Err(PtyError::Spawn(format!("pty-read thread: {e}")));
+        }
 
         Ok(Self {
             writer: Arc::new(Mutex::new(writer)),
@@ -242,6 +315,7 @@ impl Terminal {
             scrollback,
             child_pid,
             reaped,
+            closing,
             last_size: Arc::new(Mutex::new((0, 0))),
         })
     }
@@ -364,30 +438,129 @@ impl Terminal {
     }
 }
 
+/// poll master 最多 200ms。true = 可读(含 POLLHUP/POLLERR/非 EINTR 错误,交给 read()
+/// 报 EOF / 错误走原路径);false = 超时,调用方回去重查 closing。
+#[cfg(unix)]
+fn poll_readable(fd: &impl std::os::fd::AsRawFd) -> bool {
+    let mut pfd = libc::pollfd {
+        fd: fd.as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // SAFETY: pfd 是有效的单元素数组,fd 由调用方持有、存活。
+    let n = unsafe { libc::poll(&mut pfd, 1, 200) };
+    n > 0 || (n < 0 && std::io::Error::last_os_error().kind() != std::io::ErrorKind::Interrupted)
+}
+
 impl Drop for Terminal {
-    /// 关闭顺序:SIGHUP → 500ms → SIGKILL。
-    /// 子进程已被读线程 wait() 收尸则全程跳过 —— pid 可能已被系统复用,补刀会误杀无关进程
-    /// (portable-pty clone_killer 的 kill 在 unix 只发一次 SIGHUP,无升级;升级在此实现)。
+    /// 关闭顺序(unix):closing 置位(读线程转收口模式)→ killpg SIGHUP → 500ms → killpg SIGKILL。
+    ///
+    /// portable-pty spawn 时 setsid(),子进程是新会话 / 进程组 leader,pgid == pid。
+    /// killpg 杀整组(shell + 同组后代,如非交互 shell 的 `x &`);组内还有成员时系统
+    /// 不会复用该 pgid,故没有单 pid kill 在 reaped 检查与 kill 之间 pid 被复用的误杀窗口。
+    /// 子进程已被读线程 wait() 收尸则跳过 kill 链。
     fn drop(&mut self) {
-        if self.reaped.load(std::sync::atomic::Ordering::SeqCst) {
+        // 先让读线程进入收口模式:逃出进程组、仍持 slave 的后代不会给 EOF,靠这个退出。
+        self.closing.store(true, Ordering::SeqCst);
+        if self.reaped.load(Ordering::SeqCst) {
             return;
         }
-        if let Ok(mut k) = self.killer.lock() {
-            let _ = k.kill(); // SIGHUP(unix)
-        }
-        // SIGHUP 免疫进程(nohup/自定义 handler)500ms 后仍未退出 → SIGKILL。
-        // 分离线程执行,不阻塞 Drop 调用方(close_pty IPC 持 registry 锁)。
         #[cfg(unix)]
         if let Some(pid) = self.child_pid {
+            let pgid = pid as libc::pid_t;
+            // SAFETY: 纯 FFI;pgid 未被收尸(reaped=false),仍是本进程子进程的进程组。
+            unsafe { libc::killpg(pgid, libc::SIGHUP) };
+            // SIGHUP 免疫进程(nohup/自定义 handler)500ms 后仍未退出 → SIGKILL。
+            // 分离线程执行,不阻塞 Drop 调用方(close_pty IPC 持 registry 锁)。
             let reaped = self.reaped.clone();
             std::thread::spawn(move || {
                 std::thread::sleep(std::time::Duration::from_millis(500));
-                if !reaped.load(std::sync::atomic::Ordering::SeqCst) {
-                    // SAFETY: 纯 FFI 调用,pid 未被收尸(reaped=false)故仍属本进程子进程。
-                    unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+                if !reaped.load(Ordering::SeqCst) {
+                    // SAFETY: 同上。
+                    unsafe { libc::killpg(pgid, libc::SIGKILL) };
                 }
             });
+            return;
         }
+        // Windows(TerminateProcess)/ unix 无 pid 兜底
+        if let Ok(mut k) = self.killer.lock() {
+            let _ = k.kill();
+        }
+    }
+}
+
+#[cfg(all(test, unix))]
+mod drop_tests {
+    use super::sinks::MpscSink;
+    use super::*;
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    fn spawn_sh(script: &str, tx: mpsc::Sender<Vec<u8>>) -> Terminal {
+        Terminal::spawn(
+            SpawnOpts {
+                rows: 24,
+                cols: 80,
+                cwd: "/".into(),
+                command: "/bin/sh".into(),
+                args: vec!["-c".into(), script.into()],
+                env: vec![("TERM".into(), "dumb".into())],
+            },
+            MpscSink::new(tx),
+        )
+        .expect("spawn")
+    }
+
+    /// 读线程持有最后一个 MpscSink → 线程退出 ⇔ channel Disconnected。
+    fn wait_for_ready_then_drop(rx: &mpsc::Receiver<Vec<u8>>, t: Terminal) -> Duration {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut acc = Vec::new();
+        while !acc.windows(5).any(|w| w == b"READY") {
+            let chunk = rx
+                .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+                .expect("shell 未在 5s 内输出 READY");
+            acc.extend(chunk);
+        }
+        let start = Instant::now();
+        drop(t);
+        loop {
+            match rx.recv_timeout(Duration::from_secs(2)) {
+                Ok(_) => continue,
+                Err(mpsc::RecvTimeoutError::Disconnected) => return start.elapsed(),
+                Err(mpsc::RecvTimeoutError::Timeout) => panic!("读线程 2s 内未退出"),
+            }
+        }
+    }
+
+    #[test]
+    fn drop_kills_whole_process_group_and_read_thread_exits() {
+        let (tx, rx) = mpsc::channel();
+        // 后台 sleep 与 exec 后的 sleep 同进程组,都持 slave fd
+        let t = spawn_sh("sleep 30 & echo READY; exec sleep 30", tx);
+        let pgid = t.child_pid().expect("pid") as libc::pid_t;
+        wait_for_ready_then_drop(&rx, t);
+        // 整组已无存活成员(zombie 被 init 收尸需一点时间)
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while unsafe { libc::killpg(pgid, 0) } == 0 {
+            assert!(Instant::now() < deadline, "进程组 {pgid} 仍有存活成员");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    #[test]
+    fn drop_unblocks_read_thread_when_descendant_escapes_pgrp() {
+        let (tx, rx) = mpsc::channel();
+        // perl setsid 逃出进程组、仍持 slave 3s → killpg 够不着,read 不会 EOF,
+        // 读线程必须靠 closing + try_wait 退出。
+        let t = spawn_sh(
+            "perl -e 'use POSIX; POSIX::setsid(); sleep 3' & echo READY; exec sleep 30",
+            tx,
+        );
+        let elapsed = wait_for_ready_then_drop(&rx, t);
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "读线程退出耗时 {elapsed:?}"
+        );
     }
 }
 

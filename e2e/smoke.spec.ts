@@ -81,6 +81,7 @@ test.describe("VibeTerm Web Smoke", () => {
       await expect(input).toBeVisible({ timeout: 300 });
     }).toPass({ timeout: 5000 });
     await expect(input).toBeFocused();
+    await expect(page.getByTestId("palette-item-cmd:open-stats")).toHaveCount(0);
     await page.keyboard.press("Escape");
     await expect(input).toBeHidden({ timeout: 2000 });
   });
@@ -186,6 +187,30 @@ test.describe("VibeTerm Web Smoke", () => {
       return writes.map((w) => new TextDecoder().decode(Uint8Array.from(w))).join("");
     });
 
+  test("旧画布偏好:启动后显示标准工作区且终端可输入", async ({ page }) => {
+    await installTerminalWithPtyCapture(page);
+    await page.addInitScript(() => {
+      localStorage.setItem("vibeterm.view_mode", "canvas");
+      localStorage.setItem("vibeterm.canvas.cards", JSON.stringify({
+        1: { x: 10000, y: 10000, w: 480, h: 320 },
+      }));
+    });
+    await page.goto("/");
+    await expect(page.locator("aside")).toBeVisible();
+    await expect(page.getByTestId("sidebar-resizer")).toBeVisible();
+    await expect(page.getByTestId("split-h-btn")).toBeVisible();
+    await expect(page.getByTestId("task-pane-1")).toBeInViewport();
+    await expect(page.getByTestId("view-mode-btn")).toHaveCount(0);
+    await expect(page.getByTestId("stats-btn")).toHaveCount(0);
+
+    // data-terminal-id 由 spawn 成功后 setHostAttrs 设置 = onData 已绑定
+    await page.locator('[data-terminal-id="1"]').waitFor({ state: "attached", timeout: 10_000 });
+    await page.locator(".xterm-helper-textarea").pressSequentially("hello");
+    await expect(async () => {
+      expect(await decodedPtyWrites(page)).toContain("hello");
+    }).toPass({ timeout: 3000 });
+  });
+
   test("IME:全角标点直提交(keydown 229 + insertText,无 composition)一次到达 PTY", async ({
     page,
   }) => {
@@ -250,6 +275,42 @@ test.describe("VibeTerm Web Smoke", () => {
     }).toPass({ timeout: 3000 });
     const once = await decodedPtyWrites(page);
     expect(once.split("！").length - 1).toBe(1);
+  });
+
+  test("IME:insertText 落在 keyup 之后(快速连敲)不双发", async ({ page }) => {
+    // 回归(v1.1.5 双发实锤):连续快敲时 IME 进程 IPC 延迟超过按键持续时间,
+    // insertText 落 textarea 时 keyup 已发生 → xterm._keyUp 已把 _keyDownSeen 清 false
+    // → xterm 原生 _inputEvent(textarea capture 监听)条件 `!_keyDownSeen` 命中,
+    // 它 triggerDataEvent 发一次;其后的 cancel(ev) 因 cancelEvents 默认 false
+    // **并不 preventDefault** → 组件的直送监听 defaultPrevented 防线扑空,再发一次
+    // → 敲一次出两个(，。/ 空格 全中招)。修法:hostEl capture 抢在 xterm 之前
+    // 截走非合成 insertText 并 stopPropagation,路径唯一化。
+    await installTerminalWithPtyCapture(page);
+    await page.goto("/");
+    await page.locator('[data-terminal-id="1"]').waitFor({ state: "attached", timeout: 10_000 });
+    await page.evaluate(async () => {
+      const ta = document.querySelector(".xterm-helper-textarea") as HTMLTextAreaElement;
+      ta.focus();
+      const kd = new KeyboardEvent("keydown", { key: "Process", bubbles: true, cancelable: true });
+      Object.defineProperty(kd, "keyCode", { get: () => 229 });
+      ta.dispatchEvent(kd);
+      const ku = new KeyboardEvent("keyup", { key: "Process", bubbles: true, cancelable: true });
+      Object.defineProperty(ku, "keyCode", { get: () => 229 });
+      ta.dispatchEvent(ku);
+      // IME IPC 往返晚于 keyup —— 快速连敲的真实时序
+      await new Promise((r) => setTimeout(r, 30));
+      ta.value += "。";
+      ta.dispatchEvent(
+        new InputEvent("input", { data: "。", inputType: "insertText", bubbles: true, composed: true }),
+      );
+    });
+    await expect(async () => {
+      expect(await decodedPtyWrites(page)).toContain("。");
+    }).toPass({ timeout: 3000 });
+    // 静置片刻确认没有第二份迟到的重复
+    await page.waitForTimeout(300);
+    const once = await decodedPtyWrites(page);
+    expect(once.split("。").length - 1).toBe(1);
   });
 
   test("IME:composition 期间 Enter 不漏进 PTY,选词文本原子上屏", async ({ page }) => {

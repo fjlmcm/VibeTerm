@@ -1,6 +1,8 @@
 //! 通知/提示音子系统 + agent 完成轮询:路由判定、系统横幅、前端兜底声、
 //! 音频线程、持续提醒、声音解析/预览。从 main.rs 拆出(行为不变)。
 
+use std::sync::{Arc, Mutex};
+
 use tauri::{AppHandle, Emitter, Manager};
 use vibeterm_config::NotifyFile;
 use vibeterm_core::TaskRegistry;
@@ -11,6 +13,28 @@ use crate::{
     emit_tasks_changed, main_window_focused, AppState, NotifySoundData, AGENT_COMPLETED_COOLDOWN,
     AGENT_COMPLETION_OUTPUT_WINDOW_MS,
 };
+
+/// notify.toml 内存缓存 —— 通知偏好被 200ms tick(`maybe_persistent_remind`)与 PTY 读线程
+/// (`notify_status_transition`,持 sinks 锁)高频读取,每次 `NotifyFile::load()` 读盘 + TOML
+/// 解析太贵。这里以文件 (mtime, len) 为版本戳:每次只做一次 `metadata()`,戳变了才重读。
+/// 设置保存(atomic_write rename)与外部编辑都会改 mtime,无需别处显式 invalidate。
+pub(crate) fn notify_prefs() -> Arc<NotifyFile> {
+    type Stamp = Option<(std::time::SystemTime, u64)>;
+    static CACHE: Mutex<Option<(Stamp, Arc<NotifyFile>)>> = Mutex::new(None);
+    let stamp: Stamp = vibeterm_config::notify_toml_path()
+        .ok()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .and_then(|m| Some((m.modified().ok()?, m.len())));
+    let mut g = CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some((cached_stamp, prefs)) = g.as_ref() {
+        if *cached_stamp == stamp {
+            return prefs.clone();
+        }
+    }
+    let prefs = Arc::new(NotifyFile::load());
+    *g = Some((stamp, prefs.clone()));
+    prefs
+}
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum NotifyRoute {
@@ -37,10 +61,10 @@ pub(crate) fn notify_preflight(
     tasks: &TaskRegistry,
     task_id: vibeterm_ipc::TaskId,
     allow_foreground: bool,
-) -> Option<(NotifyFile, NotifyRoute)> {
+) -> Option<(Arc<NotifyFile>, NotifyRoute)> {
     let is_agent = tasks.agent_kind_of(task_id).ok().flatten().is_some();
     let muted = tasks.notify_muted_of(task_id).unwrap_or(false);
-    let prefs = NotifyFile::load();
+    let prefs = notify_prefs();
     let now_hhmm = chrono::Local::now().format("%H:%M").to_string();
     let focused = main_window_focused(app);
     let is_active = tasks.active_main() == Some(task_id);
@@ -87,7 +111,7 @@ fn decide_notify_route(
 /// 复用 TaskRegistry::unseen_done_count(聚合状态 = Done 的任务数)。状态跃迁 /
 /// 切换 active / 关闭任务后调用,保持角标与"未看完成"实时一致。
 pub(crate) fn refresh_dock_badge(app: &AppHandle, tasks: &TaskRegistry) {
-    let n = if NotifyFile::load().dock_badge_unseen {
+    let n = if notify_prefs().dock_badge_unseen {
         tasks.unseen_done_count()
     } else {
         0
@@ -276,7 +300,7 @@ pub(crate) fn maybe_persistent_remind(app: &AppHandle, state: &AppState) {
             *g = None;
         }
     };
-    let prefs = NotifyFile::load();
+    let prefs = notify_prefs();
     if !prefs.enabled || !prefs.persistent_unseen_sound {
         reset();
         return;

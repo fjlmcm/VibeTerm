@@ -582,8 +582,7 @@ export const TaskList: Component<TaskListProps> = (props) => {
       {/* keyed:每次右键都重建菜单 DOM,ref 里的视口夹取才会对新坐标重跑 */}
       <Show when={ctxMenu()} keyed>
         {(menu) => (
-          // Portal 到 body:侧栏自身 stacking context 层级低(z=5),菜单伸进工作区会被
-          // canvas 卡片(z≥10)遮挡;Portal 后配合视口夹取保证菜单完整可见。
+          // Portal 到 body:逃出侧栏的 stacking context,配合视口夹取保证菜单完整可见。
           <Portal>
             <div
               data-testid="task-ctx-menu"

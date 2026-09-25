@@ -81,12 +81,20 @@ fn path() -> Result<PathBuf, TasksError> {
     Ok(vibeterm_config::tasks_json_path()?)
 }
 
+/// 读 tasks.json。
+///   - 不存在 → 默认空文件(首次启动)。
+///   - 读 I/O 失败(权限 / EIO)→ **返回 Err**:文件内容未知、多半完好,不能空启动后覆盖;
+///     上层 `TaskRegistry` 据此进入只读模式(save 变 no-op),原文件原样保留。
+///   - 解析失败 / schema 过新 → 改名 `.corrupt-<ts>` 备份后空启动(见下)。
 pub fn load() -> Result<TasksFile, TasksError> {
     let p = path()?;
     if !p.exists() {
         return Ok(TasksFile::default());
     }
-    let bytes = std::fs::read(&p)?;
+    let bytes = std::fs::read(&p).map_err(|e| {
+        tracing::warn!(path = %p.display(), err = %e, "tasks.json 读取失败,不覆盖");
+        e
+    })?;
     match serde_json::from_slice::<TasksFile>(&bytes) {
         Ok(f) if f.schema_version <= 1 => Ok(f),
         // 解析失败(损坏)或来自更新版本的 schema:把原文件改名保留后空启动。

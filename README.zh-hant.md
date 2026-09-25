@@ -47,12 +47,10 @@ _一般終端機的功能一樣不少,再加上專為滿螢幕 AI agent 做的�
 - **看出 agent 在幹嘛** — 在跑、等輸入、卡住、跑完 —— 不碰你的設定,直接認出來。
 - **卡住偵測 + 緊急排序** — 一螢幕 agent,卡住的和等你的自動排最前。
 - **用量即時看** — 上下文用了多少、5h/7d 額度、燒得多快、快取、花了多少錢,一螢幕看完。
-- **用量統計** — Claude / Codex 的 token 與花費,離線算,能匯出。
 
 ### 終端機
 
 - **分割 + worktree** — 掛上 git worktree,每個任務一棵自己的終端機樹。
-- **Canvas 畫布** — 任務擺成卡片,框選,一條指令發給好幾個終端機。
 - **浮動視窗** — 把任意任務拖成獨立視窗,邊跑邊盯。
 - **GPU 渲染** — WebGL 加速,中日韓照樣不掉字、不卡。
 
@@ -102,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## 站在這些專案的肩膀上。
 
-特別感謝 ryoppippi 的 ccusage(MIT)—— 用量統計、模型價格、5 小時區塊這些都參考了它;價格資料來自 LiteLLM 和 Anthropic 官方。
+特別感謝 ryoppippi 的 ccusage(MIT)—— 模型價格、5 小時區塊這些都參考了它;價格資料來自 LiteLLM 和 Anthropic 官方。
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

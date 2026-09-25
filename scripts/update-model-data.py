@@ -6,8 +6,8 @@ anthropic 原生 claude 条目,写入 vibeterm-agent-watch 的内嵌快照:
 
     src-tauri/crates/vibeterm-agent-watch/src/claude/litellm_snapshot.json
 
-该快照编译进二进制,作为离线兜底;设置·更新页"更新模型价格"在运行时拉同一数据源
-做覆盖。**每次发布新版本前运行一次本脚本**(发版流程见 .claude/skills/release),
+该快照编译进二进制,供应用离线查询。
+**每次发布新版本前运行一次本脚本**(发版流程见 .claude/skills/release),
 有 diff 随版本提交,保证内置数据不过时。
 
 用法:

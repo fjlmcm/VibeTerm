@@ -47,12 +47,10 @@ _Todos os recursos comuns de terminal, mais percepção de estado e orquestraç�
 - **Vê o que um agente está fazendo** — Rodando, aguardando, travado ou pronto — descoberto sem tocar na sua config.
 - **Detecção de travamento + ordem por urgência** — Tela cheia de agentes? Os travados e os que te esperam sobem pro topo.
 - **Uso ao vivo** — Contexto restante, cota 5h/7d, velocidade de consumo, cache, custo — tudo numa barra.
-- **Estatísticas de uso** — Números de tokens e custo para Claude / Codex. Calculados offline, exportáveis.
 
 ### Terminal
 
 - **Divisões + worktrees** — Monte um git worktree, uma árvore de terminais por tarefa.
-- **Quadro Canvas** — Disponha as tarefas como cartões, seleção por moldura, um comando enviado a vários terminais.
 - **Janelas flutuantes** — Destaque qualquer tarefa na própria janela e continue de olho.
 - **Renderização GPU** — Acelerado por WebGL, e o CJK mesmo assim não perde glifos nem trava.
 
@@ -102,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## Sobre os ombros destes.
 
-Um agradecimento especial ao ccusage do ryoppippi (MIT). As estatísticas de uso, os preços dos modelos e os blocos de 5 horas vieram dele; os dados de preço vêm do LiteLLM e dos números oficiais da Anthropic.
+Um agradecimento especial ao ccusage do ryoppippi (MIT). Os preços dos modelos e os blocos de 5 horas vieram dele; os dados de preço vêm do LiteLLM e dos números oficiais da Anthropic.
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

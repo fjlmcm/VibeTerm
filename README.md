@@ -47,12 +47,10 @@ _All the usual terminal features, plus state-awareness and orchestration built f
 - **Sees what an agent's doing** — Working, waiting, stalled, or done — figured out without touching your config.
 - **Stall detection + urgency sort** — Screen full of agents? The stuck ones and the ones waiting on you go to the top.
 - **Live usage** — Context left, 5h/7d quota, burn rate, cache, cost — all on one bar.
-- **Usage stats** — Token and cost numbers for Claude / Codex. Computed offline, exportable.
 
 ### Terminal
 
 - **Splits + worktrees** — Mount a git worktree, one terminal tree per task.
-- **Canvas board** — Lay tasks out as cards, drag-select, send one command to several terminals.
 - **Floating windows** — Pop any task into its own window and keep watching.
 - **GPU rendering** — WebGL-accelerated — and CJK still won't drop glyphs or stutter.
 
@@ -102,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## Standing on these shoulders.
 
-Special thanks to ryoppippi's ccusage (MIT). The usage stats, model pricing, and 5-hour blocks all drew from it; pricing data comes from LiteLLM and Anthropic's official numbers.
+Special thanks to ryoppippi's ccusage (MIT). The model pricing and 5-hour blocks all drew from it; pricing data comes from LiteLLM and Anthropic's official numbers.
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

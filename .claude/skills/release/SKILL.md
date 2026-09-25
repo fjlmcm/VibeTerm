@@ -20,12 +20,12 @@ cargo fmt --all --check                      #    确认干净(无输出)
 cargo clippy --workspace --all-targets -- -D warnings   # ② -D warnings,含 doc_lazy_continuation 等
 cargo test -p vibeterm-config -p vibeterm-core -p vibeterm-ipc \
            -p vibeterm-pty -p vibeterm-status -p vibeterm-tasks \
-           -p vibeterm-agent-watch           # ③ 6 子 crate + agent-watch(排除链 tauri 的主 crate)
+           -p vibeterm-agent-watch -p vibeterm-git   # ③ 全部 8 子 crate(排除链 tauri 的主 crate)
 ```
 
 ```bash
 cd ..                                        # 回根
-pnpm typecheck                               # ④ 仅当 web/ 改了
+pnpm typecheck && pnpm lint                  # ④ 仅当 web/ 改了(eslint 也在 CI lint job)
 python3 scripts/gen-readme.py                # ⑤ 仅当改了官网 i18n 文案 / README 结构
 ```
 
@@ -88,7 +88,7 @@ gh run watch <run-id> --exit-status                     # 阻塞等结果(0=绿)
 CI 失败先看是不是 `cargo fmt`(回第 1 步)。发版失败常见:`APPLE_SIGNING_IDENTITY` 等 secret **尾随空格/换行**(日志 identity 末尾有空格是线索;`gh secret set` 重设去空白,证书名是公开值非密钥)。
 
 ## 速记
-1. **cargo fmt --all**(别忘!)→ clippy -D warnings → test 6 crate → typecheck →(改文案则 gen-readme)
+1. **cargo fmt --all**(别忘!)→ clippy -D warnings → test 8 crate → typecheck + lint →(改文案则 gen-readme)
 2. 发版前 `python3 scripts/update-model-data.py` 刷新模型数据快照(每次发新版必做)
 3. 该 bump 才 bump(纯文档不 bump)
 3. commit + push main

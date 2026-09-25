@@ -1,21 +1,9 @@
-//! 手动更新检查(软件版本 / 模型价格)。
-//! 🔴 零侵入红线:仅用户点按钮时联网;纯 GET 三个固定 HTTPS 端点;无上传/遥测/后台轮询。
-//! 从 main.rs 拆出(行为不变)。
+//! 软件版本检查:用户手动触发或启用自动检查时调用。
+//! 只读 GitHub 发布信息,无上传、遥测或自动安装。
 
 use tauri::AppHandle;
 use vibeterm_ipc::{IpcError, IpcResult};
 
-use crate::atomic_write;
-
-// ===== 手动更新检查(软件版本 / 模型价格)=====
-// 🔴 零侵入红线: 仅此处、仅用户点按钮时联网; 纯 GET 三个固定 HTTPS 端点;
-// 无任何上传 / 遥测; 绝无后台轮询 / 启动自动检查. 价格 override 只落 VibeTerm config 目录.
-
-// 模型数据源: LiteLLM 社区维护的公开表(权威、含价格 200k 分档 + 上下文窗口、ccusage 同源).
-// 解析/转换在 vibeterm-agent-watch::claude::pricing::parse_litellm —— 与内嵌快照
-// (litellm_snapshot.json, scripts/update-model-data.py 发版前刷新)共用同一转换器.
-pub(crate) const PRICING_URL: &str =
-    "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json";
 // REST API: 仅在发现新版本时拿一次正式发布说明(release body 是发布后人工注入的).
 // 未认证限流 60 次/小时/IP, 代理共享出口下常年耗尽 → 不能当版本检查主路径.
 pub(crate) const GH_LATEST_RELEASE_URL: &str =
@@ -24,113 +12,6 @@ pub(crate) const GH_LATEST_RELEASE_URL: &str =
 pub(crate) const GH_LATEST_JSON_URL: &str =
     "https://github.com/fjlmcm/VibeTerm/releases/latest/download/latest.json";
 pub(crate) const GH_RELEASE_TAG_BASE: &str = "https://github.com/fjlmcm/VibeTerm/releases/tag/";
-
-/// 同步 GET 一个 HTTPS 文本资源, 带超时 + UA. 仅供手动更新检查用(跑在 spawn_blocking 里).
-pub(crate) fn http_get_text(url: &str) -> Result<String, String> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout_connect(std::time::Duration::from_secs(6))
-        .timeout_read(std::time::Duration::from_secs(12))
-        .build();
-    agent
-        .get(url)
-        .set("User-Agent", "VibeTerm")
-        .call()
-        .map_err(|e| format!("request failed: {e}"))?
-        .into_string()
-        .map_err(|e| format!("read body failed: {e}"))
-}
-
-/// 模型数据表 sanity 校验: 单价有限、非负、< 上限; 窗口在合理区间. 防脏数据污染显示.
-pub(crate) fn validate_pricing(
-    t: &vibeterm_agent_watch::claude::pricing::PricingTable,
-) -> Result<(), String> {
-    if t.models.is_empty() {
-        return Err("empty model table".into());
-    }
-    if t.updated_at.is_empty() {
-        return Err("missing updated_at".into());
-    }
-    for (name, mi) in &t.models {
-        let p = &mi.pricing;
-        for v in [
-            p.input_per_mtok,
-            p.output_per_mtok,
-            p.cache_creation_per_mtok,
-            p.cache_read_per_mtok,
-        ] {
-            if !(v.is_finite() && (0.0..100_000.0).contains(&v)) {
-                return Err(format!("{name}: price out of range: {v}"));
-            }
-        }
-        if let Some(w) = mi.context_window {
-            if !(1_000..=100_000_000).contains(&w) {
-                return Err(format!("{name}: context_window out of range: {w}"));
-            }
-        }
-    }
-    Ok(())
-}
-
-/// 当前模型价格来源状态(内置快照 or 已手动更新的覆盖). 给设置·更新页显示.
-#[tauri::command]
-pub(crate) async fn get_pricing_status(
-) -> IpcResult<vibeterm_agent_watch::claude::pricing::PricingStatus> {
-    Ok(vibeterm_agent_watch::claude::pricing::pricing_status())
-}
-
-/// 当前日期 YYYY-MM-DD(价格快照时间戳, 本地时区).
-pub(crate) fn pricing_today() -> String {
-    chrono::Local::now().format("%Y-%m-%d").to_string()
-}
-
-/// 手动更新模型数据: GET LiteLLM 表 → 按模型转换(价格 + 上下文窗口)→ 校验
-/// → 原子写 config → 注入覆盖. 仅用户在设置·更新页点击时触发. 失败不影响内置快照.
-#[tauri::command]
-pub(crate) async fn update_model_pricing(
-) -> IpcResult<vibeterm_agent_watch::claude::pricing::PricingStatus> {
-    use vibeterm_agent_watch::claude::pricing::{pricing_status, set_pricing_override};
-    let body = tokio::task::spawn_blocking(|| http_get_text(PRICING_URL))
-        .await
-        .map_err(|e| IpcError::Unknown {
-            trace_id: format!("update_model_pricing:join:{e}"),
-        })?
-        .map_err(|e| IpcError::Unknown {
-            trace_id: format!("update_model_pricing:net:{e}"),
-        })?;
-    let table = vibeterm_agent_watch::claude::pricing::parse_litellm(
-        &body,
-        "LiteLLM (BerriAI/litellm)",
-        pricing_today(),
-    )
-    .map_err(|e| IpcError::Unknown {
-        trace_id: format!("update_model_pricing:adapt:{e}"),
-    })?;
-    validate_pricing(&table).map_err(|e| IpcError::Unknown {
-        trace_id: format!("update_model_pricing:invalid:{e}"),
-    })?;
-    let path = vibeterm_config::pricing_json_path().map_err(|e| IpcError::Unknown {
-        trace_id: format!("update_model_pricing:path:{e}"),
-    })?;
-    let pretty = serde_json::to_string_pretty(&table).map_err(|e| IpcError::Unknown {
-        trace_id: format!("update_model_pricing:ser:{e}"),
-    })?;
-    atomic_write(&path, pretty.as_bytes()).map_err(|e| IpcError::Unknown {
-        trace_id: format!("update_model_pricing:write:{e}"),
-    })?;
-    set_pricing_override(table);
-    Ok(pricing_status())
-}
-
-/// 还原内置默认价格: 删 override 文件 + 清缓存.
-#[tauri::command]
-pub(crate) async fn reset_model_pricing(
-) -> IpcResult<vibeterm_agent_watch::claude::pricing::PricingStatus> {
-    if let Ok(path) = vibeterm_config::pricing_json_path() {
-        let _ = std::fs::remove_file(&path);
-    }
-    vibeterm_agent_watch::claude::pricing::clear_pricing_override();
-    Ok(vibeterm_agent_watch::claude::pricing::pricing_status())
-}
 
 /// 软件版本检查结果(仅展示 + 给下载链接, 不下载安装).
 #[derive(serde::Serialize, specta::Type)]
@@ -190,7 +71,7 @@ pub(crate) fn parse_latest_json(body: &str) -> Result<LatestJson, String> {
     Ok(latest)
 }
 
-/// 手动检查软件更新.
+/// 检查软件更新(手动触发或启用自动检查时调用).
 /// 主路径 GET updater 的 latest.json(release 资产, 无 REST API 限流)比较版本;
 /// 发现新版本时才请求一次 REST API 拿正式发布说明(release body, 发布后人工注入),
 /// 拿不到(含限流)静默回落 latest.json 自带的模板 notes —— notes 是锦上添花, 不挡版本检查.

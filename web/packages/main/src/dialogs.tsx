@@ -10,7 +10,7 @@
 //   - autofocus input(NewTaskDialog)
 //   - Enter 提交(L1:勾了 worktree 后改成 Cmd+Enter,避免在 branch 字段误触发)
 
-import { Show, createSignal, createEffect, onMount, type Component } from "solid-js";
+import { For, Show, createSignal, createEffect, onMount, type Component, type JSX } from "solid-js";
 import { Folder, FolderOpen, GitBranch, Check, X as XIcon } from "lucide-solid";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { t, ipc } from "@vibeterm/ui-core";
@@ -289,9 +289,7 @@ export const NewTaskDialog: Component<NewTaskDialogProps> = (props) => {
                 style={inputStyle()}
               />
               <datalist id="vt-branches-datalist">
-                {branches().map((b) => (
-                  <option value={b} />
-                ))}
+                <For each={branches()}>{(b) => <option value={b} />}</For>
               </datalist>
             </label>
 
@@ -535,7 +533,7 @@ export const ConfirmCloseDialog: Component<ConfirmCloseDialogProps> = (props) =>
   );
 };
 
-const Backdrop: Component<{ onClose: () => void; children: any }> = (p) => (
+const Backdrop: Component<{ onClose: () => void; children: JSX.Element }> = (p) => (
   <div
     onClick={p.onClose}
     style={{

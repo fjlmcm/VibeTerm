@@ -31,10 +31,8 @@ export { TaskList } from "./tasklist";
 export { Titlebar } from "./titlebar";
 export { SplitView, splitLeaf, removeLeaf, normalize, collectSlots, singleLeaf, newSlotId, bumpSlotIdAtLeast, setRatiosAt, rightmostBottomSlot, leftmostBottomSlot } from "./split";
 export type { SplitNode, Orientation } from "./split";
-export { createCanvasViewport } from "./canvas-viewport";
 export { StatusBar } from "./status-bar";
 export { WIDGETS, WIDGET_LIST, type WidgetMeta } from "./status-bar/widgets";
-export type { CanvasViewport, CanvasViewportOpts, ViewportPos, ViewportRect } from "./canvas-viewport";
 export {
   initKeybindings,
   keybindings,
@@ -51,3 +49,4 @@ export {
 } from "./keybindings";
 export type { ActionHandler, ActionMap } from "./keybindings";
 export { clampMenuToViewport, menuClampRef } from "./menu-clamp";
+export { truncateGraphemes } from "./text";

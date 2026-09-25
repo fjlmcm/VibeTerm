@@ -47,12 +47,10 @@ _Toutes les fonctions habituelles d'un terminal, plus la détection d'état et l
 - **Voit ce que fait un agent** — En cours, en attente, bloqué ou terminé — déduit sans toucher à votre config.
 - **Détection de blocage + tri par urgence** — Écran rempli d'agents ? Les bloqués et ceux qui vous attendent remontent tout en haut.
 - **Usage en direct** — Contexte restant, quota 5h/7d, vitesse de consommation, cache, coût — tout sur une seule barre.
-- **Statistiques d'usage** — Chiffres de tokens et de coûts pour Claude / Codex. Calculés hors ligne, exportables.
 
 ### Terminal
 
 - **Divisions + worktrees** — Montez un worktree git, un arbre de terminaux par tâche.
-- **Tableau Canvas** — Disposez les tâches en cartes, sélection au lasso, une commande envoyée à plusieurs terminaux.
 - **Fenêtres flottantes** — Détachez n'importe quelle tâche dans sa propre fenêtre et continuez à la surveiller.
 - **Rendu GPU** — Accéléré par WebGL — et le CJK ne perd pas une glyphe, sans ramer pour autant.
 
@@ -102,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## Sur les épaules de ces projets.
 
-Un grand merci à ccusage de ryoppippi (MIT). Les statistiques d'usage, les tarifs des modèles et les blocs de 5 heures en viennent ; les données de prix proviennent de LiteLLM et des chiffres officiels d'Anthropic.
+Un grand merci à ccusage de ryoppippi (MIT). Les tarifs des modèles et les blocs de 5 heures en viennent ; les données de prix proviennent de LiteLLM et des chiffres officiels d'Anthropic.
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

@@ -22,6 +22,7 @@ import type {
   TaskDto,
 } from "@vibeterm/ipc-types";
 import { formatRemainMs } from "./popover/anchor";
+import { truncateGraphemes } from "../text";
 
 // ---- 公共 helpers ----
 
@@ -111,7 +112,9 @@ export function shortenCwd(cwd: string, max: number = 200): string {
       break;
     }
   }
-  if (out.length > max) out = `…${out.slice(-(max - 1))}`;
+  if (truncateGraphemes(out, max, { fromEnd: true }) !== out) {
+    out = `…${truncateGraphemes(out, max - 1, { fromEnd: true })}`;
+  }
   return out;
 }
 

@@ -47,12 +47,10 @@ _普通终端的功能一样不少,再加上专门为满屏 AI agent 做的状�
 - **看出 agent 在干嘛** — 在跑、等输入、卡住、跑完——不碰你的配置,直接认出来。
 - **卡住检测 + 紧急排序** — 一屏 agent,卡住的和等你的自动排最前。
 - **用量实时看** — 上下文用了多少、5h/7d 额度、烧得多快、缓存、花了多少钱,一屏看完。
-- **用量统计** — Claude / Codex 的 token 和花费,离线算,能导出。
 
 ### 终端
 
 - **分屏 + worktree** — 挂上 git worktree,每个任务一棵自己的终端树。
-- **Canvas 画布** — 任务摆成卡片,框选,一条命令发给好几个终端。
 - **浮窗** — 把任意任务拽成单独窗口,边跑边盯。
 - **GPU 渲染** — WebGL 加速,中日韩照样不丢字、不卡。
 
@@ -102,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## 站在这些项目的肩膀上。
 
-特别感谢 ryoppippi 的 ccusage(MIT)——用量统计、模型价格、5 小时块这些都参考了它;价格数据来自 LiteLLM 和 Anthropic 官方。
+特别感谢 ryoppippi 的 ccusage(MIT)——模型价格、5 小时块这些都参考了它;价格数据来自 LiteLLM 和 Anthropic 官方。
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

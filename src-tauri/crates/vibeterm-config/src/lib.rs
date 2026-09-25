@@ -107,12 +107,6 @@ pub fn notify_toml_path() -> Result<PathBuf, ConfigError> {
     Ok(config_dir()?.join("notify.toml"))
 }
 
-/// 模型价格覆盖文件(设置·更新页"更新模型价格"手动拉取后落盘处)。
-/// 不存在 = 用编译进二进制的内置价格快照。仅 VibeTerm 自己的 config 目录,不碰 agent 配置。
-pub fn pricing_json_path() -> Result<PathBuf, ConfigError> {
-    Ok(config_dir()?.join("pricing.json"))
-}
-
 /// 事件流日志(task 状态变更 append-only JSONL,供外部脚本 `tail -f` 订阅)。
 /// 仅 VibeTerm 自己的 config 目录,零侵入。
 pub fn events_jsonl_path() -> Result<PathBuf, ConfigError> {
@@ -394,6 +388,10 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> Result<(), ConfigError> {
         tmp.write_all(bytes)?;
         tmp.as_file().sync_all()?;
         tmp.persist(path).map_err(|e| ConfigError::Io(e.error))?;
+        // rename 后 fsync 父目录,让目录项本身落盘(掉电时不丢新文件名);失败可忽略。
+        if let Ok(dir) = std::fs::File::open(parent) {
+            let _ = dir.sync_all();
+        }
         Ok(())
     }
 
@@ -444,7 +442,7 @@ pub struct Config {
     /// 默认开;纯临时 env 注入,不写用户 dotfiles。
     #[serde(default = "Config::default_shell_integration")]
     pub shell_integration: bool,
-    /// 启动时自动检查软件更新(默认开)。仅 GET GitHub latest release 比对版本号 —— 只读、
+    /// 启动时自动检查软件更新(默认关,用户在设置中开启后才联网)。仅 GET GitHub latest release 比对版本号 —— 只读、
     /// 不上传、零遥测、不自动下载安装。可在设置·更新页关闭(关闭后开箱完全不主动联网)。
     #[serde(default = "Config::default_auto_check_updates")]
     pub auto_check_updates: bool,
@@ -474,7 +472,7 @@ impl Config {
         true
     }
     fn default_auto_check_updates() -> bool {
-        true
+        false
     }
 
     pub fn load() -> Result<Self, ConfigError> {
@@ -536,6 +534,13 @@ pub fn get_theme(id: &str) -> Theme {
 }
 
 // ---- 文件监听 watcher(50ms debounce)----
+
+/// 只有 `*.toml` 才算配置变更:config 目录里还有 tasks.json / events.jsonl / scrollback.json
+/// 以及 atomic_write 的临时文件,这些由 VibeTerm 自己频繁写入,不过滤会自触发 config_changed 回环。
+fn is_config_toml(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e == "toml")
+}
+
 pub struct ConfigWatcher {
     _watcher: notify::RecommendedWatcher,
     _last_change: Arc<Mutex<std::time::Instant>>,
@@ -561,7 +566,9 @@ impl ConfigWatcher {
         let mut watcher: notify::RecommendedWatcher =
             notify::recommended_watcher(move |res: notify::Result<Event>| match res {
                 Ok(ev) => match ev.kind {
-                    EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) => {
+                    EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_)
+                        if ev.paths.iter().any(|p| is_config_toml(p)) =>
+                    {
                         let mut t = last_change_w.lock().unwrap();
                         *t = std::time::Instant::now();
                         drop(t);
@@ -595,5 +602,26 @@ impl ConfigWatcher {
             _watcher: watcher,
             _last_change: last_change,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn watcher_only_reacts_to_toml() {
+        assert!(is_config_toml(Path::new("/cfg/config.toml")));
+        assert!(is_config_toml(Path::new("/cfg/statusline.toml")));
+        assert!(!is_config_toml(Path::new("/cfg/tasks.json")));
+        assert!(!is_config_toml(Path::new("/cfg/events.jsonl")));
+        assert!(!is_config_toml(Path::new("/cfg/.tmpAbC123")));
+    }
+
+    #[test]
+    fn auto_check_updates_defaults_off() {
+        assert!(!Config::default().auto_check_updates);
+        let cfg: Config = toml::from_str("").expect("empty config parses");
+        assert!(!cfg.auto_check_updates);
     }
 }

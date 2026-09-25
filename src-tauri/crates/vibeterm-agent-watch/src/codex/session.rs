@@ -25,53 +25,35 @@ pub fn sessions_root() -> Option<PathBuf> {
     Some(dirs::home_dir()?.join(".codex").join("sessions"))
 }
 
-/// 扫近 N 天目录, 找 mtime 最新的 rollout-*.jsonl.
-/// 不全盘扫 (深目录开销), 仅看最近 2 天.
-fn find_latest_rollout() -> Option<PathBuf> {
-    let root = sessions_root()?;
-    if !root.exists() {
-        return None;
+/// 扫近 3 天目录下所有 rollout-*.jsonl, 按 mtime 倒序返回 (path, mtime_ms).
+/// 不全盘扫 (深目录开销), 只看 mtime 最新的 3 个 DD 目录.
+fn recent_rollouts(root: &Path) -> Vec<(PathBuf, i64)> {
+    fn mtime_ms(e: &std::fs::DirEntry) -> i64 {
+        e.metadata()
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0)
     }
-    let mut candidates: Vec<(PathBuf, i64)> = Vec::new();
+    fn subdirs(p: &Path) -> Vec<std::fs::DirEntry> {
+        std::fs::read_dir(p)
+            .map(|rd| rd.flatten().filter(|e| e.path().is_dir()).collect())
+            .unwrap_or_default()
+    }
     // 进入 YYYY 目录 -> MM 目录 -> DD 目录 -> rollout.jsonl
-    // 只看 mtime 最新的若干个 DD 目录, 收集其中所有 jsonl
     let mut day_dirs: Vec<(PathBuf, i64)> = Vec::new();
-    if let Ok(ys) = std::fs::read_dir(&root) {
-        for y in ys.flatten() {
-            let yp = y.path();
-            if !yp.is_dir() {
-                continue;
-            }
-            if let Ok(ms) = std::fs::read_dir(&yp) {
-                for m in ms.flatten() {
-                    let mp = m.path();
-                    if !mp.is_dir() {
-                        continue;
-                    }
-                    if let Ok(ds) = std::fs::read_dir(&mp) {
-                        for d in ds.flatten() {
-                            let dp = d.path();
-                            if !dp.is_dir() {
-                                continue;
-                            }
-                            let mtime = d
-                                .metadata()
-                                .ok()
-                                .and_then(|m| m.modified().ok())
-                                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                                .map(|d| d.as_millis() as i64)
-                                .unwrap_or(0);
-                            day_dirs.push((dp, mtime));
-                        }
-                    }
-                }
+    for y in subdirs(root) {
+        for m in subdirs(&y.path()) {
+            for d in subdirs(&m.path()) {
+                day_dirs.push((d.path(), mtime_ms(&d)));
             }
         }
     }
-    // 取最近 3 个日期目录
     day_dirs.sort_by_key(|e| std::cmp::Reverse(e.1));
     day_dirs.truncate(3);
 
+    let mut candidates: Vec<(PathBuf, i64)> = Vec::new();
     for (dir, _) in day_dirs {
         if let Ok(files) = std::fs::read_dir(&dir) {
             for f in files.flatten() {
@@ -79,21 +61,21 @@ fn find_latest_rollout() -> Option<PathBuf> {
                 if fp.extension().and_then(|e| e.to_str()) != Some("jsonl") {
                     continue;
                 }
-                let mtime = f
-                    .metadata()
-                    .ok()
-                    .and_then(|m| m.modified().ok())
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_millis() as i64)
-                    .unwrap_or(0);
-                candidates.push((fp, mtime));
+                candidates.push((fp, mtime_ms(&f)));
             }
         }
     }
+    candidates.sort_by_key(|e| std::cmp::Reverse(e.1));
     candidates
-        .into_iter()
-        .max_by_key(|(_, m)| *m)
-        .map(|(p, _)| p)
+}
+
+/// 全局 mtime 最新的 rollout (any cwd).
+fn find_latest_rollout() -> Option<PathBuf> {
+    let root = sessions_root()?;
+    if !root.exists() {
+        return None;
+    }
+    recent_rollouts(&root).into_iter().next().map(|(p, _)| p)
 }
 
 // --- JSONL 解析 ---
@@ -360,78 +342,39 @@ pub fn read_once() -> Option<CodexSnapshot> {
     find_latest_rollout().and_then(|p| build_snapshot(&p))
 }
 
+/// 只读 rollout 文件头, 取 `session_meta.cwd`. session_meta 按协议是首行, 宽容到前 3 行.
+/// 供 `read_for_cwd` 先做 cwd 匹配, 命中再 `build_snapshot` 全文解析 —— 否则每个候选
+/// (最多 3 天内所有 rollout, 单个可到 16MB) 都被整读一遍.
+fn rollout_cwd(path: &Path) -> Option<String> {
+    let reader = BufReader::new(std::fs::File::open(path).ok()?);
+    for line in reader.lines().map_while(Result::ok).take(3) {
+        let Ok(parsed) = serde_json::from_str::<CodexLine>(line.trim()) else {
+            continue;
+        };
+        if parsed.line_type == "session_meta" {
+            return serde_json::from_value::<SessionMeta>(parsed.payload)
+                .ok()
+                .map(|m| m.cwd);
+        }
+    }
+    None
+}
+
 /// 按 cwd 查 Codex session — 扫近 3 天 rollout, 找首行 session_meta.cwd 匹配的 mtime 最新.
 pub fn read_for_cwd(cwd: &str) -> Option<CodexSnapshot> {
     let root = sessions_root()?;
     if !root.exists() {
         return None;
     }
-    // 复用 find_latest_rollout 的目录扫描, 但取所有候选并按 mtime 倒序逐个匹配
-    let mut day_dirs: Vec<(PathBuf, i64)> = Vec::new();
-    if let Ok(ys) = std::fs::read_dir(&root) {
-        for y in ys.flatten() {
-            let yp = y.path();
-            if !yp.is_dir() {
-                continue;
-            }
-            if let Ok(ms) = std::fs::read_dir(&yp) {
-                for m in ms.flatten() {
-                    let mp = m.path();
-                    if !mp.is_dir() {
-                        continue;
-                    }
-                    if let Ok(ds) = std::fs::read_dir(&mp) {
-                        for d in ds.flatten() {
-                            let dp = d.path();
-                            if !dp.is_dir() {
-                                continue;
-                            }
-                            let mtime = d
-                                .metadata()
-                                .ok()
-                                .and_then(|m| m.modified().ok())
-                                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                                .map(|d| d.as_millis() as i64)
-                                .unwrap_or(0);
-                            day_dirs.push((dp, mtime));
-                        }
-                    }
-                }
-            }
-        }
-    }
-    day_dirs.sort_by_key(|e| std::cmp::Reverse(e.1));
-    day_dirs.truncate(3);
+    read_for_cwd_in(&root, cwd)
+}
 
-    let mut candidates: Vec<(PathBuf, i64)> = Vec::new();
-    for (dir, _) in day_dirs {
-        if let Ok(files) = std::fs::read_dir(&dir) {
-            for f in files.flatten() {
-                let fp = f.path();
-                if fp.extension().and_then(|e| e.to_str()) != Some("jsonl") {
-                    continue;
-                }
-                let mtime = f
-                    .metadata()
-                    .ok()
-                    .and_then(|m| m.modified().ok())
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_millis() as i64)
-                    .unwrap_or(0);
-                candidates.push((fp, mtime));
-            }
-        }
-    }
-    candidates.sort_by_key(|e| std::cmp::Reverse(e.1));
-    // 按 mtime 倒序遍历, 找到第一个 session_meta.cwd 匹配的就返回
-    for (path, _) in candidates {
-        if let Some(snap) = build_snapshot(&path) {
-            if snap.cwd == cwd {
-                return Some(snap);
-            }
-        }
-    }
-    None
+fn read_for_cwd_in(root: &Path, cwd: &str) -> Option<CodexSnapshot> {
+    // 按 mtime 倒序遍历, 只读头部匹配 cwd, 命中的才全文解析
+    recent_rollouts(root)
+        .into_iter()
+        .filter(|(p, _)| rollout_cwd(p).as_deref() == Some(cwd))
+        .find_map(|(p, _)| build_snapshot(&p))
 }
 
 /// 选用无界 channel: 生产端速率受下方 200ms debounce 锁死在约 5 条/秒上界, 单条消息小,
@@ -572,6 +515,50 @@ mod tests {
         let snap = build_snapshot(&tmp).unwrap();
         assert!(!snap.task_completed);
         assert!(snap.last_turn_id.is_none());
+    }
+
+    /// read_for_cwd 只读候选文件头做 cwd 匹配, 不整读. 验证: 第一个(mtime 更新)文件首行
+    /// session_meta.cwd 不匹配、但第 5 行藏着一条 cwd 匹配的 session_meta —— 若被全文解析,
+    /// 后一条会覆盖 cwd 并被误选中(session_id=a); 只读头则跳过它, 选中第二个文件(b).
+    #[test]
+    fn read_for_cwd_matches_on_file_head_only() {
+        let root = std::env::temp_dir().join(format!("vt-test-codex-cwd-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let day = root.join("2026").join("01").join("01");
+        std::fs::create_dir_all(&day).unwrap();
+        let older = day.join("rollout-b.jsonl");
+        std::fs::write(
+            &older,
+            r#"{"timestamp":"2026-01-01T00:00:00.000Z","type":"session_meta","payload":{"id":"b","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/target"}}
+"#,
+        )
+        .unwrap();
+        let newer = day.join("rollout-a.jsonl");
+        std::fs::write(
+            &newer,
+            r#"{"timestamp":"2026-01-01T01:00:00.000Z","type":"session_meta","payload":{"id":"a","timestamp":"2026-01-01T01:00:00.000Z","cwd":"/other"}}
+not json
+not json
+not json
+{"timestamp":"2026-01-01T01:00:01.000Z","type":"session_meta","payload":{"id":"a","timestamp":"2026-01-01T01:00:01.000Z","cwd":"/target"}}
+"#,
+        )
+        .unwrap();
+        // 明确 mtime: a 比 b 新
+        let base = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+        std::fs::File::open(&older)
+            .unwrap()
+            .set_modified(base)
+            .unwrap();
+        std::fs::File::open(&newer)
+            .unwrap()
+            .set_modified(base + std::time::Duration::from_secs(10))
+            .unwrap();
+        assert_eq!(rollout_cwd(&newer).as_deref(), Some("/other"));
+        let snap = read_for_cwd_in(&root, "/target").expect("b should match");
+        assert_eq!(snap.session_id, "b");
+        assert!(read_for_cwd_in(&root, "/nowhere").is_none());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

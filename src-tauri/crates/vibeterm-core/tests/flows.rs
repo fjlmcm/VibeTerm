@@ -699,3 +699,34 @@ fn multi_sink_attach_via_registry() {
         replayed
     );
 }
+
+/// tasks.json 读失败(权限 000)→ 注册表只读:create 等 mutate 不得覆盖原文件。
+/// (否则 main.rs 的"空注册表自动建默认任务"会把用户完好的任务文件整个抹掉。)
+#[cfg(unix)]
+#[test]
+fn unreadable_tasks_json_is_never_overwritten() {
+    use std::os::unix::fs::PermissionsExt;
+    let _cfg = isolated_config();
+    // 先用正常注册表落一份真实文件
+    let seed = TaskRegistry::new();
+    seed.create("keep-me".into(), None, None).unwrap();
+    let p = vibeterm_config::tasks_json_path().unwrap();
+    let original = std::fs::read(&p).unwrap();
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).unwrap();
+    if std::fs::read(&p).is_ok() {
+        // root 下 chmod 000 挡不住读,本测试无意义
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+        return;
+    }
+    let tasks = TaskRegistry::new();
+    assert!(tasks.list().unwrap().is_empty(), "读失败应空启动");
+    let id = tasks.create("transient".into(), None, None).unwrap();
+    tasks.rename(id, "renamed".into()).unwrap();
+    tasks.close(id).unwrap();
+    std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(
+        std::fs::read(&p).unwrap(),
+        original,
+        "只读模式下原文件必须原样"
+    );
+}

@@ -8,9 +8,8 @@ VibeTerm bundles or derives from the following third-party open-source software.
 
 VibeTerm's agent usage logic — the 5-hour rolling **block** detection
 (`vibeterm-agent-watch/src/claude/blocks.rs`, `.../codex/blocks.rs`), the offline
-**pricing / cost** model (`.../claude/pricing.rs`), and the **historical usage
-aggregation** behind the Usage Statistics panel (`.../stats/`) — is derived from or
-inspired by **ccusage** by ryoppippi.
+**pricing / cost** model (`.../claude/pricing.rs`) — is derived from or inspired by
+**ccusage** by ryoppippi.
 
 - Project: https://github.com/ryoppippi/ccusage
 - License: MIT
@@ -39,11 +38,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-VibeTerm does **not** redistribute ccusage's code verbatim. The model price table
-ships as a hand-maintained **offline snapshot** (`claude/pricing.rs`) and is used by
-default with no network access. The user may *optionally* refresh prices from the
-**Settings → Update** page; that, plus the manual app-version check, are the only
-network requests VibeTerm makes — see **Network** below.
+VibeTerm does **not** redistribute ccusage's code verbatim. Model data ships as an
+**offline snapshot** (`claude/litellm_snapshot.json`), refreshed before releases
+with `scripts/update-model-data.py`. The app queries this snapshot locally,
+including model context-window sizes, without fetching a price table at runtime.
 
 Model pricing figures originate from Anthropic's public pricing page; ccusage's own
 pricing data derives from LiteLLM (BerriAI/litellm, MIT).
@@ -52,8 +50,7 @@ pricing data derives from LiteLLM (BerriAI/litellm, MIT).
 
 ## ureq
 
-The manual update checks (app version via the GitHub Releases API, and the model
-price table) use **ureq** for synchronous HTTPS GET requests.
+App-version checks use **ureq** for synchronous HTTPS GET requests to GitHub.
 
 - Project: https://github.com/algesten/ureq
 - License: MIT OR Apache-2.0
@@ -62,17 +59,17 @@ price table) use **ureq** for synchronous HTTPS GET requests.
 
 ## Network
 
-VibeTerm makes network requests **only** when the user explicitly clicks a button on
-the **Settings → Update** page:
+VibeTerm checks for software updates from **Settings → Update**, and at startup
+when automatic update checks are enabled. Version checks read these endpoints:
 
-- `https://api.github.com/repos/fjlmcm/VibeTerm/releases/latest` — latest app version
-- `https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json` — model price table (LiteLLM, MIT)
+- `https://github.com/fjlmcm/VibeTerm/releases/latest/download/latest.json` — latest app version
+- `https://api.github.com/repos/fjlmcm/VibeTerm/releases/latest` — release notes when an update is available
 
-Both are plain `GET`s (only a `User-Agent: VibeTerm` header). No telemetry, no user
-data is ever uploaded, there is no background polling and no auto-update/install.
-VibeTerm never reads or writes `~/.claude` or `~/.codex`; a refreshed price table is
-stored only in VibeTerm's own config directory and can be reset to the built-in
-snapshot at any time.
+These checks use plain `GET`s with a `User-Agent: VibeTerm` header. Downloading and
+installing a signed update requires a user action. No telemetry or user data is
+uploaded, and there is no background polling or automatic installation.
+Agent configuration and session files are only read locally; VibeTerm does not
+write to `~/.claude` or `~/.codex`.
 
 ---
 
@@ -88,7 +85,6 @@ approach only; no third-party code is redistributed:
 - **Prowl** — process-level agent classification
 - **CodexBar** — provider fallback-chain design
 - **ccstatusline** — status bar widget design
-- **panzoom** — canvas pan / zoom algorithm
 
 ## Assets
 

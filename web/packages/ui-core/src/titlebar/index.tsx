@@ -38,13 +38,17 @@ export const Titlebar: Component<TitlebarProps> = (props) => {
     }
   };
 
+  // onCleanup 在同步上下文注册(await 之后注册会被 Solid 丢弃);句柄在 await 后赋值。
+  let unlisten: (() => void) | null = null;
+  onCleanup(() => {
+    unlisten?.();
+    unlisten = null;
+  });
   onMount(async () => {
     await sync();
     try {
-      const unlisten = await win.onResized(() => sync());
-      onCleanup(() => {
-        if (typeof unlisten === "function") unlisten();
-      });
+      const fn = await win.onResized(() => sync());
+      if (typeof fn === "function") unlisten = fn;
     } catch {
       /* mock 或 webview 未就绪时忽略 */
     }

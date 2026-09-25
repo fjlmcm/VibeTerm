@@ -39,21 +39,19 @@ export const CREDIT_GROUPS: CreditGroup[] = [
     id: 'frontend',
     items: [
       { name: 'solid-dnd', url: 'https://github.com/thisbeyond/solid-dnd' },
-      { name: 'html-to-image', url: 'https://github.com/bubkoo/html-to-image' },
       { name: 'Tauri plugins', note: 'clipboard / dialog / notification' },
     ],
   },
   {
     id: 'inspiration',
     items: [
-      { name: 'ccusage', url: 'https://github.com/ryoppippi/ccusage', note: 'Usage aggregation, pricing, 5h blocks' },
+      { name: 'ccusage', url: 'https://github.com/ryoppippi/ccusage', note: 'Model pricing, 5h blocks' },
       { name: 'WezTerm', url: 'https://github.com/wezterm/wezterm', note: 'PTY & terminal craft' },
       { name: 'Tabby', url: 'https://github.com/Eugeny/tabby', note: 'Terminal UX' },
       { name: 'LiteLLM', url: 'https://github.com/BerriAI/litellm', note: 'Model pricing reference' },
       { name: 'Prowl', note: 'Agent status inspiration' },
       { name: 'CodexBar', note: 'Status bar inspiration' },
       { name: 'ccstatusline', note: 'Status line inspiration' },
-      { name: 'panzoom', url: 'https://github.com/anvaka/panzoom', note: 'Canvas pan/zoom' },
     ],
   },
   {

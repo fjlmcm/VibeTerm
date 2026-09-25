@@ -357,7 +357,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
         if (node == null) return null;
         return { id: item.type, node };
       })
-      .filter((x): x is { id: string; node: any } => x != null);
+      .filter((x) => x != null);
   });
 
   const hasAnyData = () => renderedItems().length > 0;
@@ -429,7 +429,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
           >
             ⓘ
           </button>
-          <For each={renderedItems()}>{(item) => item.node as any}</For>
+          <For each={renderedItems()}>{(item) => item.node}</For>
         </div>
 
         <Show when={popoverOpen() && hasAnyData()}>

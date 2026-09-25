@@ -6,18 +6,14 @@
 import { For, Show, createEffect, createMemo, createSignal, onMount, onCleanup } from "solid-js";
 import { render } from "solid-js/web";
 
-import { Terminal, TaskList, Titlebar, theme as themeMod, ipc, t, SplitView, singleLeaf, splitLeaf, removeLeaf, newSlotId, bumpSlotIdAtLeast, collectSlots, setRatiosAt, getTerminalFontSize, initKeybindings, createKeybindingDispatcher, focusTerminal, rightmostBottomSlot, leftmostBottomSlot, createCanvasViewport, StatusBar, playNotifySound, shouldConfirmCloseTask, loadSavedScrollback, startScrollbackAutosave, modKeyLabel, isWindowsPlatform, type SplitNode } from "@vibeterm/ui-core";
-import { Plus, X, Settings as SettingsIcon, SplitSquareHorizontal, SplitSquareVertical, LayoutGrid, Layers, BarChart3 } from "lucide-solid";
+import { Terminal, TaskList, Titlebar, theme as themeMod, ipc, t, SplitView, singleLeaf, splitLeaf, removeLeaf, newSlotId, bumpSlotIdAtLeast, collectSlots, setRatiosAt, initKeybindings, createKeybindingDispatcher, focusTerminal, rightmostBottomSlot, StatusBar, playNotifySound, shouldConfirmCloseTask, loadSavedScrollback, startScrollbackAutosave, modKeyLabel, isWindowsPlatform, type SplitNode } from "@vibeterm/ui-core";
+import { Plus, X, Settings as SettingsIcon, SplitSquareHorizontal, SplitSquareVertical } from "lucide-solid";
 import type { TaskDto, Theme, LayoutTemplate } from "@vibeterm/ipc-types";
 import { CommandPalette } from "./command-palette";
 import { DiffViewer } from "./diff-viewer";
 import { Settings } from "./settings";
-import { StatsPanel } from "./stats-panel";
 import { PromptPicker } from "./prompt-picker";
 import { NewTaskDialog, ConfirmCloseDialog } from "./dialogs";
-// Canvas 模式 = main.tsx 主工作区的另一种 layout(卡片化),不再单独组件持有 Terminal
-// 共用的 broadcast UI helpers 暂时在本文件内联
-
 // Terminal 组件持有真 PTY 句柄;HMR 不能仅重 mount(会导致旧 PTY 孤儿 + 新 PTY 重复 spawn)
 // 解决:接收 HMR 信号但 reload 整页,确保 Web 重连 + Rust 端唯一一份 PTY
 // 生产构建无 HMR,此 guard 无影响。
@@ -101,7 +97,6 @@ function App() {
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   // 菜单"检查更新"→ 打开设置并定位到更新页
   const [settingsInitialTab, setSettingsInitialTab] = createSignal<"about" | "update" | undefined>(undefined);
-  const [statsOpen, setStatsOpen] = createSignal(false);
   const [promptPickerOpen, setPromptPickerOpen] = createSignal(false);
   // Diff 查看器:打开时存目标 cwd(null = 关闭)
   const [diffCwd, setDiffCwd] = createSignal<string | null>(null);
@@ -189,364 +184,22 @@ function App() {
     });
   });
 
-  // B2 view mode:normal(左列表 + 右终端)/ canvas(全屏卡片画布)
-  // localStorage 持久,纯 UI 偏好不入 env.toml
-  type ViewMode = "normal" | "canvas";
-  const VIEW_KEY = "vibeterm.view_mode";
-  const initialView = (): ViewMode => {
-    try {
-      const v = localStorage.getItem(VIEW_KEY);
-      return v === "canvas" ? "canvas" : "normal";
-    } catch {
-      return "normal";
-    }
-  };
-  const [viewMode, setViewMode] = createSignal<ViewMode>(initialView());
-  const toggleViewMode = () => {
-    const nx: ViewMode = viewMode() === "normal" ? "canvas" : "normal";
-    setViewMode(nx);
-    try { localStorage.setItem(VIEW_KEY, nx); } catch { /* ignore */ }
-  };
-
-  // ---- Canvas 卡片 layout 状态(纯 UI;复用 main.tsx 已有的 SplitView/Terminal)----
-  interface CardRect { x: number; y: number; w: number; h: number }
-  const CANVAS_KEY = "vibeterm.canvas.cards";
-  const CANVAS_W = 480, CANVAS_H = 320, CANVAS_MIN_W = 280, CANVAS_MIN_H = 180;
-  const isValidRect = (v: unknown): v is CardRect => {
-    if (!v || typeof v !== "object") return false;
-    const r = v as Record<string, unknown>;
-    return (
-      Number.isFinite(r.x) &&
-      Number.isFinite(r.y) &&
-      typeof r.w === "number" && r.w >= CANVAS_MIN_W &&
-      typeof r.h === "number" && r.h >= CANVAS_MIN_H
-    );
-  };
-  const loadCanvasRects = (): Record<number, CardRect> => {
-    try {
-      const raw = localStorage.getItem(CANVAS_KEY);
-      if (!raw) return {};
-      const obj = JSON.parse(raw);
-      if (!obj || typeof obj !== "object") return {};
-      // 逐条校验:localStorage 可能被损坏/篡改,非法 rect(NaN/Infinity/负尺寸)
-      // 会让卡片渲染到屏幕外或负尺寸,丢弃这些条目回退到 defaultRect。
-      const out: Record<number, CardRect> = {};
-      for (const [key, val] of Object.entries(obj as Record<string, unknown>)) {
-        if (isValidRect(val)) out[Number(key)] = val;
-      }
-      return out;
-    } catch { return {}; }
-  };
-  const saveCanvasRects = (r: Record<number, CardRect>) => {
-    try { localStorage.setItem(CANVAS_KEY, JSON.stringify(r)); } catch { /* ignore */ }
-  };
-  const defaultRect = (idx: number): CardRect => {
-    const COLS = 3, PAD = 20;
-    return {
-      x: PAD + (idx % COLS) * (CANVAS_W + PAD),
-      y: PAD + Math.floor(idx / COLS) * (CANVAS_H + PAD),
-      w: CANVAS_W, h: CANVAS_H,
-    };
-  };
-  const [canvasRects, setCanvasRects] = createSignal<Record<number, CardRect>>(loadCanvasRects());
-  const [canvasZ, setCanvasZ] = createSignal<Map<number, number>>(new Map());
-  const [canvasTopZ, setCanvasTopZ] = createSignal<number>(10);
-  const [canvasSelected, setCanvasSelected] = createSignal<Set<number>>(new Set<number>());
-  const [canvasMarquee, setCanvasMarquee] = createSignal<
-    { x: number; y: number; w: number; h: number } | null
-  >(null);
-  const [canvasBroadcast, setCanvasBroadcast] = createSignal("");
-
-  const canvasRectFor = (taskId: number): CardRect => {
-    const r = canvasRects()[taskId];
-    if (r) return r;
-    const idx = tasks().findIndex((t) => t.id === taskId);
-    return defaultRect(idx < 0 ? 0 : idx);
-  };
-  const updateCanvasRect = (taskId: number, partial: Partial<CardRect>) => {
-    setCanvasRects((prev) => {
-      const cur = prev[taskId] ?? canvasRectFor(taskId);
-      const nx = { ...prev, [taskId]: { ...cur, ...partial } };
-      saveCanvasRects(nx);
-      return nx;
-    });
-  };
-  // z-index 基线 10;上限留在 broadcast-bar(9999/10000)之下,超过即归一化,
-  // 防止单会话内大量置顶把卡片层叠值推到覆盖层之上。
-  const CANVAS_Z_BASE = 10;
-  const CANVAS_Z_MAX = 9000;
-  const bringCanvasCardToFront = (taskId: number) => {
-    if (canvasTopZ() >= CANVAS_Z_MAX) {
-      // 归一化:按当前 z 升序重排为从 CANVAS_Z_BASE 起的连续整数,当前卡片置顶
-      setCanvasZ((m) => {
-        const ordered = Array.from(m.entries())
-          .filter(([id]) => id !== taskId)
-          .sort((a, b) => a[1] - b[1]);
-        const nx = new Map<number, number>();
-        let z = CANVAS_Z_BASE;
-        for (const [id] of ordered) nx.set(id, z++);
-        nx.set(taskId, z);
-        setCanvasTopZ(z);
-        return nx;
-      });
-      return;
-    }
-    setCanvasTopZ((z) => z + 1);
-    setCanvasZ((m) => {
-      const nx = new Map(m);
-      nx.set(taskId, canvasTopZ());
-      return nx;
-    });
-  };
-  const toggleCanvasSelect = (taskId: number, additive: boolean) => {
-    setCanvasSelected((s) => {
-      const nx = new Set<number>(additive ? s : []);
-      if (s.has(taskId) && additive) nx.delete(taskId);
-      else nx.add(taskId);
-      return nx;
-    });
-  };
-  // Canvas viewport — pan/zoom 抽到 ui-core/canvas-viewport. 滚轮缩放 (光标锚点),
-  // active 卡片内的滚轮直通让 xterm 吃 scrollback (识别 data-task-active="true").
-  let workspaceEl: HTMLDivElement | undefined;
-  const viewport = createCanvasViewport({
-    container: () => workspaceEl,
-    enabled: () => viewMode() === "canvas",
+  // onMount 内 await 之后注册的 onCleanup 会被 Solid 丢弃(owner 已失效),
+  // 故在同步上下文注册,监听句柄在 await 后逐个推入。
+  const unlisteners: (() => void)[] = [];
+  onCleanup(() => {
+    for (const off of unlisteners.splice(0)) off();
   });
-
-  const startCanvasCardDrag = (e: MouseEvent, taskId: number) => {
-    e.preventDefault();
-    bringCanvasCardToFront(taskId);
-    const startX = e.clientX, startY = e.clientY;
-    const start = canvasRectFor(taskId);
-    const zoomSnap = viewport.zoom();
-    const onMove = (mv: MouseEvent) => {
-      // viewport delta → content delta (surface scaled, 除回去)
-      updateCanvasRect(taskId, {
-        x: start.x + (mv.clientX - startX) / zoomSnap,
-        y: start.y + (mv.clientY - startY) / zoomSnap,
-      });
-    };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
-
-  // Canvas 卡片字号:跟卡片宽度 + viewport.zoom 联动.
-  // 远观视角 0.6 系数让 480px 基线宽度时字号约 = 全局 × 0.6 (~8px).
-  const CANVAS_FONT_RATIO = 0.6;
-  const canvasFontFor = (taskId: number): number => {
-    const w = canvasRectFor(taskId).w;
-    const scale = (w / CANVAS_W) * CANVAS_FONT_RATIO;
-    return Math.max(4, Math.round(getTerminalFontSize() * scale));
-  };
-
-  const startCanvasCardResize = (e: MouseEvent, taskId: number) => {
-    e.preventDefault();
-    e.stopPropagation();
-    bringCanvasCardToFront(taskId);
-    const startX = e.clientX, startY = e.clientY;
-    const start = canvasRectFor(taskId);
-    const zoomSnap = viewport.zoom();
-    const onMove = (mv: MouseEvent) => {
-      updateCanvasRect(taskId, {
-        w: Math.max(CANVAS_MIN_W, start.w + (mv.clientX - startX) / zoomSnap),
-        h: Math.max(CANVAS_MIN_H, start.h + (mv.clientY - startY) / zoomSnap),
-      });
-    };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
-
-  // 广播:每个选中 task 取其 split_tree 第一个 leaf 对应的 terminal_id
-  const firstSlotOf = (n: SplitNode): number | null => {
-    if (n.kind === "leaf") return n.slot_id;
-    for (const c of n.children) {
-      const s = firstSlotOf(c);
-      if (s !== null) return s;
-    }
-    return null;
-  };
-  const sendCanvasBroadcast = async () => {
-    const text = canvasBroadcast();
-    if (!text) return;
-    const ids = Array.from(canvasSelected());
-    if (ids.length === 0) return;
-    const enc = new TextEncoder();
-    const payload = enc.encode(text + "\n");
-    const targets: number[] = [];
-    const writes: Promise<void>[] = [];
-    for (const tid of ids) {
-      const tk = tasks().find((x) => x.id === tid);
-      if (!tk) continue;
-      const slot = firstSlotOf(tk.split_tree);
-      if (slot === null) continue;
-      const termId = slotToTerm().get(slotKey(tk.id, slot));
-      if (termId === undefined) continue;
-      targets.push(termId);
-      writes.push(ipc.writePty(termId, payload));
-    }
-    // allSettled:部分终端写入失败不应让已成功收到命令的终端被用户重试重复注入。
-    // 始终清空输入框,失败的终端在 console 给出可见反馈。
-    const results = await Promise.allSettled(writes);
-    setCanvasBroadcast("");
-    const failed = results
-      .map((r, i) => (r.status === "rejected" ? targets[i] : null))
-      .filter((t): t is number => t !== null);
-    if (failed.length > 0) {
-      console.warn("[canvas] broadcast partially failed for terminals", failed);
-    }
-  };
-
-  // 进入 canvas 时 fit-to-view. requestAnimationFrame 等 layout 就绪.
-  createEffect(() => {
-    if (viewMode() !== "canvas") return;
-    requestAnimationFrame(() => {
-      viewport.fit(tasks().map((tk) => canvasRectFor(tk.id)));
-    });
-  });
-
-  // 防抖烘焙: 缩放停手 200ms 后, 把 viewport.zoom 烤进 card rect/font,
-  // 让 xterm 在 native 分辨率重新光栅化, 恢复清晰度. pan 保持视觉不变.
-  // 上限按 workspace 尺寸 × 2 算, 自适应 4K / 普通屏 / 多分辨率.
-  let bakeTimer: number | null = null;
-  const scheduleBake = () => {
-    if (bakeTimer !== null) clearTimeout(bakeTimer);
-    bakeTimer = window.setTimeout(() => {
-      bakeTimer = null;
-      const z = viewport.zoom();
-      if (Math.abs(z - 1) < 0.01) return;
-      if (viewMode() !== "canvas") return;
-
-      const list = tasks();
-      if (list.length === 0) {
-        viewport.setZoom(1);
-        return;
-      }
-      let maxW = 0, maxH = 0, minW = Infinity, minH = Infinity;
-      for (const tk of list) {
-        const r = canvasRectFor(tk.id);
-        if (r.w > maxW) maxW = r.w;
-        if (r.h > maxH) maxH = r.h;
-        if (r.w < minW) minW = r.w;
-        if (r.h < minH) minH = r.h;
-      }
-      // 上限 = workspace 尺寸 × 2 (自适应屏幕分辨率)
-      // 下限 = CANVAS_MIN_W/H
-      const wsW = workspaceEl?.clientWidth ?? 1600;
-      const wsH = workspaceEl?.clientHeight ?? 1000;
-      const maxCardW = wsW * 2;
-      const maxCardH = wsH * 2;
-      let factor = z;
-      if (factor > 1) {
-        factor = Math.min(
-          factor,
-          maxCardW / Math.max(1, maxW),
-          maxCardH / Math.max(1, maxH),
-        );
-      } else {
-        factor = Math.max(
-          factor,
-          CANVAS_MIN_W / Math.max(1, minW),
-          CANVAS_MIN_H / Math.max(1, minH),
-        );
-      }
-      if (Math.abs(factor - 1) < 0.01) {
-        // 已到限, 不能再烤, 把 viewport.zoom 留在原位 (用户看到的还是 scaled 状态)
-        // 但下次缩放方向反转就能继续
-        return;
-      }
-
-      setCanvasRects((prev) => {
-        const next: Record<number, CardRect> = {};
-        for (const tk of list) {
-          const r = prev[tk.id] ?? canvasRectFor(tk.id);
-          next[tk.id] = {
-            x: r.x * factor,
-            y: r.y * factor,
-            w: r.w * factor,
-            h: r.h * factor,
-          };
-        }
-        saveCanvasRects(next);
-        return next;
-      });
-      // 把烤过的 factor 从 viewport.zoom 减掉; pan 不变 (rect_new.x * 1 = rect.x * factor)
-      viewport.setZoom(z / factor);
-    }, 200);
-  };
-
-  createEffect(() => {
-    // 跟踪 viewport.zoom 变化, 触发防抖烘焙
-    viewport.zoom();
-    if (viewMode() !== "canvas") return;
-    scheduleBake();
-  });
-
-  // workspace mousedown 总入口:
-  //   - 右键 / Cmd/Opt + 左键空白区 → 平移画布 (Figma/Photoshop 风格)
-  //   - 无修饰 + 左键空白区 → 框选 (marquee)
-  //   - 点空白区(任何按键)→ 取消激活卡片 (此 active 概念支撑 wheel 直通)
-  const startCanvasMarquee = (e: MouseEvent) => {
-    if (viewMode() !== "canvas") return;
-    if ((e.target as HTMLElement).closest("[data-canvas-card='true']")) return;
-    // 空白区点击 → 取消激活 (使任意卡片内 wheel 都触发 canvas 缩放)
-    setActiveTaskId(null);
-    // 右键空白区 → 平移
-    if (e.button === 2) {
-      viewport.startPan(e);
-      return;
-    }
-    if (e.button !== 0) return;
-    // Cmd/Opt + 左键 = 平移 (老手势, 保留)
-    if (e.metaKey || e.altKey) {
-      viewport.startPan(e);
-      return;
-    }
-    // 阻止默认 mousedown — 否则 native text selection 在拖动过程中会把经过的
-    // xterm canvas / 卡片标题都选中. 卡片内 mousedown 已 early return,
-    // 此 preventDefault 只影响 workspace 空白区.
-    e.preventDefault();
-    window.getSelection()?.removeAllRanges();
-    const s0 = viewport.screenToContent(e.clientX, e.clientY);
-    const startX = s0.x, startY = s0.y;
-    setCanvasMarquee({ x: startX, y: startY, w: 0, h: 0 });
-    if (!e.shiftKey) setCanvasSelected(new Set<number>());
-    const onMove = (mv: MouseEvent) => {
-      const c = viewport.screenToContent(mv.clientX, mv.clientY);
-      const cx = c.x, cy = c.y;
-      const x = Math.min(startX, cx), y = Math.min(startY, cy);
-      const w = Math.abs(cx - startX), h = Math.abs(cy - startY);
-      setCanvasMarquee({ x, y, w, h });
-      const inside: number[] = [];
-      for (const tk of tasks()) {
-        const r = canvasRectFor(tk.id);
-        if (r.x < x + w && r.x + r.w > x && r.y < y + h && r.y + r.h > y) inside.push(tk.id);
-      }
-      setCanvasSelected((prev) => {
-        const nx = new Set<number>(e.shiftKey ? prev : []);
-        for (const id of inside) nx.add(id);
-        return nx;
-      });
-    };
-    const onUp = () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-      setCanvasMarquee(null);
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-  };
 
   // 启动:加载主题 + 任务 + 监听变化
   onMount(async () => {
+    // 旧版本(画布视图)残留的 localStorage 键,一次性清理。
+    try {
+      localStorage.removeItem("vibeterm.view_mode");
+      localStorage.removeItem("vibeterm.canvas.cards");
+    } catch {
+      /* private mode — 忽略 */
+    }
     // G5:先载入 scrollback 快照(必须早于任何终端 mount 调 takeScrollback),再起自动保存。
     await loadSavedScrollback();
     startScrollbackAutosave();
@@ -807,25 +460,20 @@ function App() {
       } else if (e.key === "Escape") {
         setPaletteOpen(false);
         setSettingsOpen(false);
-        setStatsOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);
 
-    onCleanup(() => {
-      offTasks();
-      offTheme();
-      offGlobal();
-      offActions();
-      offNotifyFocus();
-      offNotifySound();
-      offAgentDone();
-      window.removeEventListener("keydown", onKey);
-      if (bakeTimer !== null) {
-        clearTimeout(bakeTimer);
-        bakeTimer = null;
-      }
-    });
+    unlisteners.push(
+      offTasks,
+      offTheme,
+      offGlobal,
+      offActions,
+      offNotifyFocus,
+      offNotifySound,
+      offAgentDone,
+      () => window.removeEventListener("keydown", onKey),
+    );
   });
 
   // splitTree 读自 task.split_tree(后端 source of truth)。
@@ -1071,41 +719,6 @@ function App() {
         right={
           <div style={{ display: "flex", "align-items": "center", gap: "4px" }}>
             <button
-              data-testid="view-mode-btn"
-              data-view-mode={viewMode()}
-              onClick={toggleViewMode}
-              title={viewMode() === "canvas" ? t("view.normal") : t("view.canvas")}
-              style={{
-                background: viewMode() === "canvas" ? "var(--color-accent-subtle)" : "transparent",
-                color: "var(--color-text-2)",
-                border: "none",
-                "border-radius": "4px",
-                padding: "3px 7px",
-                cursor: "pointer",
-                display: "flex",
-                "align-items": "center",
-              }}
-            >
-              {viewMode() === "canvas" ? <Layers size={13} /> : <LayoutGrid size={13} />}
-            </button>
-            <button
-              data-testid="stats-btn"
-              onClick={() => setStatsOpen(true)}
-              title={t("stats.title")}
-              style={{
-                background: "transparent",
-                color: "var(--color-text-2)",
-                border: "none",
-                "border-radius": "4px",
-                padding: "3px 7px",
-                cursor: "pointer",
-                display: "flex",
-                "align-items": "center",
-              }}
-            >
-              <BarChart3 size={13} />
-            </button>
-            <button
               data-testid="settings-btn"
               onClick={() => setSettingsOpen(true)}
               title={t("tooltip.settings")}
@@ -1177,25 +790,19 @@ function App() {
         </div>
       </Show>
       <div
-        data-view-mode={viewMode()}
         style={{
-          // Canvas 模式:aside / resizer display:none 后从 grid 移除,
-          //   grid 自动放置会把 <main> 塞到第一列。
-          //   所以模板必须只声明 1 列,否则 <main> 拿到 width:0 的第一列 → 空白。
-          // Normal 模式:三列(sidebar / resizer / main)
           display: "grid",
-          "grid-template-columns":
-            viewMode() === "canvas" ? "1fr" : `${sidebarWidth()}px 1px 1fr`,
+          "grid-template-columns": `${sidebarWidth()}px 1px 1fr`,
           flex: 1,
           "min-height": 0,
         }}
       >
-      {/* 左侧任务列表 + header — Canvas 模式隐藏 */}
+      {/* 左侧任务列表 + header */}
       <aside
         style={{
           background: "var(--color-surface)",
           // border-right 删了 — resizer 自己画 1px 中线, 不再画两条
-          display: viewMode() === "canvas" ? "none" : "flex",
+          display: "flex",
           "flex-direction": "column",
         }}
       >
@@ -1267,7 +874,7 @@ function App() {
         style={{
           background: "var(--color-border)",
           position: "relative",
-          display: viewMode() === "canvas" ? "none" : "block",
+          display: "block",
           "user-select": "none",
         }}
       >
@@ -1289,8 +896,7 @@ function App() {
       {/* 右侧工作区 —— 每个非浮窗任务的 SplitView 常驻挂载,切换任务只切 display
          (修 task switch 时 Terminal unmount → closePty 杀掉正在跑的 PTY 的 bug) */}
       <main style={{ display: "flex", "flex-direction": "column", "min-width": 0, position: "relative" }}>
-        {/* Canvas 模式工具条仍 hide;空白区点击启动框选 */}
-        <Show when={activeTask() && !isActiveTaskInFloating() && viewMode() !== "canvas"}>
+        <Show when={activeTask() && !isActiveTaskInFloating()}>
           <div
             style={{
               display: "flex",
@@ -1318,48 +924,16 @@ function App() {
           </div>
         </Show>
 
-        {/* 终端工作区:所有非浮窗任务的 SplitView 同时在 DOM 中。
-           Normal:仅当前 active 可见(display block/none)。
-           Canvas:每个 task 卡片化(position:absolute),空白处可拖框选。 */}
+        {/* 终端工作区:SplitView 常驻 DOM,仅当前非浮窗任务可见。 */}
         <div
           data-testid="workspace"
-          ref={workspaceEl}
-          onMouseDown={startCanvasMarquee}
-          onContextMenu={(e) => {
-            // Canvas 空白区右键 = 拖平移手势,阻止系统默认菜单
-            if (viewMode() !== "canvas") return;
-            if ((e.target as HTMLElement).closest("[data-canvas-card='true']")) return;
-            e.preventDefault();
-          }}
-          onWheel={viewport.onWheel}
           style={{
             flex: 1,
             "min-height": 0,
             position: "relative",
             overflow: "hidden",
-            cursor: viewMode() === "canvas" && viewport.isPanning() ? "grabbing" : undefined,
           }}
         >
-          {/* Canvas surface:用 transform: translate 做 GPU 合成平移(成熟方案,丝滑)
-             will-change:transform 让浏览器把 surface 提升成独立 compositor layer;
-             Normal 模式 inset:0 全屏覆盖,跳过 transform */}
-          <div
-            data-testid="canvas-surface"
-            style={
-              viewMode() === "canvas"
-                ? {
-                    position: "absolute",
-                    inset: 0,
-                    transform: `translate(${viewport.pan().x}px, ${viewport.pan().y}px) scale(${viewport.zoom()})`,
-                    "transform-origin": "0 0",
-                    "will-change": "transform",
-                  }
-                : {
-                    position: "absolute",
-                    inset: 0,
-                  }
-            }
-          >
           <For each={taskIds()}>
             {(taskId) => {
               const taskOf = () => tasks().find((t) => t.id === taskId);
@@ -1369,137 +943,20 @@ function App() {
               // 改 display:none 隐藏即可;浮窗 attach 共享同一 PTY(multi-sink)。
               const visible = () =>
                 activeTaskId() === taskId && !isFloating();
-              // Canvas 模式:每个 task(包括 floating)都作为可见卡片摆在画布上,
-              // Normal 模式:只有 active 且非 floating 的 task 显示,inset:0 全屏
-              const canvasMode = () => viewMode() === "canvas";
-              const cardRect = () => canvasRectFor(taskId);
-              const isSelectedInCanvas = () => canvasSelected().has(taskId);
-              // Canvas 卡片按 task.status 调整阴影 + 动画, 让用户一眼看出哪个该看.
-              //   waiting_input -> 强琥珀色发光 + 2s 呼吸 (最显眼)
-              //   stalled       -> 红橙色发光 + 3s 慢呼吸 (醒目但不慌张)
-              //   done          -> 弱琥珀边 (任务跑完未看)
-              //   其他          -> 默认阴影
-              // animation 通过 vibeterm-breath 改 opacity, 这里不再设 opacity 字段避免冲突.
-              const statusVisual = () => {
-                const s = taskOf()?.status;
-                if (s === "waiting_input") {
-                  return {
-                    "box-shadow":
-                      "0 4px 12px rgba(0,0,0,0.3), 0 0 16px var(--color-status-waiting, #f5a623)",
-                    animation: "vibeterm-breath 2s infinite",
-                  } as const;
-                }
-                if (s === "stalled") {
-                  return {
-                    "box-shadow":
-                      "0 4px 12px rgba(0,0,0,0.3), 0 0 12px var(--color-status-stalled, #d97757)",
-                    animation: "vibeterm-breath 3s infinite",
-                  } as const;
-                }
-                if (s === "done") {
-                  return {
-                    "box-shadow":
-                      "0 4px 12px rgba(0,0,0,0.3), 0 0 8px var(--color-status-done, var(--color-accent))",
-                    animation: undefined,
-                  } as const;
-                }
-                return {
-                  "box-shadow": "0 4px 12px rgba(0,0,0,0.3)",
-                  animation: undefined,
-                } as const;
-              };
               return (
                 <Show when={getSplitTree(taskId)}>
                   {(tree) => (
                     <div
                       data-testid={`task-pane-${taskId}`}
                       data-task-active={visible() ? "true" : "false"}
-                      data-canvas-card={canvasMode() ? "true" : "false"}
                       data-task-status={taskOf()?.status ?? "unknown"}
-                      style={
-                        canvasMode()
-                          ? {
-                              position: "absolute",
-                              left: `${cardRect().x}px`,
-                              top: `${cardRect().y}px`,
-                              width: `${cardRect().w}px`,
-                              height: `${cardRect().h}px`,
-                              display: "flex",
-                              "flex-direction": "column",
-                              background: "var(--color-surface)",
-                              border: isSelectedInCanvas()
-                                ? "2px solid var(--color-accent)"
-                                : visible()
-                                  ? "2px solid var(--color-accent-subtle)"
-                                  : "2px solid var(--color-border)",
-                              "border-radius": "8px",
-                              "box-shadow": statusVisual()["box-shadow"],
-                              animation: statusVisual().animation,
-                              overflow: "hidden",
-                              "z-index": canvasZ().get(taskId) ?? 10,
-                            }
-                          : {
-                              position: "absolute",
-                              top: 0,
-                              right: 0,
-                              bottom: 0,
-                              left: 0,
-                              display: visible() ? "block" : "none",
-                            }
-                      }
-                      onMouseDown={() => canvasMode() && bringCanvasCardToFront(taskId)}
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        display: visible() ? "block" : "none",
+                      }}
                     >
-                      {/* Canvas 卡片头(仅 canvasMode) */}
-                      <Show when={canvasMode() && taskOf()}>
-                        <div
-                          data-testid={`canvas-card-header-${taskId}`}
-                          onMouseDown={(e) => startCanvasCardDrag(e, taskId)}
-                          onClick={() => setActiveTaskId(taskId)}
-                          style={{
-                            height: "28px",
-                            padding: "0 10px",
-                            display: "flex",
-                            "align-items": "center",
-                            gap: "8px",
-                            background: "var(--color-bg)",
-                            "border-bottom": "1px solid var(--color-border)",
-                            cursor: "grab",
-                            "user-select": "none",
-                            "flex-shrink": 0,
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            data-testid={`canvas-card-select-${taskId}`}
-                            checked={isSelectedInCanvas()}
-                            onClick={(e) => {
-                              // onClick 的 MouseEvent 携带修饰键(原生 change 事件不带),
-                              // 在此统一处理选择 + 加法多选,避免 onChange 上 (e as any) 强转
-                              e.stopPropagation();
-                              toggleCanvasSelect(
-                                taskId,
-                                e.metaKey || e.ctrlKey || e.shiftKey,
-                              );
-                            }}
-                            style={{ "flex-shrink": 0, cursor: "pointer" }}
-                          />
-                          <span
-                            style={{
-                              flex: 1,
-                              "min-width": 0,
-                              "white-space": "nowrap",
-                              overflow: "hidden",
-                              "text-overflow": "ellipsis",
-                              "font-size": "12px",
-                              color: "var(--color-text)",
-                            }}
-                          >
-                            {taskOf()!.name}
-                          </span>
-                        </div>
-                      </Show>
-                      {/* SplitView 容器 — Canvas 时是卡片体,Normal 时占全部 */}
-                      <div style={{ flex: canvasMode() ? 1 : undefined, "min-height": 0, position: "relative", height: canvasMode() ? "auto" : "100%" }}>
+                      <div style={{ "min-height": 0, position: "relative", height: "100%" }}>
                       <SplitView
                         node={tree()}
                         onRatiosChange={(path, ratios) => {
@@ -1512,18 +969,9 @@ function App() {
                           const isActiveSlot = () => activeSlotOf(taskId) === slotId;
                           // 只有触底叶子才跟外框圆角对齐;其他位置 (中间 / 顶部分屏) 直角
                           const isBottomRight = () => rightmostBottomSlot(tree()) === slotId;
-                          const isBottomLeft = () => leftmostBottomSlot(tree()) === slotId;
-                          // 圆角值: canvas 匹配卡片内圆角 (8px outer - 2px border ≈ 6px),
-                          //         normal 匹配主窗口右下圆角 15px (左下被 sidebar 挡, 不画).
-                          const activeRadius = () => {
-                            if (!isActiveSlot()) return "0";
-                            if (canvasMode()) {
-                              const br = isBottomRight() ? "6px" : "0";
-                              const bl = isBottomLeft() ? "6px" : "0";
-                              return `0 0 ${br} ${bl}`;
-                            }
-                            return isBottomRight() ? "0 0 17px 0" : "0";
-                          };
+                          // 激活边框只在主窗口右下角保留圆角。
+                          const activeRadius = () =>
+                            isActiveSlot() && isBottomRight() ? "0 0 17px 0" : "0";
                           return (
                           <div
                             data-testid={`split-slot-${taskId}-${slotId}`}
@@ -1547,7 +995,6 @@ function App() {
                               taskId={taskId}
                               slotId={slotId}
                               theme={currentTheme() ?? undefined}
-                              fontSizeOverride={canvasMode() ? canvasFontFor(taskId) : undefined}
                               onReady={(termId) => {
                                 setSlotToTerm((m) => {
                                   const nx = new Map(m);
@@ -1569,9 +1016,7 @@ function App() {
                               aria-hidden="true"
                               style={{
                                 position: "absolute",
-                                // canvas & normal 统一: active slot 画 1px inset accent border + glow.
-                                // 圆角由 activeRadius() 算: canvas 匹配卡片 (左右下角),
-                                // normal 匹配主窗口右下.
+                                // 激活分屏显示 1px 内边框和微光。
                                 inset: isActiveSlot() ? "1px" : "0",
                                 "pointer-events": "none",
                                 "box-sizing": "border-box",
@@ -1590,24 +1035,6 @@ function App() {
                         }}
                       />
                       </div>
-                      {/* Canvas 右下角 resize handle */}
-                      <Show when={canvasMode()}>
-                        <div
-                          data-testid={`canvas-card-resize-${taskId}`}
-                          onMouseDown={(e) => startCanvasCardResize(e, taskId)}
-                          style={{
-                            position: "absolute",
-                            right: 0,
-                            bottom: 0,
-                            width: "14px",
-                            height: "14px",
-                            cursor: "nwse-resize",
-                            background:
-                              "linear-gradient(135deg, transparent 50%, var(--color-text-2) 50%, var(--color-text-2) 60%, transparent 60%, transparent 70%, var(--color-text-2) 70%, var(--color-text-2) 80%, transparent 80%)",
-                            opacity: 0.5,
-                          }}
-                        />
-                      </Show>
                     </div>
                   )}
                 </Show>
@@ -1615,29 +1042,8 @@ function App() {
             }}
           </For>
 
-          {/* Canvas marquee 矩形:放 surface 内,跟卡片同坐标系,滚动也不错位 */}
-          <Show when={viewMode() === "canvas" && canvasMarquee()}>
-            {(getM) => (
-              <div
-                data-testid="canvas-marquee"
-                style={{
-                  position: "absolute",
-                  left: `${getM().x}px`,
-                  top: `${getM().y}px`,
-                  width: `${getM().w}px`,
-                  height: `${getM().h}px`,
-                  background: "rgba(99, 102, 241, 0.1)",
-                  border: "1px dashed var(--color-accent)",
-                  "pointer-events": "none",
-                  "z-index": 9999,
-                }}
-              />
-            )}
-          </Show>
-          </div>{/* end canvas-surface */}
-
           {/* 空状态 / 浮窗占位 — overlay 形式,不影响下层 Terminal 常驻 */}
-          <Show when={(!activeTask() || isActiveTaskInFloating()) && viewMode() !== "canvas"}>
+          <Show when={!activeTask() || isActiveTaskInFloating()}>
             <div
               data-testid="empty-hint"
               style={{
@@ -1677,75 +1083,6 @@ function App() {
           </Show>
         </div>
 
-        {/* Canvas 底部广播栏:挂 <main> 直接子,绑 main 视口(不随 workspace 滚动)*/}
-        <Show when={viewMode() === "canvas" && canvasSelected().size > 0}>
-          <div
-            data-testid="canvas-broadcast-bar"
-            style={{
-              position: "absolute",
-              bottom: "16px",
-              left: "50%",
-              transform: "translateX(-50%)",
-              display: "flex",
-              "align-items": "center",
-              gap: "8px",
-              padding: "8px 12px",
-              background: "var(--color-surface)",
-              border: "1px solid var(--color-accent)",
-              "border-radius": "8px",
-              "box-shadow": "0 8px 24px rgba(0,0,0,0.4)",
-              "z-index": 10000,
-              "min-width": "440px",
-            }}
-          >
-            <span style={{ "font-size": "11px", color: "var(--color-text-2)", "white-space": "nowrap" }}>
-              {t("canvas.broadcast.label", { count: canvasSelected().size })}
-            </span>
-            <input
-              data-testid="canvas-broadcast-input"
-              value={canvasBroadcast()}
-              onInput={(e) => setCanvasBroadcast(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                // 🔴 红线4:IME 组合态回车=确认候选,不当广播发送
-                if (e.isComposing || e.keyCode === 229) return;
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  sendCanvasBroadcast();
-                } else if (e.key === "Escape") {
-                  setCanvasSelected(new Set<number>());
-                }
-              }}
-              placeholder={t("canvas.broadcast.placeholder")}
-              style={{
-                flex: 1,
-                background: "var(--color-bg)",
-                color: "var(--color-text)",
-                border: "1px solid var(--color-border)",
-                "border-radius": "4px",
-                padding: "4px 8px",
-                "font-size": "12px",
-                outline: "none",
-              }}
-            />
-            <button
-              data-testid="canvas-broadcast-send"
-              onClick={sendCanvasBroadcast}
-              disabled={!canvasBroadcast().trim()}
-              style={{
-                background: "var(--color-accent)",
-                color: "white",
-                border: "none",
-                "border-radius": "4px",
-                padding: "4px 10px",
-                "font-size": "12px",
-                cursor: canvasBroadcast().trim() ? "pointer" : "default",
-                opacity: canvasBroadcast().trim() ? 1 : 0.5,
-              }}
-            >
-              {t("canvas.broadcast.send")}
-            </button>
-          </div>
-        </Show>
       </main>
       </div>
 
@@ -1763,10 +1100,6 @@ function App() {
           onOpenSettings={() => {
             setPaletteOpen(false);
             setSettingsOpen(true);
-          }}
-          onOpenStats={() => {
-            setPaletteOpen(false);
-            setStatsOpen(true);
           }}
           onOpenDiff={() => {
             const cwd = activeTask()?.cwd ?? null;
@@ -1792,10 +1125,6 @@ function App() {
             setSettingsInitialTab(undefined);
           }}
         />
-      </Show>
-
-      <Show when={statsOpen()}>
-        <StatsPanel onClose={() => setStatsOpen(false)} />
       </Show>
 
       <Show when={promptPickerOpen()}>

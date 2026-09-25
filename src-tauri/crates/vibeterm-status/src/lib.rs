@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use vibeterm_ipc::TaskStatus;
 
 pub mod agent;
-pub use agent::{detect_agent_for_shell, detect_agent_with_diagnostics, AgentKind, Diagnostics};
+pub use agent::{detect_agent_with_diagnostics, AgentKind, Diagnostics, ProcessTable};
 
 const RING_SIZE: usize = 16 * 1024; // 16KB
 const IDLE_TIMEOUT_MS: u64 = 800; // N 秒无输出 → idle
@@ -24,6 +24,9 @@ const OSC_RATE_LIMIT: u32 = 10; // 每秒最多 N 个 OSC 事件
 const OSC_RATE_WINDOW_MS: u64 = 1000;
 /// Stalled 默认阈值: agent 在 Idle 状态超过这个时间无任何输出 → Stalled
 const DEFAULT_STALL_THRESHOLD_MS: u64 = 5 * 60 * 1000;
+/// match_waiting 扫描窗口在本次追加字节之前额外回看的字节数 —— 覆盖跨 chunk 被切开的
+/// 授权文案(单条 waiting pattern 远短于此).
+const MATCH_LOOKBACK: usize = 512;
 
 pub struct StatusDetector {
     current: TaskStatus,
@@ -31,6 +34,9 @@ pub struct StatusDetector {
     /// 最近一次标题 braille spinner 帧时间(= agent 生成期信号;归属强判据)
     last_spinner_at: Option<Instant>,
     ring: Vec<u8>,
+    /// 最近一次 append_ring 追加的字节数(strip 后)—— match_waiting 只扫 ring 尾部
+    /// `last_appended + MATCH_LOOKBACK` 窗口, 不每 chunk 对整个 16KB 跑正则.
+    last_appended: usize,
     osc_recent_count: u32,
     osc_window_start: Instant,
     agent_rules: Option<&'static agent::AgentDef>,
@@ -91,6 +97,7 @@ impl StatusDetector {
             last_chunk_at: Instant::now(),
             last_spinner_at: None,
             ring: Vec::with_capacity(RING_SIZE),
+            last_appended: 0,
             osc_recent_count: 0,
             osc_window_start: Instant::now(),
             agent_rules: pick_rules(command),
@@ -297,6 +304,7 @@ impl StatusDetector {
 
     fn append_ring(&mut self, chunk: &[u8]) {
         let stripped = strip_ansi(chunk);
+        self.last_appended = stripped.len();
         self.ring.extend_from_slice(&stripped);
         if self.ring.len() > RING_SIZE {
             let drain = self.ring.len() - RING_SIZE;
@@ -304,15 +312,19 @@ impl StatusDetector {
         }
     }
 
+    /// 只扫 ring 尾部窗口(本次追加 + MATCH_LOOKBACK 回看):更早的内容在之前的 chunk 里
+    /// 已经扫过, 再扫一遍只是白跑正则. 窗口起点回退到 UTF-8 字符边界, 不切碎多字节字符.
     fn match_waiting(&self, rules: &agent::AgentDef) -> bool {
-        let text = String::from_utf8_lossy(&self.ring);
-        let regs = rules.compiled_patterns();
-        for re in regs {
-            if re.is_match(&text) {
-                return true;
-            }
+        let len = self.ring.len();
+        let mut start = len.saturating_sub(self.last_appended + MATCH_LOOKBACK);
+        while start > 0 && (self.ring[start] & 0xC0) == 0x80 {
+            start -= 1;
         }
-        false
+        let text = String::from_utf8_lossy(&self.ring[start..]);
+        rules
+            .compiled_patterns()
+            .iter()
+            .any(|re| re.is_match(&text))
     }
 
     /// OSC 133/633 完整 parser
@@ -1215,6 +1227,27 @@ mod logic_fix_tests {
         // 静态标题必须被看到:spinner→静态 = turn done → Idle(by_osc)
         assert_eq!(d.current(), TaskStatus::Idle);
         assert!(d.idle_by_osc(), "spinner 停帧不能被限速 break 丢弃");
+    }
+
+    /// 授权文案跨 chunk 被切开(含多字节 CJK 在字符中间切断)仍能命中:
+    /// match_waiting 尾部窗口回看 MATCH_LOOKBACK 字节且起点对齐 UTF-8 边界。
+    #[test]
+    fn waiting_pattern_split_across_chunks() {
+        let mut d = StatusDetector::new("kimi");
+        // 先灌 1KB 无关文本, 让窗口起点落在 ring 中间而非 0
+        let _ = d.feed(&vec![b'x'; 1024]);
+        assert_eq!(d.current(), TaskStatus::Running);
+        let cjk = "是否继续".as_bytes();
+        // 在第二个字的多字节序列中间切断
+        let _ = d.feed(&cjk[..4]);
+        assert_eq!(d.current(), TaskStatus::Running);
+        let _ = d.feed(&cjk[4..]);
+        assert_eq!(d.current(), TaskStatus::WaitingInput);
+
+        let mut d = StatusDetector::new("claude");
+        let _ = d.feed(b"3. No, and tell");
+        let _ = d.feed(b" Claude what to do differently");
+        assert_eq!(d.current(), TaskStatus::WaitingInput);
     }
 
     /// since_last_spinner_ms:见过 braille 帧后给出毫秒数;从未见过为 None。

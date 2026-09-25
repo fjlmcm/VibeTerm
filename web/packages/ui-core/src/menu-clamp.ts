@@ -2,8 +2,7 @@
 //
 // 背景:裸 `position: fixed; left/top = clientX/Y` 有两类边缘病——
 //   1. 靠右/下缘时菜单伸出窗口被裁切;
-//   2. canvas 模式的 transform 祖先会把 fixed 退化成相对容器定位,菜单陷进卡片
-//      stacking context 被侧栏/其他卡片遮挡。
+//   2. transform 祖先会把 fixed 退化成相对容器定位,菜单也可能被相邻面板遮挡。
 // 解法:菜单一律 <Portal> 到 body(逃出 transform/stacking)+ 本 helper 夹取坐标。
 
 /// 实测 `el` 尺寸后定位:越过右/下缘先翻转到光标另一侧(原生菜单行为),

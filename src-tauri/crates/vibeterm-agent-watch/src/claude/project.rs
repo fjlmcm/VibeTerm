@@ -26,7 +26,7 @@ const PROJECTS_SUBDIR: &str = "projects";
 
 /// 单个 jsonl 文件大小软上限 — 超过则只解析尾部 `TAIL_BYTES`(见 parse_last_assistant),
 /// 不整读(整读 143MB 这种长会话每 3s 一刷太慢, 原来直接 return None 又导致状态栏全空).
-const JSONL_MAX_BYTES: u64 = 64 * 1024 * 1024;
+pub(crate) const JSONL_MAX_BYTES: u64 = 64 * 1024 * 1024;
 /// 超限文件只读末尾这么多字节 —— 末尾即最新 assistant(model/ctx/cost)+ 最近 effort,
 /// 单 turn 通常 < 1MB, 8MB 足够覆盖最近若干 turn, 且 3s 一扫够快.
 const TAIL_BYTES: u64 = 8 * 1024 * 1024;
@@ -472,12 +472,6 @@ pub fn total_tokens_last_24h() -> u64 {
         }
     }
     total
-}
-
-/// 兼容旧名 (deprecated alias) — 语义即过去 24h.
-#[deprecated(note = "use total_tokens_last_24h")]
-pub fn total_tokens_today() -> u64 {
-    total_tokens_last_24h()
 }
 
 /// 流式扫单个 jsonl 文件, 累加 cutoff_ms 之后的 assistant 行 usage tokens.

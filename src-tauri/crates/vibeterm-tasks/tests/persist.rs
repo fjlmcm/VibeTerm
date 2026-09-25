@@ -6,7 +6,7 @@
 use std::sync::Mutex;
 
 use vibeterm_ipc::SplitNode;
-use vibeterm_tasks::{load, save, TaskSnapshot, TasksFile};
+use vibeterm_tasks::{load, save, TaskSnapshot, TasksError, TasksFile};
 
 fn default_tree() -> SplitNode {
     SplitNode::Leaf { slot_id: 0 }
@@ -118,5 +118,40 @@ fn save_overwrites_atomically() {
         assert_eq!(loaded.next_task_id, 99);
         assert_eq!(loaded.tasks.len(), 1);
         assert_eq!(loaded.tasks[0].name, "v2-replaced");
+    });
+}
+
+/// 读失败(权限 000)→ load 必须返回 Err 而非空启动;原文件不能被改名/覆盖。
+#[cfg(unix)]
+#[test]
+fn unreadable_file_returns_err_and_is_left_intact() {
+    use std::os::unix::fs::PermissionsExt;
+    with_isolated_config(|| {
+        let file = TasksFile {
+            next_task_id: 7,
+            tasks: vec![],
+            order: vec![],
+            ..Default::default()
+        };
+        save(&file).expect("save");
+        let p = vibeterm_config::tasks_json_path().unwrap();
+        let original = std::fs::read(&p).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o000)).unwrap();
+        if std::fs::read(&p).is_ok() {
+            // root 下 chmod 000 挡不住读,本测试无意义
+            std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+            return;
+        }
+        let res = load();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(matches!(res, Err(TasksError::Io(_))), "got {res:?}");
+        assert!(p.exists(), "原文件不得被改名");
+        assert_eq!(std::fs::read(&p).unwrap(), original, "原文件不得被覆盖");
+        let dir = p.parent().unwrap();
+        let corrupt = std::fs::read_dir(dir)
+            .unwrap()
+            .flatten()
+            .any(|e| e.file_name().to_string_lossy().contains("corrupt"));
+        assert!(!corrupt, "读失败不该产生 .corrupt 备份");
     });
 }

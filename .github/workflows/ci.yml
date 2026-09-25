@@ -1,6 +1,6 @@
 # CI — PR + main 推送时跑
 #
-# - lint           :typecheck + cargo fmt --check + clippy -D warnings
+# - lint           :typecheck + eslint + cargo fmt --check + clippy -D warnings
 # - test           :cargo test 含集成测试(子 crate,不链 tauri runtime)
 # - bench-smoke    :criterion --quick,防 perf 回归
 # - playwright-web :ubuntu,vite dev server(playwright webServer 自动拉起)+ chromium,跑 7 用例
@@ -35,6 +35,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: TypeScript check
         run: pnpm typecheck
+      - name: eslint
+        run: pnpm lint
       - name: i18n completeness(所有 locale 与 en 对齐,缺 key 即 fail)
         run: node scripts/check-i18n.mjs
       - name: cargo fmt
@@ -67,7 +69,7 @@ jobs:
         # 排除主 vibeterm crate(它链 tauri runtime,headless CI 跑不动)
         # 业务逻辑全在 vibeterm-* 子 crate 里
         run: |
-          cargo test -p vibeterm-config -p vibeterm-core -p vibeterm-ipc -p vibeterm-pty -p vibeterm-status -p vibeterm-tasks
+          cargo test -p vibeterm-config -p vibeterm-core -p vibeterm-ipc -p vibeterm-pty -p vibeterm-status -p vibeterm-tasks -p vibeterm-agent-watch -p vibeterm-git
 
   bench-smoke:
     runs-on: ubuntu-latest

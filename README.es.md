@@ -47,12 +47,10 @@ _Todas las funciones habituales de una terminal, más detección de estado y orq
 - **Ve qué hace un agente** — En curso, esperando, atascado o listo — averiguado sin tocar tu config.
 - **Detección de atascos + orden por urgencia** — ¿Pantalla llena de agentes? Los atascados y los que te esperan se van arriba.
 - **Uso en vivo** — Contexto restante, cuota 5h/7d, ritmo de gasto, caché, coste — todo en una barra.
-- **Estadísticas de uso** — Cifras de tokens y coste para Claude / Codex. Calculadas sin conexión, exportables.
 
 ### Terminal
 
 - **Divisiones + worktrees** — Monta un worktree de git, un árbol de terminales por tarea.
-- **Tablero Canvas** — Coloca las tareas como tarjetas, selección por marco, un comando enviado a varias terminales.
 - **Ventanas flotantes** — Saca cualquier tarea a su propia ventana y síguela vigilando.
 - **Renderizado GPU** — Acelerado por WebGL, y el CJK no pierde glifos ni se traba.
 
@@ -102,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## Sobre los hombros de estos.
 
-Un agradecimiento especial a ccusage de ryoppippi (MIT). Las estadísticas de uso, los precios de modelos y los bloques de 5 horas vienen de ahí; los datos de precios provienen de LiteLLM y las cifras oficiales de Anthropic.
+Un agradecimiento especial a ccusage de ryoppippi (MIT). Los precios de modelos y los bloques de 5 horas vienen de ahí; los datos de precios provienen de LiteLLM y las cifras oficiales de Anthropic.
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

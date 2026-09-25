@@ -13,11 +13,11 @@ const REPO_URL = "https://github.com/fjlmcm/VibeTerm";
 const FEATURES: { group: string; items: string[] }[] = [
   {
     group: "features.group.agent",
-    items: ["features.agent.sniff", "features.agent.urgency", "features.agent.monitor", "features.agent.stats"],
+    items: ["features.agent.sniff", "features.agent.urgency", "features.agent.monitor"],
   },
   {
     group: "features.group.terminal",
-    items: ["features.terminal.split", "features.terminal.canvas", "features.terminal.floating", "features.terminal.render"],
+    items: ["features.terminal.split", "features.terminal.floating", "features.terminal.render"],
   },
   {
     group: "features.group.productivity",
@@ -51,14 +51,13 @@ const INSPIRATION: { name: string; by?: string; url?: string; note: string }[] =
   { name: "Prowl", note: "about.inspire.prowl" },
   { name: "CodexBar", note: "about.inspire.codexbar" },
   { name: "ccstatusline", note: "about.inspire.ccstatusline" },
-  { name: "panzoom", note: "about.inspire.panzoom" },
 ];
 
 /** 技术栈致谢分组:组标题 i18n key + 依赖名(专有名词不翻译)。 */
 const CREDITS: { group: string; items: string[] }[] = [
   { group: "about.credits.framework", items: ["Tauri 2", "SolidJS", "xterm.js", "WebGL / fit / search / web-links / unicode-graphemes"] },
   { group: "about.credits.rust", items: ["portable-pty", "tokio", "serde", "notify", "chrono", "tracing", "thiserror", "image", "blake3", "base64", "ureq", "which", "tempfile", "cocoa"] },
-  { group: "about.credits.frontend", items: ["lucide-solid", "solid-dnd", "html-to-image", "@tauri-apps/api", "Vite"] },
+  { group: "about.credits.frontend", items: ["lucide-solid", "solid-dnd", "@tauri-apps/api", "Vite"] },
   { group: "about.credits.themes", items: ["Gruvbox", "Nord", "Tokyo Night", "Catppuccin", "Solarized"] },
 ];
 

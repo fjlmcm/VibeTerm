@@ -78,15 +78,6 @@ cost_usd: number | null }
 export type AgentKind = "pi" | "claude" | "codex" | "gemini" | "cursor" | "cline" | "opencode" | "copilot" | "kimi" | "droid" | "amp" | "aider"
 
 /**
- * 统一的 agent 用量快照(provider 抽象输出)。
- */
-export type AgentUsage = { kind: ProviderAgentKind; model: string | null; effort: string | null; context: ProviderContextUsage | null; quotas: ProviderQuotaWindow[]; cost_usd: number | null; 
-/**
- * 降级链诊断
- */
-sources: SourceAttempt[] }
-
-/**
  * 软件版本检查结果(仅展示 + 给下载链接, 不下载安装).
  */
 export type AppUpdateInfo = { current: string; latest: string | null; has_update: boolean; release_url: string | null; notes: string | null; published_at: string | null }
@@ -205,7 +196,7 @@ export type Config = { schema_version: number; active_theme: string; follow_syst
  */
 shell_integration: boolean; 
 /**
- * 启动时自动检查软件更新(默认开)。仅 GET GitHub latest release 比对版本号 —— 只读、
+ * 启动时自动检查软件更新(默认关,用户在设置中开启后才联网)。仅 GET GitHub latest release 比对版本号 —— 只读、
  * 不上传、零遥测、不自动下载安装。可在设置·更新页关闭(关闭后开箱完全不主动联网)。
  */
 auto_check_updates: boolean }
@@ -215,12 +206,6 @@ export type CreateTaskOpts = { name: string; cwd: string | null;
  * 同时挂一个 worktree(可选)。携带时 task.cwd 会被覆盖为 worktree_path。
  */
 worktree?: WorktreeRef | null }
-
-export type DailyStat = { 
-/**
- * 本地时区 `YYYY-MM-DD`.
- */
-date: string; claude_tokens: number; codex_tokens: number; cost_usd: number | null }
 
 /**
  * 重置所有快捷键为内置默认值. 删 keybindings.toml, 下次 load 返回 default.
@@ -323,12 +308,6 @@ keywords: string[];
  */
 cwd?: string | null; panes: LayoutPane[] }
 
-export type ModelStat = { model: string; total_tokens: number; 
-/**
- * 该模型估算成本; 无定价 (Codex / 未知模型) 则 None.
- */
-cost_usd: number | null; message_count: number }
-
 export type NotifyFile = { schema_version: number; 
 /**
  * 全局总开关。off 时所有通知一律不弹。
@@ -371,23 +350,6 @@ base64: string }
 export type Orientation = "h" | "v"
 
 /**
- * 当前价格来源状态 — 给设置·更新页显示.
- */
-export type PricingStatus = { 
-/**
- * "builtin" | "override"
- */
-source: string; 
-/**
- * override 表的 updated_at (builtin 时 None)
- */
-updated_at: string | null; 
-/**
- * override 表的 source 描述 (builtin 时 None)
- */
-origin: string | null }
-
-/**
  * 一个 profile = 一个终端模式的状态栏.
  * key 在 file 层是 HashMap 的 key (例如 `default` / `claude` / `codex`),
  * display_name 是 UI 显示用的中文标签 (可选).
@@ -401,8 +363,6 @@ display_name?: string | null;
  * widget 列表, 数组顺序 = 显示顺序
  */
 items: StatusLineItem[] }
-
-export type ProjectStat = { project_path: string; total_tokens: number; cost_usd: number | null; message_count: number }
 
 export type PromptEntry = { id: string; 
 /**
@@ -425,30 +385,6 @@ kind: PromptKind; shortcut?: string | null }
 export type PromptKind = "agent" | "terminal"
 
 export type PromptsFile = { schema_version: number; prompts: PromptEntry[] }
-
-export type ProviderAgentKind = "claude" | "codex"
-
-/**
- * 会话 context 占用(统一)。`window` 拿不到时 `used_pct` 为 None → 前端显 "—"(不臆造)。
- */
-export type ProviderContextUsage = { used_tokens: number | null; window: number | null; used_pct: number | null; 
-/**
- * 窗口值来源(诊断用): "rollout"(Codex 权威) / "model-table"(Claude 前缀表兜底) / "none"
- */
-window_source: string }
-
-/**
- * 额度窗口(统一; 角色靠 `window_minutes` 判, 不靠 primary/secondary 位置)。
- */
-export type ProviderQuotaWindow = { 
-/**
- * "5h" / "7d" / "weekly" 等
- */
-label: string; used_pct: number; window_minutes: number | null; 
-/**
- * unix 秒; 拿不到为 None
- */
-resets_at: number | null }
 
 export type ProxySection = { enabled: boolean; http?: string | null; https?: string | null; no_proxy?: string | null }
 
@@ -487,15 +423,6 @@ resets_at?: number | null }
  * 用户手动触发,非外部进程提议,无需防伪)。
  */
 export type ResumeInfo = { agent: string; session_id: string; command: string }
-
-/**
- * 降级链单步诊断 —— 接 /doctor, 让"走了哪个源 / 为何降级"可见。
- */
-export type SourceAttempt = { 
-/**
- * "transcript" / "usage_cache.json" / "rollout" / "model-table" 等
- */
-source: string; ok: boolean; note: string }
 
 export type SpawnPtyOpts = { rows: number; cols: number; cwd: string | null; command: string | null; args: string[] | null; env: ([string, string])[] | null }
 
@@ -594,28 +521,6 @@ export type ThemeShell = { background: string; surface: string; border: string; 
 
 export type ThemeTerminal = { background: string; foreground: string; cursor: string; selection_bg: string; black: string; red: string; green: string; yellow: string; blue: string; magenta: string; cyan: string; white: string; bright_black: string; bright_red: string; bright_green: string; bright_yellow: string; bright_blue: string; bright_magenta: string; bright_cyan: string; bright_white: string }
 
-export type Totals = { input_tokens: number; output_tokens: number; cache_creation_tokens: number; cache_read_tokens: number; 
-/**
- * Claude 总 token.
- */
-claude_tokens: number; 
-/**
- * Codex 总 token.
- */
-codex_tokens: number; 
-/**
- * Claude 估算总成本 (USD). 无任何可定价条目则 None.
- */
-cost_usd: number | null; 
-/**
- * 模型未匹配定价表的 Claude 条目数 — UI 据此提示"成本含 N 条未计价".
- */
-cost_unknown_entries: number; 
-/**
- * 计入的 Claude 消息数 (去重后).
- */
-message_count: number }
-
 /**
  * `~/.claude/usage_cache.json` 完整反序列化结构
  */
@@ -628,31 +533,6 @@ seven_day_sonnet: QuotaWindow | null;
  * Opus 独占 7d 配额
  */
 seven_day_opus: QuotaWindow | null; seven_day_oauth_apps: QuotaWindow | null; extra_usage: ExtraUsage | null }
-
-/**
- * 聚合总览.
- */
-export type UsageStats = { 
-/**
- * 统计窗口 (天).
- */
-range_days: number; 
-/**
- * 生成时刻 unix ms.
- */
-generated_at_ms: number; totals: Totals; 
-/**
- * 按本地日期升序.
- */
-daily: DailyStat[]; 
-/**
- * 按 token 降序.
- */
-by_model: ModelStat[]; 
-/**
- * 按 token 降序.
- */
-by_project: ProjectStat[] }
 
 /**
  * 任务挂载的 git worktree 信息(L1)。

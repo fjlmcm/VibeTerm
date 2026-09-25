@@ -44,6 +44,15 @@ if [[ ! -x "$BINARY" ]]; then
   exit 1
 fi
 
+# 安全门:release 构建无条件忽略 VIBETERM_CONFIG_DIR(见 vibeterm-config::config_dir 的
+# debug_assertions 门),下面的"隔离 config"对 release bundle 其实不生效——smoke 实例会与
+# 用户正在运行的实例 last-writer-wins 抢真实 tasks.json。所以只要检测到任何非本 bundle 的
+# vibeterm 实例在跑就拒绝执行(CI runner 上没有用户实例,不受影响)。
+if ps -axo command= | grep -F "Contents/MacOS/vibeterm" | grep -v -F "$BINARY" | grep -qv grep; then
+  echo "FAIL: 检测到用户正在运行的 VibeTerm 实例;release smoke 无法隔离 config,拒绝启动以免覆盖真实 tasks.json" >&2
+  exit 3
+fi
+
 # 清理之前可能残留的进程
 pkill -f "$BINARY" 2>/dev/null || true
 sleep 1

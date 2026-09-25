@@ -7,40 +7,20 @@
 //!   - Codex:
 //!     - `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`  →  全字段 (rate_limits 内联)
 //!
-//! 暴露统一的 `AgentSnapshot` enum, 由 IPC 层 emit 给前端.
+//! 各 watcher 各自 emit(`ClaudeSession` / `CodexSnapshot` / `UsageCache`), 由 IPC 层转发前端.
 //!
 //! 设计:
-//!   - watcher 独立 tokio task, 用 notify crate 监听 FS
-//!   - 每次变更 debounce 100ms (避免 atomic write 触发多次)
-//!   - 解析后通过 mpsc::UnboundedSender<AgentSnapshot> 推给主循环
-//!   - 主循环维护 latest snapshot + emit IPC
+//!   - watcher 独立线程, 用 notify crate 监听 FS
+//!   - 每次变更 debounce 200ms (避免 atomic write 触发多次)
+//!   - 解析后通过 mpsc::UnboundedSender 推给主循环, 主循环 emit IPC
 
 use serde::{Deserialize, Serialize};
 
 pub mod claude;
 pub mod codex;
 pub mod provider;
-pub mod stats;
-
-/// 上层订阅的统一事件 — Claude/Codex 任一更新都推一个这个.
-#[derive(Debug, Clone, Serialize, specta::Type)]
-#[serde(tag = "agent", rename_all = "lowercase")]
-pub enum AgentSnapshot {
-    Claude(ClaudeSnapshot),
-    Codex(CodexSnapshot),
-}
 
 // ---- Claude ----
-
-#[derive(Debug, Clone, Serialize, Default, specta::Type)]
-pub struct ClaudeSnapshot {
-    /// 来自 usage_cache.json 的 5h / 7d quota — 服务端权威数据
-    pub usage_cache: Option<UsageCache>,
-    /// 来自当前活跃 session jsonl 的 context / model 信息 (v2 实现)
-    pub session: Option<ClaudeSession>,
-    /// 最后更新的 unix ms (snapshot 合成时刻)
-    pub updated_at_ms: i64,
-}
 
 /// `~/.claude/usage_cache.json` 完整反序列化结构
 #[derive(Debug, Clone, Serialize, Deserialize, Default, specta::Type)]

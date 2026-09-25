@@ -51,6 +51,9 @@ pub(crate) use tasks_ipc::*;
 pub(crate) use updates::*;
 pub(crate) use window_ipc::*;
 
+/// 仓库主页(菜单 GitHub / Issues / 隐私说明链接的公共前缀;updates.rs 的发布 URL 同源)。
+const GH_REPO_URL: &str = "https://github.com/fjlmcm/VibeTerm";
+
 // ============================
 // 日志
 // ============================
@@ -95,36 +98,15 @@ fn fix_path_for_gui_launch() {
         return;
     }
 
-    let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string());
-    // 用 sentinel 提取干净的 PATH; -ilc = interactive login command, 强制 source .zshrc/.bash_profile
-    let cmd = "printf '__VT_PATH_START__%s__VT_PATH_END__' \"$PATH\"";
-    let out = match std::process::Command::new(&shell)
-        .args(["-ilc", cmd])
-        .output()
-    {
-        Ok(o) => o,
-        Err(e) => {
-            tracing::warn!("fix_path: spawn {shell} failed: {e}");
-            return;
-        }
-    };
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    let path = match (
-        stdout.find("__VT_PATH_START__"),
-        stdout.find("__VT_PATH_END__"),
-    ) {
-        (Some(a), Some(b)) if a + "__VT_PATH_START__".len() <= b => {
-            &stdout[a + "__VT_PATH_START__".len()..b]
-        }
-        _ => {
-            tracing::warn!("fix_path: sentinel not found in shell output");
-            return;
-        }
-    };
-    if path.is_empty() {
+    // 带 3s 超时的 login shell PATH 抓取(与 detect_ai_clis 共用);失败/超时保持进程 PATH.
+    let Some(path) = login_shell_path() else {
+        tracing::warn!("fix_path: login shell PATH unavailable, keeping process PATH");
         return;
-    }
-    tracing::info!("fix_path: PATH inherited from {shell} (len={})", path.len());
+    };
+    tracing::info!(
+        "fix_path: PATH inherited from login shell (len={})",
+        path.len()
+    );
     std::env::set_var("PATH", path);
 }
 
@@ -294,12 +276,9 @@ fn main() {
             // 按 cwd 精确查 session (per-active-terminal 语义)
             get_claude_session_by_cwd,
             get_codex_session_by_cwd,
-            agent_usage_by_cwd,
             get_claude_block_by_cwd,
             get_codex_block_by_cwd,
             get_claude_tokens_today,
-            get_usage_stats,
-            save_png_file,
             get_claude_plan,
             // v4: cwd + git status (按需调, 非常驻 watcher)
             get_terminal_cwd,
@@ -307,7 +286,6 @@ fn main() {
             git_stash_count,
             git_diff,
             gh_pr_status,
-            read_events,
             list_layouts,
             agent_resume_command,
             save_scrollback,
@@ -317,34 +295,16 @@ fn main() {
             save_statusline_config,
             // 打开外部 URL / 文件
             open_external,
-            // 设置·更新页:软件版本检查 + 模型价格更新(手动, 仅点按钮时联网)
+            // 软件版本检查
             check_app_update,
-            get_pricing_status,
-            update_model_pricing,
-            reset_model_pricing,
         ])
         .setup(|app| {
             // agent 状态走纯嗅探(OSC 标题 spinner + 输出时序)+ 只读文件监听, 不再装/起任何
             // hook server, 零侵入: 默认不碰 ~/.claude / ~/.codex, 也不会被外部会话污染.
 
             // G7 事件流:启动期预热 EventLog(在此同步线程做一次性文件截尾/打开),
-            // 避免首个 read_events IPC 在 tokio worker 线程上触发同步 I/O.
+            // 避免首条 record_event 在 PTY 读线程 / tick 上触发同步 I/O.
             let _ = EventLog::global();
-
-            // 启动加载已保存的模型价格覆盖(用户曾手动"更新模型价格"过). 纯读本地 config 文件, 不联网.
-            if let Ok(path) = vibeterm_config::pricing_json_path() {
-                if let Ok(bytes) = std::fs::read(&path) {
-                    match serde_json::from_slice::<
-                        vibeterm_agent_watch::claude::pricing::PricingTable,
-                    >(&bytes)
-                    {
-                        Ok(table) => {
-                            vibeterm_agent_watch::claude::pricing::set_pricing_override(table)
-                        }
-                        Err(e) => tracing::warn!("ignore corrupt pricing.json: {e}"),
-                    }
-                }
-            }
 
             background::start_background_tasks(&app.handle().clone());
 
@@ -397,9 +357,13 @@ fn main() {
                                 let _ = std::process::Command::new("open").arg(dir).spawn();
                             }
                         }
-                        "open_github" => open_url_safe(app_handle, "https://github.com"),
-                        "open_issues" => open_url_safe(app_handle, "https://github.com"),
-                        "open_privacy" => open_url_safe(app_handle, "https://github.com"),
+                        "open_github" => open_url_safe(app_handle, GH_REPO_URL),
+                        "open_issues" => {
+                            open_url_safe(app_handle, &format!("{GH_REPO_URL}/issues"))
+                        }
+                        "open_privacy" => {
+                            open_url_safe(app_handle, &format!("{GH_REPO_URL}#readme"))
+                        }
                         "focus_main" => {
                             if let Some(w) = app_handle.get_webview_window("main") {
                                 let _ = w.show();

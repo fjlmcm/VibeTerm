@@ -10,14 +10,10 @@ export * from "./generated";
 import type {
   ActiveBlock,
   BranchSpecDto,
-  DailyStat,
   ExtraUsage,
-  ModelStat,
-  ProjectStat,
   QuotaWindow,
   RateLimit,
   SplitNode,
-  Totals,
   UsageCache,
   WorktreeStatus,
 } from "./generated";
@@ -31,10 +27,6 @@ export type ClaudeExtraUsage = ExtraUsage;
 export type ClaudeActiveBlock = ActiveBlock;
 export type CodexRateLimit = RateLimit;
 export type GitStatusBrief = WorktreeStatus;
-export type UsageTotals = Totals;
-export type UsageDailyStat = DailyStat;
-export type UsageModelStat = ModelStat;
-export type UsageProjectStat = ProjectStat;
 
 // ---- 纯手写部分(非 Rust 镜像) ----
 // ---- IDs ----

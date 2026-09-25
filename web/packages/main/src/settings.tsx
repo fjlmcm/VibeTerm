@@ -8,7 +8,7 @@
 
 import { For, Show, createSignal, createMemo, onMount, type Component } from "solid-js";
 import { ArrowLeft, Check, Eye, EyeOff, RotateCcw, RefreshCw, Trash2, Plus } from "lucide-solid";
-import { ipc, t, Titlebar, IMPLEMENTED_COMMANDS, promptDisplayName, isMacPlatform } from "@vibeterm/ui-core";
+import { ipc, t, Titlebar, IMPLEMENTED_COMMANDS, promptDisplayName, isMacPlatform, truncateGraphemes } from "@vibeterm/ui-core";
 import type { Theme, EnvFile, KeybindingsFile, CliStatus, PromptsFile, PromptEntry, PromptKind } from "@vibeterm/ipc-types";
 import { StatuslineTab } from "./settings-statusline";
 import { NotifyTab } from "./settings-notify";
@@ -215,24 +215,28 @@ const ThemeTab: Component<{ activeThemeId: string }> = (p) => {
                 {th.appearance} · {th.id}
               </div>
               <div style={{ display: "flex", gap: "3px", "margin-top": "6px" }}>
-                {[
-                  th.terminal.red,
-                  th.terminal.green,
-                  th.terminal.yellow,
-                  th.terminal.blue,
-                  th.terminal.magenta,
-                  th.terminal.cyan,
-                ].map((c) => (
-                  <span
-                    style={{
-                      display: "inline-block",
-                      width: "16px",
-                      height: "16px",
-                      background: c,
-                      "border-radius": "3px",
-                    }}
-                  />
-                ))}
+                <For
+                  each={[
+                    th.terminal.red,
+                    th.terminal.green,
+                    th.terminal.yellow,
+                    th.terminal.blue,
+                    th.terminal.magenta,
+                    th.terminal.cyan,
+                  ]}
+                >
+                  {(c) => (
+                    <span
+                      style={{
+                        display: "inline-block",
+                        width: "16px",
+                        height: "16px",
+                        background: c,
+                        "border-radius": "3px",
+                      }}
+                    />
+                  )}
+                </For>
               </div>
               <div
                 style={{
@@ -268,7 +272,8 @@ const EnvTab: Component = () => {
 
   const toggleReveal = (k: string) => {
     const s = new Set(revealed());
-    s.has(k) ? s.delete(k) : s.add(k);
+    if (s.has(k)) s.delete(k);
+    else s.add(k);
     setRevealed(s);
   };
 
@@ -793,7 +798,7 @@ const PromptRow: Component<{
             <div style={{ flex: 1, overflow: "hidden" }}>
               <div style={{ "font-weight": 600, "font-size": "12px", color: "var(--color-text)" }}>{promptDisplayName(p.prompt)}</div>
               <div style={{ "font-family": "monospace", "font-size": "10px", color: "var(--color-text-2)", "white-space": "nowrap", overflow: "hidden", "text-overflow": "ellipsis", "margin-top": "2px" }}>
-                {p.prompt.content.replace(/\n/g, " ⏎ ").slice(0, 100)}
+                {truncateGraphemes(p.prompt.content.replace(/\n/g, " ⏎ "), 100)}
               </div>
             </div>
             <button onClick={p.onEdit} style={btnStyle()} title={t("prompts.edit")}>

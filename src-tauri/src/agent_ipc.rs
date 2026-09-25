@@ -1,7 +1,7 @@
-//! agent 嗅探 IPC:AI CLI 检测、claude/codex session/usage/blocks 查询、resume 命令、
-//! 使用统计与 PNG 导出。全部只读,不写任何 agent 配置。从 main.rs 拆出(行为不变)。
+//! agent 嗅探 IPC:AI CLI 检测、claude/codex session/usage/blocks 查询与 resume 命令。
+//! 全部只读,不写任何 agent 配置。
 
-use vibeterm_ipc::{IpcError, IpcResult};
+use vibeterm_ipc::IpcResult;
 
 // ============================
 // IPC commands — AI CLI 检测
@@ -13,22 +13,52 @@ pub(crate) struct CliStatus {
     path: Option<String>,
 }
 
-#[tauri::command]
 /// 从 login shell 读完整 PATH —— macOS GUI app(Dock/Launchpad 启动)的进程 PATH
 /// 不含 ~/.zshrc/.zprofile 里加的目录(homebrew / npm global / nvm 等), 直接 which 会
 /// 漏报 "未安装"。读 login shell 的 PATH 修正, 用唯一标记提取避免 rc 其它输出干扰。
 /// Windows 无 $SHELL → 返回 None 即正确降级:GUI 进程的 PATH 来自注册表(系统+用户),
 /// 不存在 macOS 的 PATH 丢失问题,npm 全局目录默认就在用户 PATH 里。
+///
+/// `-ilc` 会 source rc 文件,rc 里卡住(等输入 / 网络)会挂死调用方:stdin 接 null,
+/// 并加 3s 超时 —— 超时 kill 子进程返回 None,调用方退回当前进程 PATH。
 pub(crate) fn login_shell_path() -> Option<String> {
+    use std::process::{Command, Stdio};
+    const START: &str = "__VT_PATH_START__";
+    const END: &str = "__VT_PATH_END__";
     let shell = std::env::var("SHELL").ok()?;
-    let out = std::process::Command::new(&shell)
-        .args(["-lic", "echo __VTPATH__$PATH"])
-        .output()
+    let mut child = Command::new(&shell)
+        .args([
+            "-ilc",
+            "printf '__VT_PATH_START__%s__VT_PATH_END__' \"$PATH\"",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| tracing::warn!("login_shell_path: spawn {shell} failed: {e}"))
         .ok()?;
-    let s = String::from_utf8_lossy(&out.stdout);
-    let p = s
-        .lines()
-        .find_map(|l| l.trim().strip_prefix("__VTPATH__"))?;
+    // 独立线程读完 stdout(避免管道写满死锁),主线程带超时等结果。
+    let mut stdout = child.stdout.take()?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = std::io::Read::read_to_end(&mut stdout, &mut buf);
+        let _ = tx.send(buf);
+    });
+    let out = match rx.recv_timeout(std::time::Duration::from_secs(3)) {
+        Ok(buf) => buf,
+        Err(_) => {
+            tracing::warn!("login_shell_path: {shell} -ilc timed out after 3s, killing");
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+    };
+    let _ = child.wait();
+    let s = String::from_utf8_lossy(&out);
+    let a = s.find(START)? + START.len();
+    let b = s[a..].find(END)? + a;
+    let p = &s[a..b];
     (!p.is_empty()).then(|| p.to_string())
 }
 
@@ -98,7 +128,13 @@ pub(crate) async fn get_claude_session() -> IpcResult<Option<vibeterm_agent_watc
 
 #[tauri::command]
 pub(crate) async fn get_codex_session() -> IpcResult<Option<vibeterm_agent_watch::CodexSnapshot>> {
-    Ok(vibeterm_agent_watch::codex::session::read_once())
+    // 文件 I/O 重 (扫近 3 天 rollout), 走 spawn_blocking 不阻塞 tokio runtime.
+    Ok(join_blocking_or(
+        tokio::task::spawn_blocking(vibeterm_agent_watch::codex::session::read_once),
+        None,
+        "get_codex_session",
+    )
+    .await)
 }
 
 /// 按 cwd 查 Claude session — 精确到当前活跃终端的 cwd 而非全局最新.
@@ -196,64 +232,6 @@ pub(crate) async fn agent_resume_command(
         tracing::warn!(error = %e, "agent_resume_command blocking task panicked");
         None
     }))
-}
-
-/// 使用统计面板数据 — 全量扫 `~/.claude/projects` + `~/.codex/sessions`, 聚合最近 `days` 天
-/// 的按天 / 按模型 / 按项目 token + cost. 纯只读, 不联网 (离线定价表).
-/// 全量扫描可能慢, 走 spawn_blocking 不阻塞 tokio runtime; 失败降级为空统计.
-#[tauri::command]
-pub(crate) async fn get_usage_stats(
-    days: Option<u32>,
-) -> IpcResult<vibeterm_agent_watch::stats::UsageStats> {
-    let d = days.unwrap_or(30);
-    Ok(join_blocking_or(
-        tokio::task::spawn_blocking(move || vibeterm_agent_watch::stats::collect(d)),
-        Default::default(),
-        "get_usage_stats",
-    )
-    .await)
-}
-
-/// 把统计面板导出的 PNG (base64) 写到用户在前端 save 对话框选定的路径。
-/// 仅接受 .png + PNG 魔数校验, 防写入非图片 / 任意垃圾。路径由原生 save 对话框产生 (用户授权)。
-#[tauri::command]
-pub(crate) async fn save_png_file(path: String, base64_png: String) -> IpcResult<()> {
-    use base64::Engine;
-    let bytes = base64::engine::general_purpose::STANDARD
-        .decode(base64_png.as_bytes())
-        .map_err(|e| IpcError::Unknown {
-            trace_id: format!("save_png_file:decode:{e}"),
-        })?;
-    // PNG 魔数 (\x89PNG\r\n\x1a\n) 校验, 拒绝非 PNG.
-    const PNG_MAGIC: &[u8] = &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
-    if !bytes.starts_with(PNG_MAGIC) || !path.to_ascii_lowercase().ends_with(".png") {
-        return Err(IpcError::Unknown {
-            trace_id: "save_png_file:not_png".into(),
-        });
-    }
-    std::fs::write(&path, &bytes).map_err(|e| IpcError::Unknown {
-        trace_id: format!("save_png_file:write:{e}"),
-    })
-}
-
-/// 统一 provider 解析 + 降级链诊断 — 给 /doctor / 多 agent 视图用。
-/// 返回所有已注册 provider 在该 cwd 的统一用量(含 sources 诊断: 走了哪个源/为何降级)。
-/// 现有 per-provider 命令保持不变, 此命令是 CodexBar 式 provider 抽象的统一入口。
-#[tauri::command]
-pub(crate) async fn agent_usage_by_cwd(
-    cwd: String,
-) -> IpcResult<Vec<vibeterm_agent_watch::provider::AgentUsage>> {
-    Ok(join_blocking_or(
-        tokio::task::spawn_blocking(move || {
-            vibeterm_agent_watch::provider::providers()
-                .into_iter()
-                .filter_map(|p| p.resolve_by_cwd(&cwd))
-                .collect()
-        }),
-        Vec::new(),
-        "agent_usage_by_cwd",
-    )
-    .await)
 }
 
 /// 当前 cwd 对应的 Claude 5h 滚动块 (移植 ccusage `blocks.rs`).

@@ -108,8 +108,8 @@ def render(loc: str) -> str:
     A(f"_{t('section.features.subtitle')}_")
     A("")
     groups = {
-        "agent": ["sniff", "urgency", "monitor", "stats"],
-        "terminal": ["split", "canvas", "floating", "render"],
+        "agent": ["sniff", "urgency", "monitor"],
+        "terminal": ["split", "floating", "render"],
         "productivity": ["palette", "prompts", "statusbar", "notify", "theme"],
     }
     for g, feats in groups.items():

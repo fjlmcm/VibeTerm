@@ -47,12 +47,10 @@ _Tutte le solite funzioni di un terminale, più consapevolezza dello stato e orc
 - **Vede cosa fa un agente** — In corso, in attesa, bloccato o fatto — capito senza toccare la tua config.
 - **Rilevamento blocchi + ordine per urgenza** — Schermo pieno di agenti? Quelli bloccati e quelli che ti aspettano salgono in cima.
 - **Uso in tempo reale** — Contesto rimasto, quota 5h/7d, ritmo di consumo, cache, costo — tutto su una barra.
-- **Statistiche d'uso** — Numeri di token e costo per Claude / Codex. Calcolati offline, esportabili.
 
 ### Terminale
 
 - **Divisioni + worktree** — Monta un worktree git, un albero di terminali per attività.
-- **Lavagna Canvas** — Disponi le attività come schede, selezione a riquadro, un comando inviato a più terminali.
 - **Finestre fluttuanti** — Stacca qualsiasi attività in una finestra a sé e continua a tenerla d'occhio.
 - **Rendering GPU** — Accelerato da WebGL, e il CJK comunque non perde glifi né scatta.
 
@@ -102,7 +100,7 @@ Built with **Tauri 2 · Rust · SolidJS · xterm.js** (pnpm monorepo).
 
 ## Sulle spalle di questi.
 
-Un grazie speciale a ccusage di ryoppippi (MIT). Le statistiche d'uso, i prezzi dei modelli e i blocchi da 5 ore vengono da lì; i dati sui prezzi arrivano da LiteLLM e dai numeri ufficiali di Anthropic.
+Un grazie speciale a ccusage di ryoppippi (MIT). I prezzi dei modelli e i blocchi da 5 ore vengono da lì; i dati sui prezzi arrivano da LiteLLM e dai numeri ufficiali di Anthropic.
 
 Also building on [Tauri](https://tauri.app) · [SolidJS](https://solidjs.com) · [xterm.js](https://xtermjs.org) · [WezTerm](https://github.com/wezterm/wezterm) · [Tabby](https://github.com/Eugeny/tabby). Full list in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
