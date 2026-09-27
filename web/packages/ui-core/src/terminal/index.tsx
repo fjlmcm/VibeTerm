@@ -12,7 +12,6 @@ import { Terminal as XTerm } from "@xterm/xterm";
 // 原样保留 → 运行时 404 → 终端无样式渲染成空白)。
 import "@xterm/xterm/css/xterm.css";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { CanvasAddon } from "@xterm/addon-canvas";
 import { FitAddon } from "@xterm/addon-fit";
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { SearchAddon } from "@xterm/addon-search";
@@ -35,7 +34,6 @@ import { menuClampRef } from "../menu-clamp";
 import {
   Channel,
   closePty,
-  darwinMajorVersion,
   resizePty,
   terminalSize,
   spawnTerminalInTask,
@@ -122,23 +120,8 @@ const FILE_PATH_REGEX =
 // 成本:context 创建 + 可见区重栅格化(毫秒级,触发频度低);多源同时触发用 1.5s 窗口合并。
 const [repairTick, setRepairTick] = createSignal(0);
 
-// 渲染后端选择(2026-06-12,第二次带血):macOS 26.x 上 dispose+重建也只能事后救一帧,
-// 损坏随时复发且无法检测(buffer 数据无损,纯渲染层画错),用户实测重建方案依然乱码 →
-// Darwin >= 25 直接弃用 WebGL,改挂 CanvasAddon(2D canvas 图集不走 WebGL 纹理路径,
-// 不受 xterm.js#5816 影响;仍是 GPU 加速的 2D 合成,性能远高于 DOM 渲染器)。
-// 版本查询是异步 IPC:结果到达前 mount 的实例先挂 WebGL,切 canvas 时直接 bump
-// repairTick 让已挂载实例整层重建(绕过 requestRenderRepair 的 1.5s 合并窗口,
-// 避免被启动期 focus 触发的 repair 吞掉)。非 Tauri 环境(Playwright 直连 vite)
-// 查询失败,保持 webgl 现状。
-let rendererBackend: "webgl" | "canvas" = "webgl";
-darwinMajorVersion()
-  .then((major) => {
-    if (major >= 25) {
-      rendererBackend = "canvas";
-      setRepairTick((n) => n + 1);
-    }
-  })
-  .catch(() => {});
+// 渲染后端:统一 WebGL。xterm 6.0 已移除 CanvasAddon;此前 macOS 26 因 xterm.js#5816
+// (WebGL 字形纹理损坏)回退 Canvas,2026-09-28 在 macOS 26.6 实测 6.0 WebGL 无花屏,回退删除。
 
 let lastRepairAt = 0;
 /** 让所有 Terminal 实例重建 WebGL 渲染层(修复偶发字形乱码) */
@@ -179,7 +162,7 @@ export interface TerminalProps {
 export function Terminal(props: TerminalProps) {
   let hostEl!: HTMLDivElement;
   let term: XTerm | null = null;
-  let renderer: WebglAddon | CanvasAddon | null = null;
+  let renderer: WebglAddon | null = null;
   // GPU 渲染层不可用(初始化失败 / WebGL context loss)→ 永久回 DOM 渲染器,repair 不再重试
   let gpuDisabled = false;
   // repair 到达时本实例不可见(display:none 的非激活任务)→ 0 尺寸下建 context 不可靠,
@@ -369,25 +352,19 @@ export function Terminal(props: TerminalProps) {
     }, 250);
   };
 
-  // 挂载 GPU 渲染层(backend 由 module 级 rendererBackend 决定)。
-  // mount 与 rebuildRenderer 共用;失败(环境不支持)即永久回 DOM。
+  // 挂载 WebGL 渲染层。mount 与 rebuildRenderer 共用;失败(环境不支持)即永久回 DOM。
   const attachRenderer = () => {
     if (!term || gpuDisabled) return;
     try {
-      if (rendererBackend === "canvas") {
-        renderer = new CanvasAddon();
-        term.loadAddon(renderer);
-      } else {
-        const webgl = new WebglAddon();
-        webgl.onContextLoss(() => {
-          console.warn("[terminal] WebGL context lost — fallback DOM");
-          gpuDisabled = true;
-          renderer?.dispose();
-          renderer = null;
-        });
-        renderer = webgl;
-        term.loadAddon(webgl);
-      }
+      const webgl = new WebglAddon();
+      webgl.onContextLoss(() => {
+        console.warn("[terminal] WebGL context lost — fallback DOM");
+        gpuDisabled = true;
+        renderer?.dispose();
+        renderer = null;
+      });
+      renderer = webgl;
+      term.loadAddon(webgl);
     } catch (e) {
       console.warn("[terminal] GPU renderer addon unavailable", e);
       gpuDisabled = true;
@@ -395,8 +372,7 @@ export function Terminal(props: TerminalProps) {
     }
   };
 
-  // 整层重建:dispose 旧 addon(旧 context/纹理一并释放)→ 按当前 backend 全新挂载。
-  // 也承担 webgl → canvas 的切换(rendererBackend 异步判定晚于首批 mount 时)。
+  // 整层重建:dispose 旧 addon(旧 context/纹理一并释放)→ 全新挂载。
   // 不可见实例推迟(0 尺寸 canvas 上建 context 不可靠),变可见时由 onBecameVisible 补做。
   const rebuildRenderer = () => {
     if (disposed || !term || !renderer) return;
@@ -996,8 +972,8 @@ export function Terminal(props: TerminalProps) {
     term.options.cursorBlink = blink;
   });
 
-  // GPU 渲染层自愈 / 后端切换:订阅 module 级 repairTick(触发源与"为什么是整层重建
-  // 而非 clearTextureAtlas"见文件顶部注释;rendererBackend 异步切 canvas 也走这条)。
+  // GPU 渲染层自愈:订阅 module 级 repairTick(触发源与"为什么是整层重建
+  // 而非 clearTextureAtlas"见文件顶部注释)。
   // 首跑 = mount 当下(addon 刚挂),跳过;之后每次 tick 重建。
   // DOM fallback(gpuDisabled)时 rebuildRenderer 自然 no-op。
   createEffect<number>((prev) => {
