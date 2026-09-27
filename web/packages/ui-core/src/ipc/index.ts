@@ -210,12 +210,6 @@ export async function invokeGlobalAction(action: string): Promise<void> {
   return invoke("invoke_global_action", { action });
 }
 
-/** Darwin 内核 major 版本(macOS 26.x = Darwin 25);非 macOS 返回 0。
- *  WKWebView UA 版本冻结,前端拿不到真实系统版本,渲染后端选择靠它。 */
-export async function darwinMajorVersion(): Promise<number> {
-  return invoke<number>("darwin_major_version");
-}
-
 export function onGlobalAction(handler: (action: string) => void): Promise<UnlistenFn> {
   return tauriListen<string>("global_action", (e) => handler(e.payload));
 }
