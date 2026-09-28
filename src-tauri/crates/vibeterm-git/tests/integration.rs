@@ -105,8 +105,9 @@ async fn full_worktree_lifecycle() {
     assert!(branches.iter().any(|b| b == "main"));
     assert!(branches.iter().any(|b| b == "feat-x"));
 
-    // 清掉 dirty 才能 remove(不 force)
-    std::fs::write(wt.join("README.md"), b"# test\n").unwrap();
+    // 清掉 dirty 才能 remove(不 force)。用 git 还原而非手写字节:Windows runner
+    // autocrlf=true 检出 CRLF,手写 LF 会被 worktree remove 判为 modified。
+    run(&wt, &["checkout", "--", "README.md"]);
     remove_worktree(&repo, &wt, false).await.unwrap();
     let list2 = list_worktrees(&repo).await.unwrap();
     assert_eq!(list2.len(), 1);
