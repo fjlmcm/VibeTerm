@@ -167,7 +167,6 @@ export function Terminal(props: TerminalProps) {
   let gpuDisabled = false;
   // repair 到达时本实例不可见(display:none 的非激活任务)→ 0 尺寸下建 context 不可靠,
   // 记账推迟,变可见(onBecameVisible)时补建
-  let pendingRendererRepair = false;
   let fit: FitAddon | null = null;
   let search: SearchAddon | null = null;
   let serialize: SerializeAddon | null = null;
@@ -352,14 +351,15 @@ export function Terminal(props: TerminalProps) {
     }, 250);
   };
 
-  // 挂载 WebGL 渲染层。mount 与 rebuildRenderer 共用;失败(环境不支持)即永久回 DOM。
+  // 挂载 WebGL 渲染层。只在本实例可见时持有(见 IntersectionObserver):WebKit 对活动
+  // WebGL 上下文有数量上限(约 16),超出即驱逐最早的;隐藏终端不占上下文,可见数远小于上限。
+  // 环境不支持(addon 抛)才永久回 DOM;上下文被驱逐不是硬件故障,下次变可见时重挂。
   const attachRenderer = () => {
     if (!term || gpuDisabled) return;
     try {
       const webgl = new WebglAddon();
       webgl.onContextLoss(() => {
-        console.warn("[terminal] WebGL context lost — fallback DOM");
-        gpuDisabled = true;
+        console.warn("[terminal] WebGL context lost — DOM until next visible");
         renderer?.dispose();
         renderer = null;
       });
@@ -373,14 +373,9 @@ export function Terminal(props: TerminalProps) {
   };
 
   // 整层重建:dispose 旧 addon(旧 context/纹理一并释放)→ 全新挂载。
-  // 不可见实例推迟(0 尺寸 canvas 上建 context 不可靠),变可见时由 onBecameVisible 补做。
+  // 隐藏实例本就没有 renderer,直接 no-op;变可见时由 onBecameVisible 挂载。
   const rebuildRenderer = () => {
     if (disposed || !term || !renderer) return;
-    if (hostEl && hostEl.offsetParent === null) {
-      pendingRendererRepair = true;
-      return;
-    }
-    pendingRendererRepair = false;
     try {
       renderer.dispose();
     } catch {
@@ -408,10 +403,10 @@ export function Terminal(props: TerminalProps) {
   // TUI 多重绘一帧(普通 shell 可能丢可见区几行),概率低且收 SIGWINCH 后即恢复,不加锁串行化。
   const onBecameVisible = async () => {
     const xt = term;
-    if (!xt || terminalId === null) return;
+    if (!xt) return;
+    if (!renderer) attachRenderer();
+    if (terminalId === null) return;
     tryFit();
-    // 隐藏期间错过的 WebGL 重建在此补做(fit 之后,尺寸已就绪)
-    if (pendingRendererRepair) rebuildRenderer();
     try {
       const [ptyRows, ptyCols] = await terminalSize(terminalId);
       const contaminated =
@@ -758,8 +753,6 @@ export function Terminal(props: TerminalProps) {
     // 附带的好处:renderer 整层重建(repairTick)不触碰 hostEl,监听天然存活。
     hostEl.addEventListener("input", onHostInputCapture, true);
 
-    attachRenderer();
-
     requestAnimationFrame(async () => {
       if (disposed) return;
       fit?.fit();
@@ -908,21 +901,29 @@ export function Terminal(props: TerminalProps) {
     window.addEventListener("focus", onWinFocus);
 
     // 父级 display:none ↔ block 切换时,IntersectionObserver 触发 fit
-    // (ResizeObserver 对该转换不可靠)
+    // (ResizeObserver 对该转换不可靠)。初始回调即决定首次 WebGL 挂载;
+    // 隐藏时释放 WebGL(退 DOM),避免占用 WebKit 的上下文配额。
     const io = new IntersectionObserver(
       (entries) => {
         for (const e of entries) {
-          if (e.isIntersecting) {
-            // 变可见:fit + 反污染(尺寸不一致则清屏重绘)+ 重同步滚动区,详见 onBecameVisible。
-            requestAnimationFrame(() => {
-              void onBecameVisible();
-            });
-            // 首帧 hostEl 可能 0 高度致 syncScrollArea 读到错尺寸,稍后再校正一次兜底。
-            setTimeout(() => {
-              if (disposed) return;
-              requestAnimationFrame(resyncScroll);
-            }, 120);
+          if (!e.isIntersecting) {
+            try {
+              renderer?.dispose();
+            } catch {
+              /* 上下文已失效时 dispose 可能抛 */
+            }
+            renderer = null;
+            continue;
           }
+          // 变可见:挂 WebGL + fit + 反污染(尺寸不一致则清屏重绘)+ 重同步滚动区,详见 onBecameVisible。
+          requestAnimationFrame(() => {
+            void onBecameVisible();
+          });
+          // 首帧 hostEl 可能 0 高度致 syncScrollArea 读到错尺寸,稍后再校正一次兜底。
+          setTimeout(() => {
+            if (disposed) return;
+            requestAnimationFrame(resyncScroll);
+          }, 120);
         }
       },
       { threshold: 0 },

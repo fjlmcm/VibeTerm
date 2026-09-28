@@ -4,24 +4,9 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>VibeTerm</title>
-    <style>
-      :root {
-        color-scheme: dark;
-        --color-bg: #111;
-        /* Phase 12: 主动控制窗口圆角. macOS transparent + decorations:false 时,
-           Tauri/wry 不强制圆角, 由 root 元素决定可见区. 这里固定 12px,
-           跟内部高亮边框 (inset:1 + radius:11) 完全共心. */
-        --window-corner-radius: 16px;
-      }
-      html, body { margin: 0; padding: 0; height: 100%; background: var(--color-bg); }
-      body { border-radius: var(--window-corner-radius); overflow: hidden; }
-      #root { display: block; width: 100%; height: 100vh; border-radius: inherit; overflow: hidden; }
-      *::-webkit-scrollbar { width: 10px; height: 10px; }
-      *::-webkit-scrollbar-track { background: transparent; }
-      *::-webkit-scrollbar-thumb { background: var(--color-border); border-radius: 5px; }
-      *::-webkit-scrollbar-thumb:hover { background: var(--color-text-2); }
-      *::-webkit-scrollbar-corner { background: transparent; }
-    </style>
+    <!-- 壳层样式必须走外链而非内联 style 标签:Tauri 会给内联 style 注入 nonce 到 CSP,
+         有 nonce 时浏览器忽略 'unsafe-inline',xterm DOM 渲染器运行时注入的样式会被拦截。 -->
+    <link rel="stylesheet" href="/src/shell.css" />
     <script>
       // 启动闪屏修复:JS bundle / IPC 还没回来之前,先用上次主题的 bg 上色,
       // 避免 dev 模式下 Vite 串行 fetch 期间纯色空屏。applyShellTheme 每次

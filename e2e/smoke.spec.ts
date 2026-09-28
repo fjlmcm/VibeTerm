@@ -500,4 +500,65 @@ test.describe("VibeTerm Web Smoke", () => {
     expect(scrolled).toBeGreaterThan(0);
     await expect(page.locator(".task-row").last()).toBeInViewport();
   });
+  test("壳层 HTML 不含内联 <style>(Tauri 会为其注入 CSP nonce,令 'unsafe-inline' 失效)", async ({ page }) => {
+    // 回归:xterm DOM 渲染器运行时注入 <style>;style-src 一旦带 nonce 就被拦截 →
+    // 终端退化成 16px 比例字体、空格塌陷(2026-09-28 用户 23 终端超出 WebGL 配额后暴露)。
+    for (const path of ["/", "/floating.html"]) {
+      const html = await (await page.request.get(path)).text();
+      expect(html, path).not.toMatch(/<style[\s>]/);
+    }
+  });
+
+  test("WebGL 只挂在可见终端:切换任务时前者释放、后者挂载", async ({ page }) => {
+    await page.addInitScript(() => {
+      let nextTerm = 1;
+      const internals = (window as Window & {
+        __TAURI_INTERNALS__?: { invoke: (cmd: string) => Promise<unknown> };
+      }).__TAURI_INTERNALS__!;
+      const orig = internals.invoke;
+      internals.invoke = (cmd: string) => {
+        if (cmd === "list_tasks") {
+          return Promise.resolve(
+            [1, 2, 3].map((id) => ({
+              id,
+              name: `task-${id}`,
+              cwd: null,
+              status: "idle",
+              terminal_ids: [],
+              location: { kind: "MainWorkspace" },
+              split_tree: { kind: "leaf", slot_id: 0 },
+              notify_muted: false,
+            })),
+          );
+        }
+        if (cmd === "spawn_terminal_in_task") {
+          return Promise.resolve({ terminal_id: nextTerm++, sink_id: null });
+        }
+        return orig(cmd);
+      };
+    });
+    await page.goto("/");
+    const canvasCounts = () =>
+      page.evaluate(() =>
+        [...document.querySelectorAll<HTMLElement>("[data-terminal-id]")].map((h) => ({
+          visible: h.offsetParent !== null,
+          canvases: h.querySelectorAll("canvas").length,
+        })),
+      );
+    // 初始:仅激活任务的终端持有 WebGL canvas,隐藏终端为 0
+    await expect.poll(canvasCounts, { timeout: 15000 }).toEqual([
+      { visible: true, canvases: expect.any(Number) },
+      { visible: false, canvases: 0 },
+      { visible: false, canvases: 0 },
+    ]);
+    expect((await canvasCounts())[0].canvases).toBeGreaterThan(0);
+    // 切到 task-3:task-1 释放,task-3 挂载
+    await page.locator(".task-row", { hasText: "task-3" }).click();
+    await expect.poll(canvasCounts, { timeout: 15000 }).toEqual([
+      { visible: false, canvases: 0 },
+      { visible: false, canvases: 0 },
+      { visible: true, canvases: expect.any(Number) },
+    ]);
+    expect((await canvasCounts())[2].canvases).toBeGreaterThan(0);
+  });
 });
