@@ -328,27 +328,6 @@ export function Terminal(props: TerminalProps) {
       });
   };
 
-  // 诊断 ring(localStorage,最近 40 条 PTY resize 下发记录):排版错乱偶发且无现场,
-  // 复发时可直接取证(何时、什么尺寸、容器多宽)。私有模式等写失败静默丢弃。
-  const logResizeDiag = (rows: number, cols: number) => {
-    try {
-      const key = "vibeterm.diag.ptyResizes";
-      const arr = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown[];
-      arr.push({
-        t: Date.now(),
-        id: terminalId,
-        rows,
-        cols,
-        w: hostEl?.offsetWidth ?? -1,
-        h: hostEl?.offsetHeight ?? -1,
-      });
-      while (arr.length > 40) arr.shift();
-      localStorage.setItem(key, JSON.stringify(arr));
-    } catch {
-      /* 诊断信息可丢 */
-    }
-  };
-
   // 瞬态守门:PTY resize 走 120ms trailing debounce,回调时读 xterm **当时**的尺寸。
   // 布局动画 / 渲染层重建窗口期的中间尺寸不产生 SIGWINCH —— TUI 不会按瞬态宽度
   // 重绘出永久残迹;只有稳定值才下发。xterm 视图本身仍即时 resize(软折行可逆,
@@ -368,7 +347,6 @@ export function Terminal(props: TerminalProps) {
           hostW: hostEl?.offsetWidth,
         });
       }
-      logResizeDiag(term.rows, term.cols);
       sendPtyResize(term.rows, term.cols);
     }, 120);
   };
