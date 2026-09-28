@@ -9,7 +9,7 @@
 
 ## 技术栈与架构
 
-**Tauri 2 + Rust(workspace)+ SolidJS + xterm.js(WebglAddon GPU 渲染);pnpm monorepo。** 当前版本 1.1.7,标识 `com.vibeterm.desktop`,macOS 11+。
+**Tauri 2 + Rust(workspace)+ SolidJS + xterm.js(WebglAddon GPU 渲染);pnpm monorepo。** 当前版本 1.1.8,标识 `com.vibeterm.desktop`,macOS 11+。
 
 ### Rust 侧(`src-tauri/`)— 主 app + 8 个业务 crate(单向依赖分层)
 | crate | 职责 |
