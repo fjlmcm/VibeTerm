@@ -630,7 +630,7 @@ export function Terminal(props: TerminalProps) {
   };
 
   onMount(() => {
-    const initialXtermTheme = props.theme ? toXtermTheme(props.theme.terminal) : undefined;
+    const initialXtermTheme = props.theme ? toXtermTheme(props.theme) : undefined;
 
     term = new XTerm({
       fontFamily: terminalFontFamily(),
@@ -935,7 +935,7 @@ export function Terminal(props: TerminalProps) {
   // 主题变化时立即应用到 xterm
   createEffect(() => {
     if (term && props.theme) {
-      term.options.theme = toXtermTheme(props.theme.terminal);
+      term.options.theme = toXtermTheme(props.theme);
     }
   });
 

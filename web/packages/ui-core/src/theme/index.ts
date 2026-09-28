@@ -5,7 +5,7 @@
 // 注意:不引入响应式 — 由 consumer 在 theme 变化时调 applyShellTheme(theme)。
 
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { Theme, ThemeTerminal } from "@vibeterm/ipc-types";
+import type { Theme } from "@vibeterm/ipc-types";
 
 const SHELL_VAR_MAP: Record<string, keyof Theme["shell"]> = {
   "--color-bg": "background",
@@ -43,13 +43,18 @@ export function applyShellTheme(theme: Theme) {
   }
 }
 
-// 把 ThemeTerminal 转成 xterm.js options.theme 字段名(snake → camel)
-export function toXtermTheme(t: ThemeTerminal): Record<string, string> {
+// 把主题转成 xterm.js options.theme 字段名(snake → camel)。
+// 滚动条滑块取 shell 的 border / text_secondary,与侧栏 ::-webkit-scrollbar-thumb 同色
+// (xterm 6 自绘 VS Code 式滚动条,不吃全局 ::-webkit-scrollbar 规则)。
+export function toXtermTheme({ terminal: t, shell }: Theme): Record<string, string> {
   return {
     background: t.background,
     foreground: t.foreground,
     cursor: t.cursor,
     selectionBackground: t.selection_bg,
+    scrollbarSliderBackground: shell.border,
+    scrollbarSliderHoverBackground: shell.text_secondary,
+    scrollbarSliderActiveBackground: shell.text_secondary,
     black: t.black,
     red: t.red,
     green: t.green,
