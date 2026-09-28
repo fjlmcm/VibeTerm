@@ -459,4 +459,45 @@ test.describe("VibeTerm Web Smoke", () => {
     expect(box.x + box.width).toBeLessThanOrEqual(vp.width);
     expect(box.y + box.height).toBeLessThanOrEqual(vp.height);
   });
+  test("任务列表:窗口高度不够时侧栏不撑破视口,列表自身可滚动", async ({ page }) => {
+    await page.addInitScript(() => {
+      const internals = (window as Window & {
+        __TAURI_INTERNALS__?: { invoke: (cmd: string) => Promise<unknown> };
+      }).__TAURI_INTERNALS__!;
+      const orig = internals.invoke;
+      internals.invoke = (cmd: string) => {
+        if (cmd === "list_tasks") {
+          return Promise.resolve(
+            Array.from({ length: 40 }, (_, i) => ({
+              id: i + 1,
+              name: `task-${i + 1}`,
+              cwd: null,
+              status: "idle",
+              terminal_ids: [],
+              location: { kind: "MainWorkspace" },
+              split_tree: { kind: "leaf", slot_id: 0 },
+              notify_muted: false,
+            })),
+          );
+        }
+        return orig(cmd);
+      };
+    });
+    await page.setViewportSize({ width: 800, height: 300 });
+    await page.goto("/");
+    await expect(page.locator(".task-row").first()).toBeVisible({ timeout: 5000 });
+    const list = page.locator('[data-testid="task-list"]');
+    // 侧栏必须被视口约束(而不是随内容长高把页面撑出去)
+    const listBox = (await list.boundingBox())!;
+    expect(listBox.y + listBox.height).toBeLessThanOrEqual(300);
+    // 溢出的行由列表自己滚动
+    const scrolled = await list.evaluate((el) => {
+      const sc = el.firstElementChild?.nextElementSibling as HTMLElement; // <style> 之后的列表容器
+      if (!sc || sc.scrollHeight <= sc.clientHeight) return -1;
+      sc.scrollTop = 10_000;
+      return sc.scrollTop;
+    });
+    expect(scrolled).toBeGreaterThan(0);
+    await expect(page.locator(".task-row").last()).toBeInViewport();
+  });
 });

@@ -234,7 +234,7 @@ export const TaskList: Component<TaskListProps> = (props) => {
       `}</style>
       <div
         ref={listEl}
-        style={{ flex: "1", "overflow-y": "auto" }}
+        style={{ flex: "1", "min-height": 0, "overflow-y": "auto" }}
       >
         <For each={taskIds()}>
           {(taskId) => {

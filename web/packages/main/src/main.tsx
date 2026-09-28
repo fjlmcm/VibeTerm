@@ -786,6 +786,8 @@ function App() {
         style={{
           display: "grid",
           "grid-template-columns": `${sidebarWidth()}px 1px 1fr`,
+          // 行高钉死为容器高度:隐式行默认 auto 会随侧栏任务数长高、撑破视口
+          "grid-template-rows": "minmax(0, 1fr)",
           flex: 1,
           "min-height": 0,
         }}
@@ -797,6 +799,7 @@ function App() {
           // border-right 删了 — resizer 自己画 1px 中线, 不再画两条
           display: "flex",
           "flex-direction": "column",
+          "min-height": 0,
         }}
       >
         <div
