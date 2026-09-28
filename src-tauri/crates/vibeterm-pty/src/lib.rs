@@ -218,10 +218,9 @@ impl Terminal {
                                 tracing::warn!("sinks mutex poisoned, pty-read 退出");
                                 break;
                             };
-                            for (_, s) in lock.iter() {
-                                s.push(chunk.clone());
-                            }
-                            // 追加 ring buffer(顺序保留),仍在 sinks 锁保护下
+                            // 先追加 ring buffer、再 fan-out:scrollback_snapshot 只拿
+                            // scrollback 锁,若先 fan-out,收到 chunk 的一方立刻快照会读到
+                            // 追加前的 ring(CI 上偶发)。
                             match scrollback_for_read.lock() {
                                 Ok(mut sb) => {
                                     sb.extend(chunk.iter().copied());
@@ -235,6 +234,9 @@ impl Terminal {
                                     tracing::warn!("scrollback mutex poisoned, pty-read 退出");
                                     break;
                                 }
+                            }
+                            for (_, s) in lock.iter() {
+                                s.push(chunk.clone());
                             }
                             drop(lock);
                         }
