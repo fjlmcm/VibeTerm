@@ -38,10 +38,10 @@ jobs:
             args: --config tauri.updater.conf.json
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with: { version: 10 }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with: { node-version: "20", cache: pnpm }
       - uses: dtolnay/rust-toolchain@stable
 
@@ -58,7 +58,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Tauri build
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v1
         env:
           # tauri-action 创建 Release + 传产物用(GitHub 自动注入, 无需手配 secret)
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -28,7 +28,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Resolve version + sha256
         id: meta
@@ -51,7 +51,7 @@ jobs:
           echo "sha256=$sha" >> "$GITHUB_OUTPUT"
 
       - name: Checkout tap repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: fjlmcm/homebrew-vibeterm
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
