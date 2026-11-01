@@ -11,11 +11,11 @@ serde     = { workspace = true }
 serde_json = { workspace = true }
 tracing   = { workspace = true }
 thiserror = { workspace = true }
-toml      = "0.8"
-dirs      = "5"
-notify    = "6"
+toml      = "1.1"
+dirs      = "6"
+notify    = "8"
 tempfile  = "3"
 
 [dev-dependencies]
 filetime  = "0.2"
-toml      = "0.8"
+toml      = "1.1"
